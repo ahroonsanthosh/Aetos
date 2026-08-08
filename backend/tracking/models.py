@@ -1,0 +1,211 @@
+"""Track model and lifecycle states.
+
+A Track is the system's *belief* that a sequence of detections belong to one moving object.
+It is persistent and evolving, where a Detection is a single instantaneous observation.
+The operator interface displays tracks, never raw detections (spec §3).
+
+Track state is held in the local ENU frame in metres (ADR 0004) and projected back to WGS-84
+at the API boundary. The geodetic fields here are a convenience projection kept in step with
+the ENU state, never an independent source of truth.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from sensors.schemas.detection import ClassificationLabel
+
+TRACK_SCHEMA_VERSION = "1.0.0"
+
+
+class TrackState(StrEnum):
+    """Lifecycle state. A track is never silently deleted — it ends in LOST and is retained.
+
+        NEW → TENTATIVE → CONFIRMED → STALE → LOST
+
+    The transitions are deliberately explicit rather than implied by a detection count, so
+    that every promotion and demotion is an event an operator can see and a replay can
+    reconstruct.
+    """
+
+    NEW = "new"
+    """First detection. One observation is not yet evidence of an object."""
+
+    TENTATIVE = "tentative"
+    """Accumulating support. May still turn out to be clutter, so it is not yet shown as a
+    confident track."""
+
+    CONFIRMED = "confirmed"
+    """Enough consistent detections to believe an object is really there."""
+
+    STALE = "stale"
+    """Detections have stopped arriving for longer than coasting allows. The track is still
+    displayed, but explicitly as degraded rather than as a confident position."""
+
+    LOST = "lost"
+    """No longer maintained. Retained in history rather than deleted (spec §5)."""
+
+    @property
+    def is_active(self) -> bool:
+        """Whether the track is still being maintained by the tracker."""
+        return self is not TrackState.LOST
+
+    @property
+    def is_displayable(self) -> bool:
+        """Whether the operator should see it on the map.
+
+        NEW is withheld: a single unconfirmed return is exactly what clutter looks like, and
+        showing it would train operators to ignore the display.
+        """
+        return self in (TrackState.TENTATIVE, TrackState.CONFIRMED, TrackState.STALE)
+
+
+class RiskLevel(StrEnum):
+    """Discrete risk band. Hysteresis governs transitions between these (ADR 0007)."""
+
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+    @property
+    def severity(self) -> int:
+        return {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}[self.value]
+
+
+class Recommendation(StrEnum):
+    """What the system suggests a human consider doing.
+
+    This is the end of the pipeline. Every value here is advice to an operator; none of them
+    causes anything to happen in the physical world. `RESPONSE_RECOMMENDED` is the most
+    severe output Aetos can produce, and it means exactly what it says — a recommendation
+    that a human consider a response, decided and carried out by a separate system with its
+    own authorisation and safety architecture.
+    """
+
+    MONITOR = "MONITOR"
+    VERIFY = "VERIFY"
+    ALERT = "ALERT"
+    ESCALATE = "ESCALATE"
+    RESPONSE_RECOMMENDED = "RESPONSE_RECOMMENDED"
+
+
+class EnuState(BaseModel):
+    """Position and velocity in the site's local ENU frame, metres and metres per second.
+
+    This is the tracker's authoritative state. Velocity is *estimated by the filter from a
+    sequence of positions*, never taken from a detection's kinematics block — see ADR 0002.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    east_m: float
+    north_m: float
+    up_m: float
+    velocity_east_mps: float = 0.0
+    velocity_north_mps: float = 0.0
+    velocity_up_mps: float = 0.0
+
+
+class TrackPosition(BaseModel):
+    """Geodetic projection of the track's ENU state, for display and API output."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    latitude: float
+    longitude: float
+    altitude_m: float
+
+
+class TrackKinematics(BaseModel):
+    """Motion as derived by the filter. Speed and heading are computed from the ENU velocity
+    estimate, so they are outputs of tracking rather than inputs to it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    speed_mps: float = Field(ge=0.0)
+    heading_deg: float = Field(ge=0.0, lt=360.0)
+    vertical_rate_mps: float = 0.0
+
+
+class TrackClassification(BaseModel):
+    """What the classification module believes this track is. Confidence always reported
+    separately from the label, never folded into it (spec §9)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: ClassificationLabel = ClassificationLabel.UNKNOWN
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class TrackThreat(BaseModel):
+    """Risk assessment for this track.
+
+    `reasons` is not optional and not decorative. A bare risk score is a black-box output an
+    operator cannot act on or challenge, so the score never travels without the human-readable
+    reason codes that produced it (spec §10).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    risk_score: int = Field(default=0, ge=0, le=100)
+    risk_level: RiskLevel = RiskLevel.NONE
+    reasons: list[str] = Field(default_factory=list)
+    recommendation: Recommendation = Recommendation.MONITOR
+
+
+class TrackMetadata(BaseModel):
+    """Provenance and support for the track — how much it is believed and on what basis."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    first_seen: datetime
+    last_seen: datetime
+    """When the most recent *detection* arrived. Not the last update: a coasting track is
+    updated by prediction without being seen, and conflating the two would let a coasted
+    position look freshly observed."""
+
+    detection_count: int = Field(default=0, ge=0)
+    missed_updates: int = Field(default=0, ge=0)
+    """Consecutive cycles with no associated detection. Drives coasting and demotion."""
+
+    track_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    contributing_sensors: list[str] = Field(default_factory=list)
+
+    @property
+    def is_coasting(self) -> bool:
+        return self.missed_updates > 0
+
+
+class Track(BaseModel):
+    """The system's belief about one moving object.
+
+    Immutable: a track update produces a new Track rather than mutating one in place. This
+    matters because tracks are published to subscribers and recorded in the event log, and a
+    mutable object that changes after publication makes the log disagree with what was
+    actually sent.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: str = TRACK_SCHEMA_VERSION
+    track_id: str = Field(min_length=1, max_length=64)
+    state: TrackState
+
+    enu: EnuState
+    """Authoritative state, in the site's local frame."""
+
+    position: TrackPosition
+    """Geodetic projection of `enu`, for display. Kept in step with it, never independent."""
+
+    kinematics: TrackKinematics
+    classification: TrackClassification = Field(default_factory=TrackClassification)
+    threat: TrackThreat = Field(default_factory=TrackThreat)
+    tracking: TrackMetadata
+
+    updated_at: datetime
+    """When the tracker last produced this state, from the injected clock (ADR 0003)."""
