@@ -84,7 +84,7 @@ Non-convex polygons are handled by splitting the course at every edge crossing a
 resulting interval, because containment can only change at a crossing. A single entry/exit pair
 would be wrong for any footprint a course can leave and re-enter.
 
-The module is deliberately clock-free (ADR 0003): it returns an interval, not an instant. The
+The module is deliberately clock-free (ADR 0003): it returns a duration, not an instant. The
 caller holds the track's timestamp and the injected clock, and converting "in 42 seconds" into a
 time is its business.
 

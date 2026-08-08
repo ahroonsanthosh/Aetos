@@ -176,7 +176,7 @@ class SiteGeometry:
     Constructed once per site. The projection and the frame's rotation matrix are computed
     here so that the per-detection path is arithmetic on floats.
 
-    Deliberately clock-free: `time_to_enter_s` returns an interval, not an instant. The caller
+    Deliberately clock-free: `time_to_enter_s` returns a duration, not an instant. The caller
     holds the track's timestamp and the injected clock (ADR 0003), and turning "in 42 seconds"
     into a time is its business, not this module's.
     """
@@ -526,3 +526,22 @@ def load_site_for_environment(
 def load_site_geometry(name: str, paths: ConfigPaths | None = None) -> SiteGeometry:
     """Load a site and project it into its local frame in one step."""
     return SiteGeometry(load_site(name, paths))
+
+
+def registry_keys_in_use(site: Site, environment: EnvironmentConfig) -> tuple[str, ...]:
+    """Sensor registry keys an environment actually needs at a site, sorted and deduplicated.
+
+    Two independent filters, and both matter: a placement disabled in the site document is not
+    fitted at all, and a key the environment does not permit is not run here even where it is
+    fitted. The sensor layer loads exactly these documents, which is how a simulation profile
+    stays out of a run that was not configured for it.
+    """
+    return tuple(
+        sorted(
+            {
+                placement.registry_key
+                for placement in site.sensors
+                if placement.enabled and environment.permits_registry_key(placement.registry_key)
+            }
+        )
+    )

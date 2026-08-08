@@ -23,10 +23,11 @@ from backend.common.config import (
     RiskHysteresisConfig,
     RunMode,
     available_environments,
+    available_sensor_registry_keys,
     event_store_path,
     load_config,
     load_environment,
-    sensor_registry_path,
+    sensor_registry_entry_path,
     site_config_path,
 )
 
@@ -42,7 +43,6 @@ def _valid_environment(name: str = "sim") -> dict[str, Any]:
         "description": "Fixture environment.",
         "run_mode": "simulation",
         "site": "fictional_test_range",
-        "sensor_registry": "simulated",
         "enabled_sensor_keys": None,
         "event_store_path": "var/fixture/events.sqlite3",
         "queues": {
@@ -257,15 +257,21 @@ def test_escalation_dwell_may_not_exceed_de_escalation_dwell() -> None:
         RiskHysteresisConfig.model_validate(hysteresis)
 
 
-def test_environment_resolves_its_site_and_registry_documents() -> None:
+def test_environment_resolves_the_site_document_it_names() -> None:
     environment = load_environment("sim", REPO_PATHS)
 
     assert site_config_path(environment, REPO_PATHS) == (
         REPO_ROOT / "config" / "sites" / "fictional_test_range.json"
     )
-    assert sensor_registry_path(environment, REPO_PATHS) == (
-        REPO_ROOT / "config" / "sensor_registry" / "simulated.json"
-    )
+
+
+def test_a_registry_key_resolves_to_its_own_document() -> None:
+    """The registry is one document per sensor model, keyed by file name."""
+    path = sensor_registry_entry_path("sim_radar_medium", REPO_PATHS)
+
+    assert path == REPO_ROOT / "config" / "sensor_registry" / "sim_radar_medium.json"
+    assert path.is_file()
+    assert "sim_radar_medium" in available_sensor_registry_keys(REPO_PATHS)
 
 
 def test_event_store_path_resolves_against_the_repository_root() -> None:

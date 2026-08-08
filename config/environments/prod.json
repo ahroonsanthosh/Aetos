@@ -4,7 +4,6 @@
   "description": "Placeholder. Aetos is not fit for production deployment; see config/environments/README.md and failure mode FM-001.",
   "run_mode": "simulation",
   "site": "fictional_test_range",
-  "sensor_registry": "simulated",
   "enabled_sensor_keys": ["sim_radar_medium", "sim_eo_ir_narrow", "sim_rf_wide"],
   "event_store_path": "var/prod/events.sqlite3",
   "queues": {

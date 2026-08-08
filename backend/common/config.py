@@ -86,8 +86,9 @@ class ConfigPaths:
     def environment_file(self, name: str) -> Path:
         return self.environments / f"{_checked_name(name, 'environment')}.json"
 
-    def sensor_registry_file(self, name: str) -> Path:
-        return self.sensor_registry / f"{_checked_name(name, 'sensor registry')}.json"
+    def sensor_registry_file(self, registry_key: str) -> Path:
+        """The registry document describing one sensor model. One file per key, named by it."""
+        return self.sensor_registry / f"{_checked_name(registry_key, 'sensor registry')}.json"
 
     def resolve(self, configured_path: str) -> Path:
         """Interpret a path written in a configuration document.
@@ -313,15 +314,13 @@ class EnvironmentConfig(BaseModel):
     site: str = Field(min_length=1, max_length=64)
     """Name of the document in `config/sites/`, without the `.json` suffix."""
 
-    sensor_registry: str = Field(min_length=1, max_length=64)
-    """Name of the document in `config/sensor_registry/`, without the `.json` suffix."""
-
     enabled_sensor_keys: list[str] | None = None
     """Registry keys this environment permits, or None for every key the site references.
 
-    An environment restricts the registry; it never extends it. The registry document itself
-    is owned by the sensor layer and is deliberately not parsed here — `backend/common` has no
-    business knowing what a sensor's characteristics look like."""
+    An environment restricts the registry; it never extends it. The registry documents
+    themselves are owned by the sensor layer and are deliberately not parsed here —
+    `backend/common` has no business knowing what a sensor's characteristics look like, and
+    which keys a run actually uses depends on the site's placements as well as on this list."""
 
     event_store_path: str | None = None
     """Where the append-only log lives, relative to the repository root unless absolute. None
@@ -373,12 +372,23 @@ def site_config_path(environment: EnvironmentConfig, paths: ConfigPaths | None =
     return paths.site_file(environment.site)
 
 
-def sensor_registry_path(
-    environment: EnvironmentConfig, paths: ConfigPaths | None = None
-) -> Path:
-    """Which sensor registry document this environment draws its sensor characteristics from."""
+def available_sensor_registry_keys(paths: ConfigPaths | None = None) -> list[str]:
+    """Keys the registry defines in this tree, sorted. The registry is one document per sensor
+    model, so the file names are the keys."""
     paths = paths or ConfigPaths.default()
-    return paths.sensor_registry_file(environment.sensor_registry)
+    if not paths.sensor_registry.is_dir():
+        return []
+    return sorted(p.stem for p in paths.sensor_registry.glob("*.json"))
+
+
+def sensor_registry_entry_path(registry_key: str, paths: ConfigPaths | None = None) -> Path:
+    """Where the document for one registry key lives.
+
+    Only the path. Reading it is the sensor layer's job — a sensor's range, field of view and
+    uncertainty are not primitives, and `backend/common` does not model them.
+    """
+    paths = paths or ConfigPaths.default()
+    return paths.sensor_registry_file(registry_key)
 
 
 def event_store_path(

@@ -4,7 +4,6 @@
   "description": "Local simulation. All detections synthetic; the only environment Aetos is currently fit to run in.",
   "run_mode": "simulation",
   "site": "fictional_test_range",
-  "sensor_registry": "simulated",
   "enabled_sensor_keys": null,
   "event_store_path": "var/sim/events.sqlite3",
   "queues": {

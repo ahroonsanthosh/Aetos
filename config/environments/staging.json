@@ -4,7 +4,6 @@
   "description": "Shared soak and scenario-replay environment. Still simulation-only; larger queues so saturation behaviour is exercised rather than hit by accident.",
   "run_mode": "simulation",
   "site": "fictional_test_range",
-  "sensor_registry": "simulated",
   "enabled_sensor_keys": ["sim_radar_medium", "sim_eo_ir_narrow", "sim_rf_wide"],
   "event_store_path": "var/staging/events.sqlite3",
   "queues": {

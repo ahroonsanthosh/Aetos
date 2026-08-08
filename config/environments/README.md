@@ -35,7 +35,6 @@ eventually exists. It runs in SIMULATION mode like the others.
   "run_mode": "simulation",             // simulation | live | hybrid
 
   "site": "fictional_test_range",       // document in config/sites/, no .json
-  "sensor_registry": "simulated",       // document in config/sensor_registry/, no .json
   "enabled_sensor_keys": null,          // registry keys permitted here; null = all
 
   "event_store_path": "var/sim/events.sqlite3",   // repo-root relative unless absolute
@@ -58,8 +57,14 @@ remember to delete.
 ### `enabled_sensor_keys`
 
 Restricts which registry keys this environment may use. `null` means every key the site's
-placements reference. An environment narrows the registry; it never extends it. The registry
-document itself is not parsed by the environment loader — it belongs to the sensor layer.
+placements reference. An environment narrows the registry; it never extends it.
+
+The registry is one document per sensor model in `config/sensor_registry/`, named by its key,
+so an environment does not name a registry document — it names keys. Which keys a run actually
+loads is the intersection of this list with the site's *enabled* placements;
+`registry_keys_in_use()` in `backend/zones/geometry.py` computes it, because that needs the
+site and `backend/common` may not load one. The registry documents themselves are parsed by the
+sensor layer, which owns what a sensor's characteristics mean.
 
 ### `event_store_path`
 
