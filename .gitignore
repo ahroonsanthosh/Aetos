@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# Environment and local config (never commit)
+.env
+.env.*
+!.env.example
+config/environments/local.*
+config/**/local_*.json
+
+# Runtime data — the event store and recordings are generated artefacts
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+recordings/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
