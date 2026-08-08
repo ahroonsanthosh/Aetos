@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "environment": "staging",
+  "description": "Shared soak and scenario-replay environment. Still simulation-only; larger queues so saturation behaviour is exercised rather than hit by accident.",
+  "run_mode": "simulation",
+  "site": "fictional_test_range",
+  "sensor_registry": "simulated",
+  "enabled_sensor_keys": ["sim_radar_medium", "sim_eo_ir_narrow", "sim_rf_wide"],
+  "event_store_path": "var/staging/events.sqlite3",
+  "queues": {
+    "ingestion_capacity": 16384,
+    "tracking_capacity": 8192,
+    "broadcast_capacity": 4096,
+    "shed_high_water": 0.85,
+    "shed_resume_water": 0.6,
+    "sustained_shed_window_s": 30.0,
+    "degraded_mode_shed_fraction": 0.02
+  },
+  "risk": {
+    "hysteresis": {
+      "boundaries": [
+        { "level": "medium", "rise_score": 0.35, "fall_score": 0.25 },
+        { "level": "high", "rise_score": 0.6, "fall_score": 0.5 },
+        { "level": "critical", "rise_score": 0.85, "fall_score": 0.75 }
+      ],
+      "escalation_dwell_s": 3.0,
+      "de_escalation_dwell_s": 30.0
+    }
+  }
+}

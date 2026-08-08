@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0.0",
+  "site_id": "fictional_test_range",
+  "name": "Aetos Fictional Test Range",
+  "reference": {
+    "latitude": 45.0,
+    "longitude": 0.0,
+    "altitude_m": 120.0
+  },
+  "protected_radius_m": 800.0,
+  "zones": [
+    {
+      "zone_id": "core_protected",
+      "name": "Protected core",
+      "kind": "protected",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 45.0,
+          "longitude": 0.0
+        },
+        "radius_m": 800.0
+      }
+    },
+    {
+      "zone_id": "inner_restricted",
+      "name": "Inner restricted ring",
+      "kind": "restricted",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 45.0,
+          "longitude": 0.0
+        },
+        "radius_m": 2500.0
+      }
+    },
+    {
+      "zone_id": "outer_monitored",
+      "name": "Outer monitored airspace",
+      "kind": "monitored",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 45.0,
+          "longitude": 0.0
+        },
+        "radius_m": 8000.0
+      }
+    },
+    {
+      "zone_id": "eastern_approach_corridor",
+      "name": "Eastern approach corridor",
+      "kind": "restricted",
+      "geometry": {
+        "shape": "polygon",
+        "vertices": [
+          {
+            "latitude": 44.9945983,
+            "longitude": 0.0253628
+          },
+          {
+            "latitude": 44.9945758,
+            "longitude": 0.0760883
+          },
+          {
+            "latitude": 45.0053735,
+            "longitude": 0.0761026
+          },
+          {
+            "latitude": 45.0053961,
+            "longitude": 0.0253675
+          }
+        ]
+      },
+      "floor_m": 170.0,
+      "ceiling_m": 620.0
+    }
+  ],
+  "sensors": [
+    {
+      "sensor_id": "radar_north",
+      "registry_key": "sim_radar_medium",
+      "position": {
+        "latitude": 45.0107978,
+        "longitude": 0.0
+      },
+      "height_m": 12.0,
+      "boresight_deg": 0.0
+    },
+    {
+      "sensor_id": "radar_south",
+      "registry_key": "sim_radar_medium",
+      "position": {
+        "latitude": 44.9892022,
+        "longitude": 0.0
+      },
+      "height_m": 12.0,
+      "boresight_deg": 180.0
+    },
+    {
+      "sensor_id": "eo_ir_east",
+      "registry_key": "sim_eo_ir_narrow",
+      "position": {
+        "latitude": 44.9999994,
+        "longitude": 0.0114143
+      },
+      "height_m": 8.0,
+      "boresight_deg": 90.0
+    },
+    {
+      "sensor_id": "eo_ir_west",
+      "registry_key": "sim_eo_ir_narrow",
+      "position": {
+        "latitude": 44.9999994,
+        "longitude": -0.0114143
+      },
+      "height_m": 8.0,
+      "boresight_deg": 270.0,
+      "enabled": false
+    },
+    {
+      "sensor_id": "rf_central",
+      "registry_key": "sim_rf_wide",
+      "position": {
+        "latitude": 45.0,
+        "longitude": 0.0
+      },
+      "height_m": 25.0,
+      "boresight_deg": 0.0
+    }
+  ]
+}

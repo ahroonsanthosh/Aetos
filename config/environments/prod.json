@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "environment": "prod",
+  "description": "Placeholder. Aetos is not fit for production deployment; see config/environments/README.md and failure mode FM-001.",
+  "run_mode": "simulation",
+  "site": "fictional_test_range",
+  "sensor_registry": "simulated",
+  "enabled_sensor_keys": ["sim_radar_medium", "sim_eo_ir_narrow", "sim_rf_wide"],
+  "event_store_path": "var/prod/events.sqlite3",
+  "queues": {
+    "ingestion_capacity": 16384,
+    "tracking_capacity": 8192,
+    "broadcast_capacity": 4096,
+    "shed_high_water": 0.8,
+    "shed_resume_water": 0.55,
+    "sustained_shed_window_s": 30.0,
+    "degraded_mode_shed_fraction": 0.01
+  },
+  "risk": {
+    "hysteresis": {
+      "boundaries": [
+        { "level": "medium", "rise_score": 0.3, "fall_score": 0.2 },
+        { "level": "high", "rise_score": 0.55, "fall_score": 0.45 },
+        { "level": "critical", "rise_score": 0.8, "fall_score": 0.7 }
+      ],
+      "escalation_dwell_s": 2.0,
+      "de_escalation_dwell_s": 45.0
+    }
+  }
+}

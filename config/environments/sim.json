@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "environment": "sim",
+  "description": "Local simulation. All detections synthetic; the only environment Aetos is currently fit to run in.",
+  "run_mode": "simulation",
+  "site": "fictional_test_range",
+  "sensor_registry": "simulated",
+  "enabled_sensor_keys": null,
+  "event_store_path": "var/sim/events.sqlite3",
+  "queues": {
+    "ingestion_capacity": 4096,
+    "tracking_capacity": 2048,
+    "broadcast_capacity": 1024,
+    "shed_high_water": 0.9,
+    "shed_resume_water": 0.7,
+    "sustained_shed_window_s": 10.0,
+    "degraded_mode_shed_fraction": 0.05
+  },
+  "risk": {
+    "hysteresis": {
+      "boundaries": [
+        { "level": "medium", "rise_score": 0.35, "fall_score": 0.25 },
+        { "level": "high", "rise_score": 0.6, "fall_score": 0.5 },
+        { "level": "critical", "rise_score": 0.85, "fall_score": 0.75 }
+      ],
+      "escalation_dwell_s": 2.0,
+      "de_escalation_dwell_s": 15.0
+    }
+  }
+}
