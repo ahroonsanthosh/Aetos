@@ -29,7 +29,7 @@ Three implementations:
 `Clock` exposes both `now() -> datetime` (UTC, for timestamps in the canonical schema) and
 `monotonic() -> float` (for interval and timeout logic, which must not move backwards).
 
-A lint-level test (`tests/unit/test_no_wall_clock_calls.py`) greps the source tree and fails
+A lint-level test (`tests/unit/test_module_boundaries.py`) greps the source tree and fails
 if a forbidden direct time call appears outside `backend/common/clock.py`.
 
 ## Rationale
