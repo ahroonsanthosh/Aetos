@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "h_track_crossing",
+  "name": "H — Track crossing",
+  "description": "Two objects on perpendicular constant-velocity paths, one heading east from 2 km west and one heading north from 2 km south, both at 20 m/s. Their ground tracks intersect at the site reference point at exactly one hundred seconds. They are separated in altitude by sixty metres, so the crossing is physically possible and the projected paths still coincide.",
+  "purpose": "The acceptance test for FM-020. When two objects occupy the same position at the same moment, position alone cannot say which is which, and greedy nearest-neighbour association fails here by construction. What must keep the identities apart is velocity state and gated global assignment (ADR 0005).",
+  "expected_behaviour": [
+    "must not swap identity: the track following the eastbound object before the crossing must be the same track ID after it",
+    "must maintain two tracks throughout — they must not merge into one at the intersection and split again",
+    "association must remain gated: a detection of one object must not be assigned to the other's track",
+    "velocity estimates must survive the crossing without being corrupted by the other object's detections",
+    "must not alert on either object on range alone — this scenario tests identity, not risk"
+  ],
+  "seed": 1008,
+  "site_id": "fictional-test-site",
+  "duration_s": 200.0,
+  "objects": [
+    {
+      "object_id": "crossing-eastbound",
+      "description": "Small aircraft heading due east at 20 m/s, 100 m altitude, reaching the intersection at t=100s.",
+      "start": { "east_m": -2000.0, "north_m": 0.0, "altitude_m": 100.0 },
+      "motion": {
+        "speed_mps": 20.0,
+        "heading_deg": 90.0,
+        "max_speed_mps": 22.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "transit",
+      "appears_at_s": 0.0
+    },
+    {
+      "object_id": "crossing-northbound",
+      "description": "Small aircraft heading due north at 20 m/s, 160 m altitude, reaching the same intersection at the same moment.",
+      "start": { "east_m": 0.0, "north_m": -2000.0, "altitude_m": 160.0 },
+      "motion": {
+        "speed_mps": 20.0,
+        "heading_deg": 0.0,
+        "max_speed_mps": 22.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "transit",
+      "appears_at_s": 0.0
+    }
+  ]
+}

@@ -435,7 +435,7 @@ class SimulatedSensorAdapter(SensorAdapter):
         tracker that only ever sees one spurious return at a time is never asked the question
         scenario F exists to ask.
         """
-        rate = self._model.false_alarm_rate_hz
+        rate = self._model.false_alarm_rate_hz * self._degradation.false_alarm_rate_scale
         if rate <= 0.0:
             return []
 

@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "g_sensor_disagreement",
+  "name": "G — Sensor disagreement",
+  "description": "One object, slowly loitering to the north-east at 2.2 km and 130 m, observed simultaneously by sensors whose error geometry is opposite: the radar is precise in range and imprecise across it, the imaging sensor is precise in bearing and poor in range. Their reported positions therefore differ by tens of metres in different directions. The radio-frequency sensor is degraded to three times its normal error for the middle of the run, so a third and much weaker opinion is present as well.",
+  "purpose": "To test that reconciliation is done by weight of evidence rather than by averaging. Two sensors disagreeing about one object is the normal condition of a multi-sensor system, not a fault, and the fused answer must lie where the covariances say it should — along the radar's range and the imaging sensor's bearing — rather than halfway between two reports.",
+  "expected_behaviour": [
+    "must produce exactly one track, not one per sensor",
+    "must not oscillate the track position between the two sensors' reports",
+    "fusion must weight each report by its reported covariance, not treat the two as equally precise",
+    "the fused uncertainty must be smaller than either sensor's alone, and must not be smaller than the geometry allows",
+    "must not silently prefer one sensor because it reports more often",
+    "contributing sensors must be recorded on the track, so an operator can see the answer is a composite",
+    "the degraded radio-frequency reports must be down-weighted, not discarded outright"
+  ],
+  "seed": 1007,
+  "site_id": "fictional-test-site",
+  "duration_s": 240.0,
+  "objects": [
+    {
+      "object_id": "disagreement-1",
+      "description": "Small aircraft loitering slowly north-east of the site, inside the coverage of the radar, the imaging sensor and the radio-frequency sensor at once.",
+      "start": { "east_m": 1550.0, "north_m": 1550.0, "altitude_m": 130.0 },
+      "motion": {
+        "speed_mps": 6.0,
+        "heading_deg": 200.0,
+        "turn_rate_dps": 1.2,
+        "max_speed_mps": 10.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "loiter",
+      "appears_at_s": 0.0
+    }
+  ],
+  "sensor_availability": [
+    {
+      "sensor_id": "SIM-RF-01",
+      "state": "degraded",
+      "from_s": 60.0,
+      "to_s": 180.0,
+      "noise_scale": 3.0,
+      "reason": "Elevated background in the observed band widening the geolocation error"
+    }
+  ]
+}

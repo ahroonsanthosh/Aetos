@@ -1,0 +1,382 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "i_swarm_saturation",
+  "name": "I \u2014 Swarm and saturation",
+  "description": "Twenty objects enter on a broad arc from the south and west over the first minute, each closing on the site at between 16 and 25 m/s while turning slowly, so their paths converge and repeatedly pass near one another. Every sensor is running at its nominal false alarm rate on top of that. The swarm size is the scenario's max_objects ceiling: raising it is a deliberate edit, because saturation must be a defined state rather than one the library can wander into.",
+  "purpose": "To find the point where the system stops keeping up, and to establish that what happens there is a degraded mode rather than an outage. Unbounded queues fail this scenario by growing until the process dies, which is not a mode \u2014 it is a crash (ADR 0008, FM-014).",
+  "expected_behaviour": [
+    "must not exceed its configured queue bounds \u2014 memory must not grow without limit",
+    "every shed detection must emit a DETECTION_SHED event: nothing is dropped silently",
+    "shedding must take the newest lowest-value input first, so established confirmed tracks keep updating while new-track acquisition degrades first",
+    "sustained shedding must activate degraded mode, and that must be visible in the operator interface",
+    "must not swap identities between swarm members as their paths converge",
+    "must not collapse the swarm into a single track, and must not report a track count that contradicts the event log",
+    "operator interface must remain responsive and must not present twenty separate alerts as twenty separate problems"
+  ],
+  "seed": 1009,
+  "site_id": "fictional-test-site",
+  "duration_s": 360.0,
+  "max_objects": 20,
+  "objects": [
+    {
+      "object_id": "swarm-01",
+      "description": "Swarm member 1 of 20, entering on bearing 190 degrees at 4000 m and closing on the site.",
+      "start": {
+        "east_m": -694.6,
+        "north_m": -3939.2,
+        "altitude_m": 70.0
+      },
+      "motion": {
+        "speed_mps": 16.0,
+        "heading_deg": 10.0,
+        "turn_rate_dps": -0.4,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 0.0
+    },
+    {
+      "object_id": "swarm-02",
+      "description": "Swarm member 2 of 20, entering on bearing 198 degrees at 4080 m and closing on the site.",
+      "start": {
+        "east_m": -1289.3,
+        "north_m": -3870.9,
+        "altitude_m": 100.0
+      },
+      "motion": {
+        "speed_mps": 16.5,
+        "heading_deg": 18.4,
+        "turn_rate_dps": -0.36,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 3.0
+    },
+    {
+      "object_id": "swarm-03",
+      "description": "Swarm member 3 of 20, entering on bearing 207 degrees at 4160 m and closing on the site.",
+      "start": {
+        "east_m": -1878.4,
+        "north_m": -3711.8,
+        "altitude_m": 130.0
+      },
+      "motion": {
+        "speed_mps": 17.0,
+        "heading_deg": 26.8,
+        "turn_rate_dps": -0.32,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 6.0
+    },
+    {
+      "object_id": "swarm-04",
+      "description": "Swarm member 4 of 20, entering on bearing 215 degrees at 4240 m and closing on the site.",
+      "start": {
+        "east_m": -2447.9,
+        "north_m": -3462.0,
+        "altitude_m": 160.0
+      },
+      "motion": {
+        "speed_mps": 17.5,
+        "heading_deg": 35.3,
+        "turn_rate_dps": -0.28,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "medium_uas",
+      "behaviour": "approach",
+      "appears_at_s": 9.0
+    },
+    {
+      "object_id": "swarm-05",
+      "description": "Swarm member 5 of 20, entering on bearing 224 degrees at 4320 m and closing on the site.",
+      "start": {
+        "east_m": -2983.8,
+        "north_m": -3124.0,
+        "altitude_m": 190.0
+      },
+      "motion": {
+        "speed_mps": 18.0,
+        "heading_deg": 43.7,
+        "turn_rate_dps": -0.24,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 12.0
+    },
+    {
+      "object_id": "swarm-06",
+      "description": "Swarm member 6 of 20, entering on bearing 232 degrees at 4400 m and closing on the site.",
+      "start": {
+        "east_m": -3472.2,
+        "north_m": -2702.5,
+        "altitude_m": 70.0
+      },
+      "motion": {
+        "speed_mps": 18.5,
+        "heading_deg": 52.1,
+        "turn_rate_dps": -0.2,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 15.0
+    },
+    {
+      "object_id": "swarm-07",
+      "description": "Swarm member 7 of 20, entering on bearing 241 degrees at 4480 m and closing on the site.",
+      "start": {
+        "east_m": -3900.2,
+        "north_m": -2204.3,
+        "altitude_m": 100.0
+      },
+      "motion": {
+        "speed_mps": 19.0,
+        "heading_deg": 60.5,
+        "turn_rate_dps": -0.16,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 18.0
+    },
+    {
+      "object_id": "swarm-08",
+      "description": "Swarm member 8 of 20, entering on bearing 249 degrees at 4000 m and closing on the site.",
+      "start": {
+        "east_m": -3733.0,
+        "north_m": -1436.9,
+        "altitude_m": 130.0
+      },
+      "motion": {
+        "speed_mps": 19.5,
+        "heading_deg": 68.9,
+        "turn_rate_dps": -0.12,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 21.0
+    },
+    {
+      "object_id": "swarm-09",
+      "description": "Swarm member 9 of 20, entering on bearing 257 degrees at 4080 m and closing on the site.",
+      "start": {
+        "east_m": -3981.2,
+        "north_m": -892.2,
+        "altitude_m": 160.0
+      },
+      "motion": {
+        "speed_mps": 20.0,
+        "heading_deg": 77.4,
+        "turn_rate_dps": -0.08,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "medium_uas",
+      "behaviour": "approach",
+      "appears_at_s": 24.0
+    },
+    {
+      "object_id": "swarm-10",
+      "description": "Swarm member 10 of 20, entering on bearing 266 degrees at 4160 m and closing on the site.",
+      "start": {
+        "east_m": -4148.8,
+        "north_m": -305.4,
+        "altitude_m": 190.0
+      },
+      "motion": {
+        "speed_mps": 20.5,
+        "heading_deg": 85.8,
+        "turn_rate_dps": -0.04,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 27.0
+    },
+    {
+      "object_id": "swarm-11",
+      "description": "Swarm member 11 of 20, entering on bearing 274 degrees at 4240 m and closing on the site.",
+      "start": {
+        "east_m": -4228.6,
+        "north_m": 311.3,
+        "altitude_m": 70.0
+      },
+      "motion": {
+        "speed_mps": 21.0,
+        "heading_deg": 94.2,
+        "turn_rate_dps": 0.0,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 30.0
+    },
+    {
+      "object_id": "swarm-12",
+      "description": "Swarm member 12 of 20, entering on bearing 283 degrees at 4320 m and closing on the site.",
+      "start": {
+        "east_m": -4215.4,
+        "north_m": 944.7,
+        "altitude_m": 100.0
+      },
+      "motion": {
+        "speed_mps": 21.5,
+        "heading_deg": 102.6,
+        "turn_rate_dps": 0.04,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 33.0
+    },
+    {
+      "object_id": "swarm-13",
+      "description": "Swarm member 13 of 20, entering on bearing 291 degrees at 4400 m and closing on the site.",
+      "start": {
+        "east_m": -4106.3,
+        "north_m": 1580.6,
+        "altitude_m": 130.0
+      },
+      "motion": {
+        "speed_mps": 22.0,
+        "heading_deg": 111.1,
+        "turn_rate_dps": 0.08,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 36.0
+    },
+    {
+      "object_id": "swarm-14",
+      "description": "Swarm member 14 of 20, entering on bearing 299 degrees at 4480 m and closing on the site.",
+      "start": {
+        "east_m": -3900.2,
+        "north_m": 2204.3,
+        "altitude_m": 160.0
+      },
+      "motion": {
+        "speed_mps": 22.5,
+        "heading_deg": 119.5,
+        "turn_rate_dps": 0.12,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "medium_uas",
+      "behaviour": "approach",
+      "appears_at_s": 39.0
+    },
+    {
+      "object_id": "swarm-15",
+      "description": "Swarm member 15 of 20, entering on bearing 308 degrees at 4000 m and closing on the site.",
+      "start": {
+        "east_m": -3156.6,
+        "north_m": 2456.9,
+        "altitude_m": 190.0
+      },
+      "motion": {
+        "speed_mps": 23.0,
+        "heading_deg": 127.9,
+        "turn_rate_dps": 0.16,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 42.0
+    },
+    {
+      "object_id": "swarm-16",
+      "description": "Swarm member 16 of 20, entering on bearing 316 degrees at 4080 m and closing on the site.",
+      "start": {
+        "east_m": -2818.0,
+        "north_m": 2950.5,
+        "altitude_m": 70.0
+      },
+      "motion": {
+        "speed_mps": 23.5,
+        "heading_deg": 136.3,
+        "turn_rate_dps": 0.2,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 45.0
+    },
+    {
+      "object_id": "swarm-17",
+      "description": "Swarm member 17 of 20, entering on bearing 325 degrees at 4160 m and closing on the site.",
+      "start": {
+        "east_m": -2401.7,
+        "north_m": 3396.7,
+        "altitude_m": 100.0
+      },
+      "motion": {
+        "speed_mps": 24.0,
+        "heading_deg": 144.7,
+        "turn_rate_dps": 0.24,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 48.0
+    },
+    {
+      "object_id": "swarm-18",
+      "description": "Swarm member 18 of 20, entering on bearing 333 degrees at 4240 m and closing on the site.",
+      "start": {
+        "east_m": -1914.5,
+        "north_m": 3783.2,
+        "altitude_m": 130.0
+      },
+      "motion": {
+        "speed_mps": 24.5,
+        "heading_deg": 153.2,
+        "turn_rate_dps": 0.28,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "approach",
+      "appears_at_s": 51.0
+    },
+    {
+      "object_id": "swarm-19",
+      "description": "Swarm member 19 of 20, entering on bearing 342 degrees at 4320 m and closing on the site.",
+      "start": {
+        "east_m": -1365.1,
+        "north_m": 4098.6,
+        "altitude_m": 160.0
+      },
+      "motion": {
+        "speed_mps": 25.0,
+        "heading_deg": 161.6,
+        "turn_rate_dps": 0.32,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "medium_uas",
+      "behaviour": "approach",
+      "appears_at_s": 54.0
+    },
+    {
+      "object_id": "swarm-20",
+      "description": "Swarm member 20 of 20, entering on bearing 350 degrees at 4400 m and closing on the site.",
+      "start": {
+        "east_m": -764.1,
+        "north_m": 4333.2,
+        "altitude_m": 190.0
+      },
+      "motion": {
+        "speed_mps": 25.5,
+        "heading_deg": 170.0,
+        "turn_rate_dps": 0.36,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "approach",
+      "appears_at_s": 57.0
+    }
+  ]
+}

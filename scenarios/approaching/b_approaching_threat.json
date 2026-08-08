@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "b_approaching_threat",
+  "name": "B — Approaching threat",
+  "description": "A medium rotary-wing aircraft enters from the north-west at 7.4 km, tracking directly at the site reference point on a constant bearing, accelerating from 25 to 35 m/s and descending from 150 m to 60 m as it closes.",
+  "purpose": "The case the system exists for. Constant bearing with decreasing range is the classic signature of something coming for you rather than passing by, and the risk model has to reach a recommendation early enough that a human still has time to act on it.",
+  "expected_behaviour": [
+    "must form a confirmed track well before the object reaches the protected radius",
+    "must escalate: risk rises monotonically apart from hysteresis dwell, reaching at least HIGH before the protected zone is entered",
+    "must recommend at least ALERT before the object crosses into the restricted zone",
+    "every risk change must carry reason codes naming closing range and constant bearing",
+    "must not reach a recommendation only after the object is already overhead"
+  ],
+  "seed": 1002,
+  "site_id": "fictional-test-site",
+  "duration_s": 320.0,
+  "objects": [
+    {
+      "object_id": "inbound-1",
+      "description": "Medium rotary-wing aircraft closing on the site reference point from the north-west.",
+      "start": { "east_m": -5200.0, "north_m": 5200.0, "altitude_m": 150.0 },
+      "motion": {
+        "speed_mps": 25.0,
+        "heading_deg": 135.0,
+        "acceleration_mps2": 0.05,
+        "climb_rate_mps": -0.35,
+        "max_speed_mps": 35.0,
+        "min_altitude_m": 60.0
+      },
+      "true_classification": "medium_uas",
+      "behaviour": "approach",
+      "appears_at_s": 0.0
+    }
+  ]
+}

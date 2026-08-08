@@ -166,6 +166,7 @@ class SensorAvailabilityWindow(BaseModel):
 
     detection_probability_scale: float = Field(default=1.0, ge=0.0, le=1.0)
     noise_scale: float = Field(default=1.0, gt=0.0)
+    false_alarm_rate_scale: float = Field(default=1.0, ge=0.0)
     reason: str = Field(min_length=1, max_length=256)
     """Why the sensor is in this state, in words an operator could be shown."""
 
@@ -174,7 +175,11 @@ class SensorAvailabilityWindow(BaseModel):
         if self.to_s is not None and self.to_s <= self.from_s:
             raise ValueError(f"sensor {self.sensor_id}: to_s must be after from_s")
 
-        scales_are_nominal = self.detection_probability_scale == 1.0 and self.noise_scale == 1.0
+        scales_are_nominal = (
+            self.detection_probability_scale == 1.0
+            and self.noise_scale == 1.0
+            and self.false_alarm_rate_scale == 1.0
+        )
         if self.state is AvailabilityState.ONLINE and not scales_are_nominal:
             raise ValueError(
                 f"sensor {self.sensor_id}: an online window must leave the scales at 1.0, "
@@ -196,6 +201,7 @@ class SensorAvailabilityWindow(BaseModel):
             offline=self.state is AvailabilityState.OFFLINE,
             detection_probability_scale=self.detection_probability_scale,
             noise_scale=self.noise_scale,
+            false_alarm_rate_scale=self.false_alarm_rate_scale,
             reason=self.reason,
         )
 

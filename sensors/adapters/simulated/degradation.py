@@ -36,6 +36,12 @@ class SensorDegradation(BaseModel):
     an adapter whose noise grows while its reported uncertainty does not is understating
     uncertainty, which is the failure the adapter contract names explicitly."""
 
+    false_alarm_rate_scale: float = Field(default=1.0, ge=0.0)
+    """Applied to the model's false alarm rate. Separate from `noise_scale` because the two
+    degrade differently: weather widens a sensor's error without inventing returns, while a
+    noisy radio-frequency or acoustic environment invents returns without widening the error
+    on the real ones."""
+
     reason: str = Field(default="", max_length=256)
     """Why, in words an operator can read. Empty only for the nominal case."""
 
@@ -45,6 +51,7 @@ class SensorDegradation(BaseModel):
             not self.offline
             and self.detection_probability_scale == 1.0
             and self.noise_scale == 1.0
+            and self.false_alarm_rate_scale == 1.0
         )
 
 
