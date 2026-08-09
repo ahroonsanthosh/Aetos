@@ -18,6 +18,7 @@ import { OverviewPage } from './pages/OverviewPage'
 import { ResponseSystemsPage } from './pages/ResponseSystemsPage'
 import { SensorsPage } from './pages/SensorsPage'
 import { SystemHealthPage } from './pages/SystemHealthPage'
+import { TrackHistoryPage } from './pages/TrackHistoryPage'
 import { TracksPage } from './pages/TracksPage'
 
 export function App() {
@@ -48,6 +49,7 @@ export function App() {
           }
         />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/history" element={<TrackHistoryPage picture={picture} />} />
         <Route path="/sensors" element={<SensorsPage />} />
         <Route path="/health" element={<SystemHealthPage />} />
         <Route path="/events" element={<EventLogPage />} />

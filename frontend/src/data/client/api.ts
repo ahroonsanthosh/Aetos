@@ -16,6 +16,7 @@ import type {
   ModeView,
   ScenarioListResponse,
   SensorListResponse,
+  SituationView,
   SiteListResponse,
   SystemHealthView,
   TrackHistoryResponse,
@@ -59,6 +60,7 @@ export const api = {
   track: (id: string, signal?: AbortSignal) => get<TrackView>(`/tracks/${id}`, signal),
   trackHistory: (id: string, signal?: AbortSignal) =>
     get<TrackHistoryResponse>(`/tracks/${id}/history`, signal),
+  situation: (signal?: AbortSignal) => get<SituationView>('/situation', signal),
   alerts: (signal?: AbortSignal) => get<AlertListResponse>('/alerts', signal),
   sensors: (signal?: AbortSignal) => get<SensorListResponse>('/sensors', signal),
   sites: (signal?: AbortSignal) => get<SiteListResponse>('/sites', signal),

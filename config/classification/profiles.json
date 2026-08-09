@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Kinematic envelopes per classification label. Plausible generic bands for a demonstration system, NOT measured characteristics of any real airframe. Each band is a soft trapezoid: full membership between `typical_min` and `typical_max`, falling linearly to zero at `absolute_min`/`absolute_max`, so a value just outside the typical band is penalised rather than disqualified. `prior` is a relative base rate for airspace around a protected site, not a universal constant; it keeps a broad-envelope catch-all from out-voting a specific match on breadth alone.",
+  "profiles": [
+    {
+      "label": "small_uas",
+      "speed_mps": {
+        "absolute_min": 0.0,
+        "typical_min": 2.0,
+        "typical_max": 20.0,
+        "absolute_max": 32.0
+      },
+      "altitude_m": {
+        "absolute_min": 0.0,
+        "typical_min": 10.0,
+        "typical_max": 120.0,
+        "absolute_max": 300.0
+      },
+      "vertical_rate_mps": {
+        "absolute_min": -8.0,
+        "typical_min": -4.0,
+        "typical_max": 4.0,
+        "absolute_max": 8.0
+      },
+      "prior": 0.25
+    },
+    {
+      "label": "medium_uas",
+      "speed_mps": {
+        "absolute_min": 5.0,
+        "typical_min": 15.0,
+        "typical_max": 40.0,
+        "absolute_max": 60.0
+      },
+      "altitude_m": {
+        "absolute_min": 0.0,
+        "typical_min": 50.0,
+        "typical_max": 400.0,
+        "absolute_max": 1000.0
+      },
+      "vertical_rate_mps": {
+        "absolute_min": -12.0,
+        "typical_min": -6.0,
+        "typical_max": 6.0,
+        "absolute_max": 12.0
+      },
+      "prior": 0.15
+    },
+    {
+      "label": "large_uas",
+      "speed_mps": {
+        "absolute_min": 15.0,
+        "typical_min": 30.0,
+        "typical_max": 90.0,
+        "absolute_max": 140.0
+      },
+      "altitude_m": {
+        "absolute_min": 30.0,
+        "typical_min": 150.0,
+        "typical_max": 3000.0,
+        "absolute_max": 6000.0
+      },
+      "vertical_rate_mps": {
+        "absolute_min": -20.0,
+        "typical_min": -10.0,
+        "typical_max": 10.0,
+        "absolute_max": 20.0
+      },
+      "prior": 0.08
+    },
+    {
+      "label": "bird",
+      "speed_mps": {
+        "absolute_min": 0.0,
+        "typical_min": 3.0,
+        "typical_max": 18.0,
+        "absolute_max": 28.0
+      },
+      "altitude_m": {
+        "absolute_min": 0.0,
+        "typical_min": 5.0,
+        "typical_max": 150.0,
+        "absolute_max": 600.0
+      },
+      "vertical_rate_mps": {
+        "absolute_min": -10.0,
+        "typical_min": -5.0,
+        "typical_max": 5.0,
+        "absolute_max": 10.0
+      },
+      "prior": 0.25
+    },
+    {
+      "label": "vehicle",
+      "speed_mps": {
+        "absolute_min": 0.0,
+        "typical_min": 2.0,
+        "typical_max": 30.0,
+        "absolute_max": 55.0
+      },
+      "altitude_m": {
+        "absolute_min": -30.0,
+        "typical_min": -5.0,
+        "typical_max": 15.0,
+        "absolute_max": 40.0
+      },
+      "vertical_rate_mps": {
+        "absolute_min": -2.0,
+        "typical_min": -0.5,
+        "typical_max": 0.5,
+        "absolute_max": 2.0
+      },
+      "prior": 0.12
+    },
+    {
+      "label": "unknown_uas",
+      "speed_mps": {
+        "absolute_min": 0.0,
+        "typical_min": 2.0,
+        "typical_max": 60.0,
+        "absolute_max": 140.0
+      },
+      "altitude_m": {
+        "absolute_min": 0.0,
+        "typical_min": 10.0,
+        "typical_max": 1000.0,
+        "absolute_max": 6000.0
+      },
+      "vertical_rate_mps": {
+        "absolute_min": -20.0,
+        "typical_min": -8.0,
+        "typical_max": 8.0,
+        "absolute_max": 20.0
+      },
+      "prior": 0.15
+    }
+  ]
+}

@@ -39,9 +39,13 @@ export function TrackList({ tracks, selectedTrackId, onSelectTrack }: Props) {
             <th className="label">Alt</th>
             <th className="label">Speed</th>
             <th className="label">Hdg</th>
-            <th className="label">Conf</th>
+            <th className="label" title="Confidence the track exists at all">Conf</th>
             <th className="label">Obs</th>
-            <th className="label">Assessment</th>
+            {/* Two columns, not one. Classification is implemented and risk is not, so
+                collapsing them would let a classified track's absent risk score read as a
+                risk assessment that came back clear. */}
+            <th className="label">Class</th>
+            <th className="label">Risk</th>
           </tr>
         </thead>
         <tbody>
@@ -65,10 +69,30 @@ export function TrackList({ tracks, selectedTrackId, onSelectTrack }: Props) {
               <td className="numeric">{(track.trackConfidence * 100).toFixed(0)}%</td>
               <td className="numeric">{track.detectionCount}</td>
               <td className="track-list__assessment">
-                {track.assessment.available ? (
+                {track.assessment.classified ? (
+                  <>
+                    {track.assessment.label.replace(/_/g, ' ').toUpperCase()}
+                    <span className="track-list__confidence">
+                      {(track.assessment.labelConfidence * 100).toFixed(0)}%
+                    </span>
+                  </>
+                ) : (
+                  <span
+                    className="track-list__unassessed"
+                    title="No evidence has reached classification for this track yet"
+                  >
+                    not assessed
+                  </span>
+                )}
+              </td>
+              <td className="track-list__assessment">
+                {track.assessment.riskAssessed ? (
                   track.assessment.riskLevel.toUpperCase()
                 ) : (
-                  <span title="Classification and risk are not implemented in this build">
+                  <span
+                    className="track-list__unassessed"
+                    title="Risk assessment is not implemented in this build"
+                  >
                     not assessed
                   </span>
                 )}

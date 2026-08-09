@@ -4,12 +4,26 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { TrackView } from '../../src/data/models/api'
+import type { ThreatView, TrackHistoryPointView, TrackView } from '../../src/data/models/api'
 import { LocalFrame } from '../../src/data/models/geo'
-import { toDisplayTrack } from '../../src/data/models/track'
+import { toDisplayTrack, toHistoryPoint } from '../../src/data/models/track'
 
 const SITE = { latitude: 53.35, longitude: -6.26, altitude_m: 0 }
 const frame = new LocalFrame(SITE)
+
+function threatView(overrides: Partial<ThreatView> = {}): ThreatView {
+  return {
+    risk_score: 0,
+    risk_level: 'none',
+    confidence: 0,
+    reasons: [],
+    codes: [],
+    factors: [],
+    recommendation: 'MONITOR',
+    assessed: false,
+    ...overrides,
+  }
+}
 
 function view(overrides: Partial<TrackView> = {}): TrackView {
   return {
@@ -18,8 +32,8 @@ function view(overrides: Partial<TrackView> = {}): TrackView {
     displayable: true,
     position: { latitude: 53.36, longitude: -6.25, altitude_m: 120 },
     kinematics: { speed_mps: 20, heading_deg: 90, vertical_rate_mps: 0 },
-    classification: { label: 'unknown', confidence: 0 },
-    threat: { risk_score: 0, risk_level: 'none', reasons: [], recommendation: 'MONITOR' },
+    classification: { label: 'unknown', confidence: 0, distribution: {}, reasons: [], assessed: false },
+    threat: threatView(),
     tracking: {
       first_seen: '2026-08-08T12:00:00Z',
       last_seen: '2026-08-08T12:01:00Z',
@@ -68,17 +82,27 @@ describe('assessment availability', () => {
 
   it('becomes available as soon as the backend says anything real', () => {
     const classified = toDisplayTrack(
-      view({ classification: { label: 'small_uas', confidence: 0.8 } }),
+      view({
+        classification: {
+          label: 'small_uas',
+          confidence: 0.8,
+          distribution: { small_uas: 0.8, bird: 0.2 },
+          reasons: ['2 sensor reports, all indicating small uas.'],
+          assessed: true,
+        },
+      }),
       frame,
     )
     const scored = toDisplayTrack(
       view({
-        threat: {
+        threat: threatView({
           risk_score: 60,
           risk_level: 'medium',
-          reasons: ['approaching_protected_zone'],
+          reasons: ['Closing on the site at 24 m/s.'],
+          codes: ['closing_velocity'],
           recommendation: 'ALERT',
-        },
+          assessed: true,
+        }),
       }),
       frame,
     )
@@ -87,15 +111,64 @@ describe('assessment availability', () => {
     expect(scored.assessment.available).toBe(true)
   })
 
+  it('separates a classified track from a risk-assessed one', () => {
+    // The trap this pins: classification works, risk does not, so a classified track arrives
+    // carrying risk NONE at score zero. `available` becomes true — there is something to show
+    // — but the risk half must still report itself unassessed, or the panel says "assessed and
+    // found harmless" about something nothing has assessed.
+    const track = toDisplayTrack(
+      view({
+        classification: {
+          label: 'small_uas',
+          confidence: 0.7,
+          distribution: { small_uas: 0.7, bird: 0.3 },
+          reasons: ['3 sensor reports, all indicating small uas.'],
+          assessed: true,
+        },
+      }),
+      frame,
+    )
+
+    expect(track.assessment.available).toBe(true)
+    expect(track.assessment.classified).toBe(true)
+    expect(track.assessment.riskAssessed).toBe(false)
+  })
+
+  it('orders the distribution most-probable first and drops zero-probability labels', () => {
+    const track = toDisplayTrack(
+      view({
+        classification: {
+          label: 'bird',
+          confidence: 0.4,
+          distribution: { small_uas: 0.3, bird: 0.5, vehicle: 0, large_uas: 0.2 },
+          reasons: [],
+          assessed: true,
+        },
+      }),
+      frame,
+    )
+
+    expect(track.assessment.distribution.map((entry) => entry.label)).toEqual([
+      'bird',
+      'small_uas',
+      'large_uas',
+    ])
+  })
+
+  it('shows no distribution for a track classification has not assessed', () => {
+    expect(toDisplayTrack(view(), frame).assessment.distribution).toEqual([])
+  })
+
   it('carries reason codes through unchanged', () => {
     const track = toDisplayTrack(
       view({
-        threat: {
+        threat: threatView({
           risk_score: 81,
           risk_level: 'high',
           reasons: ['approaching_protected_zone', 'persistent_track'],
           recommendation: 'ESCALATE',
-        },
+          assessed: true,
+        }),
       }),
       frame,
     )
@@ -125,5 +198,63 @@ describe('site-relative derivation', () => {
 
     expect(track.siteRelative.altitudeM).toBe(120)
     expect(track.position.altitudeM).toBe(120)
+  })
+})
+
+describe('history point conversion', () => {
+  function historyView(overrides: Partial<TrackHistoryPointView> = {}): TrackHistoryPointView {
+    return {
+      seq: 7,
+      event_type: 'TRACK_UPDATED',
+      timestamp: '2026-08-08T12:00:30Z',
+      state: 'confirmed',
+      position: { latitude: 53.36, longitude: -6.26, altitude_m: 340 },
+      speed_mps: 18.5,
+      heading_deg: 270,
+      ...overrides,
+    }
+  }
+
+  it('keeps absolute altitude separate from the site-relative ENU height', () => {
+    // Regression: the two are different numbers (metres above the ellipsoid vs. metres above
+    // this particular site's reference altitude), and conflating them was a real bug caught
+    // before this ever reached a browser — the site here is at sea level, so the two happen
+    // to coincide, which is exactly the case that would have hidden the bug at a glance.
+    const point = toHistoryPoint(historyView(), frame)
+
+    expect(point.altitudeM).toBe(340)
+    expect(point.enu.upM).toBeCloseTo(340, 0)
+  })
+
+  it('distinguishes absolute altitude from ENU height when the site is not at sea level', () => {
+    const raisedSite = new LocalFrame({ latitude: 53.35, longitude: -6.26, altitude_m: 100 })
+    const point = toHistoryPoint(historyView({ position: { latitude: 53.36, longitude: -6.26, altitude_m: 340 } }), raisedSite)
+
+    expect(point.altitudeM).toBe(340)
+    expect(point.enu.upM).toBeCloseTo(240, 0) // 340m absolute, 100m site reference -> 240m relative
+  })
+
+  it('maps backend state through the same vocabulary as a live track', () => {
+    expect(toHistoryPoint(historyView({ state: 'stale' }), frame).state).toBe('STALE')
+    expect(toHistoryPoint(historyView({ state: 'new' }), frame).state).toBe('DETECTED')
+  })
+
+  it('carries the event type and flat kinematics fields through unchanged', () => {
+    const point = toHistoryPoint(
+      historyView({ event_type: 'TRACK_CONFIRMED', speed_mps: 31.2, heading_deg: 88 }),
+      frame,
+    )
+
+    expect(point.eventType).toBe('TRACK_CONFIRMED')
+    expect(point.speedMps).toBe(31.2)
+    expect(point.headingDeg).toBe(88)
+    expect(point.seq).toBe(7)
+  })
+
+  it('parses the timestamp into a real Date', () => {
+    const point = toHistoryPoint(historyView({ timestamp: '2026-08-08T12:00:30Z' }), frame)
+
+    expect(point.timestamp).toBeInstanceOf(Date)
+    expect(point.timestamp.toISOString()).toBe('2026-08-08T12:00:30.000Z')
   })
 })

@@ -72,12 +72,48 @@ class KinematicsView(BaseModel):
 
 
 class ClassificationView(BaseModel):
-    """Label and confidence, always reported separately (spec §9)."""
+    """What the track is believed to be, and on what basis.
+
+    Label and confidence are reported separately (spec §9), and both are *derived from*
+    `distribution` rather than asserted beside it, so the headline cannot disagree with the
+    detail behind it.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     label: str
     confidence: float
+    """How much this conclusion should be believed — not the top label's probability. Folds
+    distribution peakedness, evidence weight and track maturity, so a sharp answer built on
+    one detection reads as uncertain (ADR 0012)."""
+
+    distribution: dict[str, float] = Field(default_factory=dict)
+    """Probability across the label set. Empty means nothing has been assessed, which is
+    different from having been assessed as `unknown`."""
+
+    reasons: list[str] = Field(default_factory=list)
+    """One human-readable justification per contributing evidence source."""
+
+    assessed: bool = False
+    """Whether anything actually classified this track. Computed here so every client does
+    not re-derive the same emptiness check and eventually derive it differently."""
+
+
+class FactorView(BaseModel):
+    """One risk factor's reading, exposed so a score can be interrogated rather than trusted.
+
+    `activation` is what the factor observed; `weight` is how much policy lets that matter;
+    `contribution` is what it actually did to the combined score. All three, because a client
+    showing only the last cannot explain why a heavily-weighted factor contributed little.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: str
+    weight: float
+    activation: float
+    contribution: float
+    detail: str
 
 
 class ThreatView(BaseModel):
@@ -94,8 +130,30 @@ class ThreatView(BaseModel):
 
     risk_score: int
     risk_level: str
+
+    confidence: float
+    """How much the assessment should be believed. Separate from the score and never folded
+    into it: a thinly-supported track on alarming geometry is exactly the case an operator
+    needs to see, and multiplying the two would quietly suppress it (ADR 0013)."""
+
     reasons: list[str]
+    """Human-readable, most influential first — ordered by how much each factor actually moved
+    the score, not by its configured weight."""
+
+    codes: list[str]
+    """The machine-readable equivalent of `reasons`, same order. What a client should filter
+    or alert on; the prose is for the operator."""
+
+    factors: list[FactorView]
+    """Every factor consulted, including the ones that found nothing. Keeping the silent ones
+    is what lets an operator see a concern was *checked* rather than merely absent."""
+
     recommendation: str
+
+    assessed: bool
+    """Whether risk assessment ran. A zero score from a module that ran means "nothing here is
+    concerning"; from one that did not it means nothing at all, and the interface must never
+    show them the same way (ADR 0011)."""
 
 
 class TrackingView(BaseModel):
@@ -159,12 +217,31 @@ class TrackView(BaseModel):
             classification=ClassificationView(
                 label=str(track.classification.label),
                 confidence=track.classification.confidence,
+                distribution={
+                    str(label): probability
+                    for label, probability in track.classification.distribution.items()
+                },
+                reasons=list(track.classification.reasons),
+                assessed=track.classification.assessed,
             ),
             threat=ThreatView(
                 risk_score=track.threat.risk_score,
                 risk_level=str(track.threat.risk_level),
+                confidence=track.threat.confidence,
                 reasons=list(track.threat.reasons),
+                codes=list(track.threat.codes),
+                factors=[
+                    FactorView(
+                        code=factor.code,
+                        weight=factor.weight,
+                        activation=factor.activation,
+                        contribution=factor.contribution,
+                        detail=factor.detail,
+                    )
+                    for factor in track.threat.factors
+                ],
                 recommendation=str(track.threat.recommendation),
+                assessed=track.threat.assessed,
             ),
             tracking=TrackingView(
                 first_seen=track.tracking.first_seen,
@@ -518,3 +595,39 @@ class StreamedEvent(BaseModel):
             track=track,
             detail={k: v for k, v in event.payload.items() if k != TRACK_SNAPSHOT_KEY},
         )
+
+
+class SituationFindingView(BaseModel):
+    """One cycle-level finding, with the tracks it is about."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: str
+    level: str
+    detail: str
+    track_ids: list[str]
+
+
+class SituationView(BaseModel):
+    """What several tracks mean together — a property of the picture, not of any one track.
+
+    Served from its own endpoint rather than folded into the track list, because the track list
+    can be filtered and paginated and this is an assessment of *all* of them. Deriving it from a
+    partial response would silently answer a different question.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    level: str
+    findings: list[SituationFindingView]
+
+    track_count: int
+    object_count: int
+    """How many distinct objects those tracks are likely to be. Reported alongside the track
+    count rather than instead of it: the gap between the two is FM-023 made visible, and an
+    operator seeing "7 tracks, likely 3 objects" knows not to read the display as seven
+    aircraft."""
+
+    assessed: bool
+    """False when nothing is running the correlation pass. Distinct from an assessed picture
+    with no findings, which is a real statement that nothing concerning was found."""

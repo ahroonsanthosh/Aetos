@@ -68,6 +68,22 @@
 .track-list__state--lost      { color: var(--text-disabled); }
 
 .track-list__assessment {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-primary);
+}
+
+/* Unassessed reads as absence, not as a finding: muted and italic, visibly a different kind
+   of statement from the labels beside it. */
+.track-list__unassessed {
+  font-family: var(--font-sans);
+  letter-spacing: normal;
   color: var(--text-disabled);
   font-style: italic;
+}
+
+.track-list__confidence {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
 }

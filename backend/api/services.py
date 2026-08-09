@@ -15,6 +15,7 @@ lines and two apps can coexist in one process without discovering each other.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from backend.api.identity import IdentityProvider
 from backend.common.clock import Clock
@@ -28,6 +29,7 @@ from backend.database.repositories import (
     TrackRepository,
 )
 from backend.events.store import EventStore
+from backend.risk.correlation import SituationAssessment
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,15 @@ class ApiServices:
     projection: TrackProjection
     identity: IdentityProvider
 
+    situation: SituationSource | None = None
+    """Where `GET /situation` reads the cycle-level finding from.
+
+    Optional, and absent in the tests that construct an API over a bare projection. A missing
+    source is reported as *not assessed* rather than as an empty finding — "nothing is running
+    the correlation pass" and "the pass ran and found nothing" are different statements, and
+    the interface must not show them the same way (ADR 0011).
+    """
+
     run_mode: RunMode = RunMode.SIMULATION
     """Which run mode this deployment is configured for.
 
@@ -69,3 +80,14 @@ class ApiServices:
         implementation instead of every caller that assumed the answer.
         """
         return 0
+
+
+class SituationSource(Protocol):
+    """Anything that can report the latest cycle-level assessment — in practice `RiskService`.
+
+    A protocol rather than the class, so the API depends on a capability instead of on the risk
+    module's internals.
+    """
+
+    @property
+    def situation(self) -> SituationAssessment: ...

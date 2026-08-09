@@ -12,6 +12,7 @@ Everything that crosses the boundary to the backend, and the types on either sid
 | `client/api.ts` | REST client. Fetches, checks status, parses. Does not reshape or cache |
 | `client/stream.ts` | Resuming WebSocket client with its own reconnection policy |
 | `client/useTrackPicture.ts` | The live picture: REST snapshot kept current by the stream |
+| `client/useTrackHistory.ts` | One track's recorded history, fetched only while selected |
 
 ## Interface boundary
 

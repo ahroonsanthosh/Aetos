@@ -141,6 +141,44 @@ class TrackClassification(BaseModel):
     label: ClassificationLabel = ClassificationLabel.UNKNOWN
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    distribution: dict[ClassificationLabel, float] = Field(default_factory=dict)
+    """Probability across the label set. Empty when nothing has been assessed.
+
+    `label` and `confidence` are derived from this rather than asserted beside it, so the
+    headline can never disagree with the detail. A single label discards exactly what an
+    operator needs when the system is unsure: `small_uas 0.55 / bird 0.40` and
+    `small_uas 0.55 / medium_uas 0.40` have the same top-1 answer and very different
+    operational meaning (ADR 0012)."""
+
+    reasons: list[str] = Field(default_factory=list)
+    """Human-readable justification, one per contributing evidence source. Carried for the
+    same reason risk scores carry reason codes: a judgement an operator cannot interrogate is
+    one they have to take on trust."""
+
+    @property
+    def assessed(self) -> bool:
+        """Whether anything actually classified this track, as opposed to it holding the
+        default. Distinguishes 'assessed as unknown' from 'never assessed'."""
+        return bool(self.distribution)
+
+
+class ThreatFactor(BaseModel):
+    """One risk factor's reading, as published on a track.
+
+    Declared here rather than in `backend/risk` for the same reason `TrackClassification` is:
+    this is the *published* shape that rides in every track snapshot, and defining it in the
+    producing module would make tracking depend on risk. The dependency has to point the other
+    way — risk builds these, tracking only carries them.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: str
+    weight: float = Field(ge=0.0, le=1.0)
+    activation: float = Field(ge=0.0, le=1.0)
+    contribution: float = Field(default=0.0, ge=0.0, le=1.0)
+    detail: str
+
 
 class TrackThreat(BaseModel):
     """Risk assessment for this track.
@@ -153,9 +191,37 @@ class TrackThreat(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     risk_score: int = Field(default=0, ge=0, le=100)
+    """Raw and unsmoothed, as computed this cycle. Hysteresis applies to the level only, so
+    the number never disagrees with the reasons attached to it (ADR 0007)."""
+
     risk_level: RiskLevel = RiskLevel.NONE
+
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    """How much the assessment should be believed — from track support, freshness, coasting
+    and whether classification has run. Deliberately never multiplied into the score: doing so
+    would produce a number that is neither, and would quietly suppress the thin-evidence but
+    alarming-geometry case that most needs an operator's eyes (ADR 0013)."""
+
     reasons: list[str] = Field(default_factory=list)
+    """Human-readable, ordered by how much each factor actually moved the score."""
+
+    codes: list[str] = Field(default_factory=list)
+    """The machine-readable equivalent of `reasons`, in the same order. Safe to alert on and
+    filter by across versions in a way a prose sentence is not."""
+
+    factors: list[ThreatFactor] = Field(default_factory=list)
+    """Every factor consulted, including those that found nothing. A score an operator cannot
+    take apart is one they have to take on trust, and keeping the silent factors is what shows
+    a concern was *checked* rather than merely absent."""
+
     recommendation: Recommendation = Recommendation.MONITOR
+
+    assessed: bool = False
+    """Whether risk assessment actually ran against this track.
+
+    A score of zero from a module that ran means "we looked, and nothing here is concerning".
+    A score of zero from one that did not means nothing at all. Those must never render the
+    same way (ADR 0011)."""
 
 
 class TrackMetadata(BaseModel):

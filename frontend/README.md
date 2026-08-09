@@ -97,4 +97,12 @@ dependency and renders identically offline.
 - **Sensor runtime status is not shown** — connected/silent, update rate, last packet age all
   need the system health watchdog, which is not built. Placement is shown; status is not
   invented.
+- **The predicted path is a straight line**, current speed and heading held constant, nothing
+  more. The backend has real positional uncertainty internally but does not expose it over
+  the API, so no confidence cone is drawn — an invented one would claim a calibration that
+  does not exist. See `components/map/PredictedPath.tsx`.
+- **A track that has left the live picture can be looked up on the Track History page, but
+  not discovered there.** History is retained permanently and reachable by ID, but no
+  endpoint enumerates every ID the system has ever created — so a LOST track needs to be
+  looked up by an ID already known (from the Event Log, for instance), not found by browsing.
 - **There is no authentication.** The operator identity is asserted, not verified (FM-001).
