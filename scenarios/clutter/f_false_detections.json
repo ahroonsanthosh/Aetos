@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "f_false_detections",
+  "name": "F — False detections and clutter",
+  "description": "One genuine aircraft transits the area while the acoustic array and the radar both run in a heavily cluttered environment — six times and four times their nominal false alarm rate respectively — for the middle three minutes of the run. The spurious returns are indistinguishable in shape from real ones: same uncertainty, same confidence distribution, same optional fields.",
+  "purpose": "To find out what the system does with data that looks real and is not. The failure to catch here is not missing the real object; it is promoting clutter to confirmed tracks and burying the operator in alerts, which trains them to stop reading the display.",
+  "expected_behaviour": [
+    "must hold one confirmed track on the genuine object throughout",
+    "must not promote isolated spurious returns beyond TENTATIVE — clutter does not persist in one place across updates",
+    "must not raise an alert for any spurious track",
+    "must not filter clutter by anything only the simulator knows: a spurious return carries no marker and none may be inferred",
+    "detection-to-track association must remain stable while clutter density is high"
+  ],
+  "seed": 1006,
+  "site_id": "fictional-test-site",
+  "duration_s": 300.0,
+  "objects": [
+    {
+      "object_id": "clutter-real-1",
+      "description": "The one genuine object in the scenario: a small aircraft transiting north-east to south-west.",
+      "start": { "east_m": 3000.0, "north_m": 3000.0, "altitude_m": 110.0 },
+      "motion": {
+        "speed_mps": 20.0,
+        "heading_deg": 225.0,
+        "max_speed_mps": 25.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "transit",
+      "appears_at_s": 0.0
+    }
+  ],
+  "sensor_availability": [
+    {
+      "sensor_id": "SIM-ACOUSTIC-01",
+      "state": "degraded",
+      "from_s": 60.0,
+      "to_s": 240.0,
+      "false_alarm_rate_scale": 6.0,
+      "reason": "Sustained environmental noise raising the spurious return rate"
+    },
+    {
+      "sensor_id": "SIM-RADAR-01",
+      "state": "degraded",
+      "from_s": 60.0,
+      "to_s": 240.0,
+      "false_alarm_rate_scale": 4.0,
+      "reason": "Ground clutter and weather returns across the sector"
+    }
+  ]
+}

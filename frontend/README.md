@@ -1,0 +1,100 @@
+# Aetos — operator interface
+
+The frontend for the Aetos Counter-UAS platform. It visualises and interacts with the
+backend's output; it does not reimplement tracking, fusion, classification or risk.
+
+## Running it
+
+The interface needs a backend to talk to. From the repository root:
+
+```bash
+# Terminal 1 — backend, driving a scenario so there is something to see
+python -m backend.main --scenario b_approaching_threat
+
+# Terminal 2 — interface
+cd frontend && npm install && npm run dev
+```
+
+Then open http://localhost:5173. The dev server proxies `/api` to `http://127.0.0.1:8000`;
+set `AETOS_BACKEND` to point elsewhere.
+
+Available scenarios are the nine in `scenarios/` — `a_benign_transit`,
+`b_approaching_threat`, `c_ambiguous_intermittent`, `d_multiple_simultaneous`,
+`e_sensor_degradation`, `f_false_detections`, `g_sensor_disagreement`, `h_track_crossing`,
+`i_swarm_saturation`.
+
+```bash
+npm run build      # typecheck and bundle
+npm run typecheck  # types only
+npm test           # unit tests
+```
+
+## The rules this interface is built on
+
+**It renders only what the backend actually knows** ([ADR 0011](../docs/adr/0011-frontend-honest-rendering.md)).
+A missing field is an em dash, never an interpolated value. An unbuilt subsystem says
+`NOT BUILT` rather than showing green. An empty alert feed says alerting is not implemented
+rather than reading as "all clear". This is not caution for its own sake: the whole output of
+this system is a judgement an operator is asked to trust, and an interface that fabricates
+plausible values to look finished teaches them to believe a display that sometimes lies.
+
+**It owns no authoritative state.** The picture it holds is a cache of backend state. Nothing
+here computes a track, decides a track's state, or infers a value the backend did not send.
+Where the two disagree, the backend is right by definition.
+
+**Simulated data is never presentable as real.** The mode indicator reads `GET /system/mode`,
+where `simulated` is computed from whether a real adapter is actually feeding the pipeline —
+not from a config string, and never from a frontend constant.
+
+**Aetos assessment and human decision are always separate elements.** They are never merged
+into one card, even when there is no assessment to show. Aetos produces advice; the operator
+is the authority.
+
+**Nothing here acts on the physical world.** The Response Systems page is architecture and
+interface only, permanently `NOT CONNECTED`. See [`response/README.md`](../response/README.md).
+
+## How live data arrives
+
+```
+GET /tracks          →  snapshot + as_of_seq
+WS  /stream?from_seq=as_of_seq+1  →  every subsequent event, in order
+```
+
+Sequence numbers rather than timestamps make the handover exact: `seq` is a total order
+assigned by a single writer, so there is no gap and no duplicate at the boundary, and a
+reconnecting client resumes at one past the highest sequence it applied. Sensor clocks can
+disagree; the sequence cannot.
+
+Every event that changes a track carries the full resulting track, so the client replaces
+state rather than patching it — patching would mean reimplementing the backend's logic on the
+client and drifting from it.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/app/` | Shell routing and pages |
+| `src/components/map/` | PPI display: rings, zones, sensors, track markers |
+| `src/components/tracks/` | Track list and detail |
+| `src/components/assessment/` | Assessment, and the operator-decision separation |
+| `src/components/shell/` | Top bar, sidebar |
+| `src/data/models/` | Wire types (`api.ts`), presentation types (`track.ts`), geodesy |
+| `src/data/client/` | REST client, event stream, live picture hook |
+| `src/styles/` | Design tokens — see [design_tokens.md](docs/design_tokens.md) |
+
+The operational map is a site-centred plan position indicator rather than a geographic
+basemap ([ADR 0010](../docs/adr/0010-radar-ppi-display.md)). It has no external tile
+dependency and renders identically offline.
+
+## Known limitations
+
+- **Classification, risk and alerts are not implemented in the backend**, so those panels show
+  their not-implemented state. The components are written against the finished contract and
+  will populate without redesign.
+- **One object can appear as several tracks** when multiple sensors observe it, because the
+  fusion module is not built. See `docs/failure_modes.md` FM-023. The interface deliberately
+  does not hide this.
+- **Sensor runtime status is not shown** — connected/silent, update rate, last packet age all
+  need the system health watchdog, which is not built. Placement is shown; status is not
+  invented.
+- **There is no authentication.** The operator identity is asserted, not verified (FM-001).

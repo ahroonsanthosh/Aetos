@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "registry_key": "sim_acoustic_short",
+  "sensor_type": "simulated_acoustic",
+  "description": "Generic short-range simulated acoustic array. Bearing is usable, range is barely estimated, and the false alarm rate is high because the environment is noisy. Classifies poorly and mostly coarsely. Simulation parameters only.",
+  "coverage": {
+    "max_range_m": 900.0,
+    "min_range_m": 10.0,
+    "azimuth_extent_deg": 360.0,
+    "elevation_min_deg": -10.0,
+    "elevation_max_deg": 70.0
+  },
+  "update_rate_hz": 2.0,
+  "uncertainty": {
+    "range_sigma_m": 90.0,
+    "cross_range_sigma_m": 15.0,
+    "cross_range_sigma_mrad": 60.0,
+    "vertical_sigma_m": 120.0
+  },
+  "confidence": {
+    "near_range": 0.72,
+    "far_range": 0.35,
+    "jitter_sigma": 0.07,
+    "false_alarm_scale": 0.75
+  },
+  "probability_of_detection": 0.55,
+  "false_alarm_rate_hz": 0.4,
+  "radial_velocity": {
+    "reported": false,
+    "sigma_mps": 0.0
+  },
+  "classification": {
+    "correct_probability": 0.4,
+    "confusable_with": ["unknown_uas", "unknown", "bird"],
+    "confidence_when_correct": 0.55,
+    "confidence_when_confused": 0.3
+  }
+}

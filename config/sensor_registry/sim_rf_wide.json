@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "registry_key": "sim_rf_wide",
+  "sensor_type": "simulated_rf",
+  "description": "Generic wide-area simulated radio-frequency sensor. Long reach and full azimuthal coverage but coarse geolocation in every axis, and a low probability of detection because it only observes objects that emit. Simulation parameters only.",
+  "coverage": {
+    "max_range_m": 12000.0,
+    "min_range_m": 0.0,
+    "azimuth_extent_deg": 360.0,
+    "elevation_min_deg": -20.0,
+    "elevation_max_deg": 80.0
+  },
+  "update_rate_hz": 1.0,
+  "uncertainty": {
+    "range_sigma_m": 400.0,
+    "cross_range_sigma_m": 60.0,
+    "cross_range_sigma_mrad": 30.0,
+    "vertical_sigma_m": 300.0
+  },
+  "confidence": {
+    "near_range": 0.8,
+    "far_range": 0.45,
+    "jitter_sigma": 0.06,
+    "false_alarm_scale": 0.65
+  },
+  "probability_of_detection": 0.6,
+  "false_alarm_rate_hz": 0.1,
+  "radial_velocity": {
+    "reported": false,
+    "sigma_mps": 0.0
+  },
+  "classification": {
+    "correct_probability": 0.65,
+    "confusable_with": ["unknown_uas", "unknown", "other"],
+    "confidence_when_correct": 0.7,
+    "confidence_when_confused": 0.35
+  }
+}
