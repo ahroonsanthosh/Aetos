@@ -37,18 +37,37 @@ export function RangeRings({ rangeM }: Props) {
         />
       ))}
 
+      {/* Bearing marks are ticks that cross each ring, not full-length radials from the
+          centre.
+
+          A radial spoke and an inbound track's trail are the same shape — a long straight
+          line pointing at the site — and an object approaching on a bearing near one of
+          these (an aircraft at 314° against the 315° spoke) laid the two almost on top of
+          each other, converging at the centre into a long thin wedge that read as a drawn
+          feature of the track. Decoration must never be mistakable for data.
+
+          Ticks give the same bearing reference where it is actually used — against a ring,
+          where range and bearing are read together — and cannot be confused with a path. */}
       {SPOKE_BEARINGS.map((bearing) => {
         const radians = (bearing * Math.PI) / 180
+        const dx = Math.sin(radians)
+        const dy = Math.cos(radians)
+        const half = rangeM / 90
+
         return (
-          <line
-            key={bearing}
-            x1={0}
-            y1={0}
-            x2={Math.sin(radians) * rangeM}
-            y2={Math.cos(radians) * rangeM}
-            stroke="var(--grid-line)"
-            strokeWidth={rangeM / 1200}
-          />
+          <g key={bearing}>
+            {rings.map((radius) => (
+              <line
+                key={radius}
+                x1={dx * (radius - half)}
+                y1={dy * (radius - half)}
+                x2={dx * (radius + half)}
+                y2={dy * (radius + half)}
+                stroke="var(--grid-line)"
+                strokeWidth={rangeM / 1000}
+              />
+            ))}
+          </g>
         )
       })}
 
