@@ -152,6 +152,31 @@ H tests against.
 does not hide or de-duplicate the tracks, because suppressing them in the display would
 conceal a real limitation of the current build.
 
+### FM-026 — Risk cannot see relationships between tracks
+**Status:** Open — needs a cycle-level assessment pass · **Severity:** Medium
+
+Every risk factor assesses one track in isolation. Several contacts converging on the asset
+from different bearings at the same time is a recognised and important pattern, and the engine
+scores each of them exactly as it would score one arriving alone.
+
+**Cause.** `RiskEngine.assess` takes a single `TrackRisk` by design — the narrow input is what
+stops a factor quietly depending on the previous risk level, which is how a score becomes
+self-reinforcing. Correlated approach needs the opposite: a view of every track at once.
+
+**Consequence.** A coordinated approach reads as several independent medium-risk contacts
+rather than one high-risk situation. Compounded by FM-023, which already turns one object into
+several tracks — so "several tracks converging" is currently ambiguous between a real swarm and
+a fusion artefact, and inferring intent from it before fusion exists would generate confident
+nonsense.
+
+**Intended handling:** a cycle-level pass after per-track scoring, taking the assessed tracks
+and raising a separate finding rather than mutating individual scores. It has to run after
+fusion for the reason above.
+
+**Not a workaround candidate:** counting nearby tracks inside a per-track factor. That would
+make each track's score depend on how many other tracks exist, which is exactly the
+self-reinforcing coupling the narrow input exists to prevent.
+
 ### FM-025 — Classification was overwritten by the next tracking update
 **Status:** Closed · **Severity:** High while open — the interface stated the opposite of what the system had concluded
 

@@ -108,8 +108,8 @@ makes backend restart recoverable.
 | `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
 | `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
-| `backend/risk` | Score + reason codes + hysteresis | Recommend an action |
-| `backend/decision` | Recommendation category | Execute anything, ever |
+| `backend/risk` | Score + confidence + reason codes + hysteresis | Recommend an action, or hold track state |
+| `backend/decision` | Recommendation category | Score risk, or execute anything, ever |
 | `backend/system_health` | Watchdog, degraded mode, self-test | Suppress alerts |
 | `backend/api` | REST + WebSocket | Hold authoritative state |
 | `frontend` | Display and operator input | Be the source of truth for anything |
@@ -148,7 +148,7 @@ Per spec §20. Status updated as stages complete.
 | 4 | Map: tracks → visualisation (vertical slice complete) | **done** |
 | 5 | Track history | **done** — projected, served, and shown on the map and history page |
 | 6 | Classification | **done** — weighted evidence pooling, distribution output, reason codes (ADR 0012) |
-| 7 | Risk scoring with reason codes | not started |
+| 7 | Risk scoring with reason codes | **done** — nine factors, grouped combination, hysteresis, reason codes (ADR 0013) |
 | 8 | Alerts | not started |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
@@ -156,15 +156,21 @@ Per spec §20. Status updated as stages complete.
 | 12 | Chaos hardening, degraded-mode UI states | not started |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
-through ingestion into tracking, classification assesses each track from pooled evidence,
-everything is recorded in the event log and projected into the database, and the API serves
-it to an interface that draws it. What is missing between here and a usable operator system
-is risk scoring, alerting, and fusion.
+through ingestion into tracking, classification assesses each track from pooled evidence, risk
+scores it from nine factors and hysteresis turns that into a level, decision turns the level
+into a recommendation for a human, everything is recorded in the event log and projected into
+the database, and the API serves it to an interface that draws it. What is missing between
+here and a usable operator system is alerting and fusion.
 
-Classification is the newest stage and the one that changed the pipeline's shape: it produces
-a value but does not own it. The tracker holds every track's classification and carries it in
-the snapshot on every track event, so the log rebuilds into the same state the live system
-holds. See `backend/classification/README.md` for why that inversion exists.
+Two of those stages produce values they do not own. Classification and risk each write their
+result back through the tracker, which holds it and carries it in the snapshot on every track
+event, so the log rebuilds into the same state the live system holds. That inversion exists
+because the alternative silently failed — see FM-025 and `backend/classification/README.md`.
+
+Risk is the most recently built and the one worth reading the reasoning for before changing:
+it combines its factors by three different rules depending on what kind of statement each one
+is, and the single-rule version it replaced was wrong in two directions at once
+(`backend/risk/README.md`, ADR 0013).
 
 ### Verified, as against built
 
@@ -186,3 +192,7 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0007](adr/0007-risk-hysteresis.md) | Risk hysteresis: dual thresholds plus minimum dwell |
 | [0008](adr/0008-determinism-backpressure-auth.md) | Determinism, backpressure, authentication |
 | [0009](adr/0009-repository-structure-deviations.md) | Repository structure deviations |
+| [0010](adr/0010-radar-ppi-display.md) | Operator map is a site-centred PPI, not a geographic basemap |
+| [0011](adr/0011-frontend-honest-rendering.md) | The interface renders only what the backend actually knows |
+| [0012](adr/0012-classification-by-weighted-evidence.md) | Classification by weighted evidence; what provenance means |
+| [0013](adr/0013-risk-by-escalating-factors.md) | Risk as combined escalating factors, discounted only by evidence of harmlessness |
