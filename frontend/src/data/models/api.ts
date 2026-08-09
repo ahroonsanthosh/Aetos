@@ -51,7 +51,18 @@ export interface KinematicsView {
 
 export interface ClassificationView {
   label: ClassificationLabel
+  /** How much this conclusion should be believed — deliberately *not* the top label's
+   *  probability. Folds distribution peakedness, evidence weight and track maturity, so a
+   *  sharp answer built on one detection reads as uncertain (ADR 0012). */
   confidence: number
+  /** Probability across the label set. Empty means nothing has been assessed, which is
+   *  different from having been assessed as `unknown`. */
+  distribution: Partial<Record<ClassificationLabel, number>>
+  /** One human-readable justification per contributing evidence source. */
+  reasons: string[]
+  /** Computed server-side so every client does not re-derive the same emptiness check and
+   *  eventually derive it differently. */
+  assessed: boolean
 }
 
 export interface ThreatView {

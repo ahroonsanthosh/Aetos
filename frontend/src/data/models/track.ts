@@ -13,9 +13,10 @@
  * a state the system cannot enter has no business appearing in an interface that an operator
  * is meant to read as a description of reality.
  *
- * **Assessment availability.** Classification and risk are not implemented in the backend
- * (ADR 0011). Rather than let components each decide what an unassessed track looks like,
- * the conversion marks assessment as unavailable and every consumer renders that one way.
+ * **Assessment availability.** Classification is implemented and reports its own `assessed`
+ * flag; risk is not, so its half is still inferred structurally. Rather than let components
+ * each decide what an unassessed track looks like, the conversion resolves both into one
+ * flag and every consumer renders that one way (ADR 0011).
  */
 
 import type {
@@ -55,16 +56,28 @@ const STATE_DESCRIPTIONS: Record<TrackDisplayState, string> = {
 
 export interface TrackAssessment {
   /**
-   * Whether the backend has actually assessed this track.
+   * Whether the backend has concluded anything at all about this track — either half.
    *
-   * False throughout this build: the classification and risk modules are not implemented, so
-   * every track arrives with the default label and a zero score. Rendering that default as
-   * though it were a finding would present an unassessed track as assessed-and-benign, which
-   * is the more dangerous of the two mistakes.
+   * A track can be classified without being risk-scored, so this is the weaker "there is
+   * something to show" test, and `classified` / `riskAssessed` below say which half. Rendering
+   * a track's *defaults* as though they were findings would present an unassessed track as
+   * assessed-and-benign, which is the more dangerous of the two mistakes.
    */
   readonly available: boolean
   readonly label: ClassificationLabel
   readonly labelConfidence: number
+  /** Probability across the label set, ordered most-probable first for display. Empty when
+   *  classification has not assessed this track. */
+  readonly distribution: ReadonlyArray<{ label: ClassificationLabel; probability: number }>
+  /** Why classification concluded what it did — one entry per contributing evidence source. */
+  readonly classificationReasons: readonly string[]
+  /** Whether classification specifically has assessed this track, as reported by the backend
+   *  rather than inferred from the shape of the data. */
+  readonly classified: boolean
+  /** Whether risk assessment has actually run. False throughout this build — the module is
+   *  not implemented — and distinguishing it from a genuine zero matters: "not assessed" and
+   *  "assessed as no risk" must never look the same. */
+  readonly riskAssessed: boolean
   readonly riskScore: number
   readonly riskLevel: RiskLevel
   readonly reasons: readonly string[]
@@ -138,22 +151,36 @@ export function toDisplayTrack(view: TrackView, frame: LocalFrame): DisplayTrack
 /**
  * Decide whether the backend has said anything about this track beyond where it is.
  *
- * The test is deliberately structural rather than a build-time flag: an unknown label at zero
- * confidence with no reason codes is precisely what an unassessed track looks like, and it is
- * also what the assessment modules will stop producing the moment they exist. So this starts
- * reporting `available: true` on its own, without a code change, as soon as there is
- * something real to report.
+ * Classification reports its own `assessed` flag, so that half is taken from the backend
+ * rather than inferred here — the backend is the authority on whether it assessed something,
+ * and a client re-deriving it would eventually derive it differently.
+ *
+ * Risk has no such flag yet because the module does not exist, so it keeps the structural
+ * test: a zero score with no reason codes is precisely what an unassessed track looks like,
+ * and is also what the risk module will stop producing the moment it exists. That half
+ * therefore starts reporting true on its own, without a code change.
  */
 function toAssessment(view: TrackView): TrackAssessment {
   const { classification, threat } = view
 
-  const classified = classification.label !== 'unknown' || classification.confidence > 0
-  const assessed = threat.risk_score > 0 || threat.reasons.length > 0
+  const riskAssessed = threat.risk_score > 0 || threat.reasons.length > 0
+
+  const distribution = Object.entries(classification.distribution ?? {})
+    .map(([label, probability]) => ({
+      label: label as ClassificationLabel,
+      probability: probability ?? 0,
+    }))
+    .filter((entry) => entry.probability > 0)
+    .sort((a, b) => b.probability - a.probability)
 
   return {
-    available: classified || assessed,
+    available: classification.assessed || riskAssessed,
     label: classification.label,
     labelConfidence: classification.confidence,
+    distribution,
+    classificationReasons: classification.reasons ?? [],
+    classified: classification.assessed,
+    riskAssessed,
     riskScore: threat.risk_score,
     riskLevel: threat.risk_level,
     reasons: threat.reasons,
@@ -166,7 +193,10 @@ export function trackColourToken(track: DisplayTrack, selected: boolean): string
   if (selected) return 'var(--track-selected)'
   if (track.state === 'LOST') return 'var(--track-lost)'
   if (track.state === 'STALE') return 'var(--track-stale)'
-  if (track.assessment.available) {
+  // Keyed on `riskAssessed`, not `available`: a classified track carries a default risk level
+  // of `none`, and colouring from it would paint an unassessed track in a "checked, benign"
+  // colour. Every track therefore stays neutral until risk actually runs, which is correct.
+  if (track.assessment.riskAssessed) {
     switch (track.assessment.riskLevel) {
       case 'critical':
       case 'high':

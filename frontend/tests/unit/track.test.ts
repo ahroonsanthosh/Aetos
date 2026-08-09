@@ -18,7 +18,7 @@ function view(overrides: Partial<TrackView> = {}): TrackView {
     displayable: true,
     position: { latitude: 53.36, longitude: -6.25, altitude_m: 120 },
     kinematics: { speed_mps: 20, heading_deg: 90, vertical_rate_mps: 0 },
-    classification: { label: 'unknown', confidence: 0 },
+    classification: { label: 'unknown', confidence: 0, distribution: {}, reasons: [], assessed: false },
     threat: { risk_score: 0, risk_level: 'none', reasons: [], recommendation: 'MONITOR' },
     tracking: {
       first_seen: '2026-08-08T12:00:00Z',
@@ -68,7 +68,15 @@ describe('assessment availability', () => {
 
   it('becomes available as soon as the backend says anything real', () => {
     const classified = toDisplayTrack(
-      view({ classification: { label: 'small_uas', confidence: 0.8 } }),
+      view({
+        classification: {
+          label: 'small_uas',
+          confidence: 0.8,
+          distribution: { small_uas: 0.8, bird: 0.2 },
+          reasons: ['2 sensor reports, all indicating small uas.'],
+          assessed: true,
+        },
+      }),
       frame,
     )
     const scored = toDisplayTrack(
@@ -85,6 +93,54 @@ describe('assessment availability', () => {
 
     expect(classified.assessment.available).toBe(true)
     expect(scored.assessment.available).toBe(true)
+  })
+
+  it('separates a classified track from a risk-assessed one', () => {
+    // The trap this pins: classification works, risk does not, so a classified track arrives
+    // carrying risk NONE at score zero. `available` becomes true — there is something to show
+    // — but the risk half must still report itself unassessed, or the panel says "assessed and
+    // found harmless" about something nothing has assessed.
+    const track = toDisplayTrack(
+      view({
+        classification: {
+          label: 'small_uas',
+          confidence: 0.7,
+          distribution: { small_uas: 0.7, bird: 0.3 },
+          reasons: ['3 sensor reports, all indicating small uas.'],
+          assessed: true,
+        },
+      }),
+      frame,
+    )
+
+    expect(track.assessment.available).toBe(true)
+    expect(track.assessment.classified).toBe(true)
+    expect(track.assessment.riskAssessed).toBe(false)
+  })
+
+  it('orders the distribution most-probable first and drops zero-probability labels', () => {
+    const track = toDisplayTrack(
+      view({
+        classification: {
+          label: 'bird',
+          confidence: 0.4,
+          distribution: { small_uas: 0.3, bird: 0.5, vehicle: 0, large_uas: 0.2 },
+          reasons: [],
+          assessed: true,
+        },
+      }),
+      frame,
+    )
+
+    expect(track.assessment.distribution.map((entry) => entry.label)).toEqual([
+      'bird',
+      'small_uas',
+      'large_uas',
+    ])
+  })
+
+  it('shows no distribution for a track classification has not assessed', () => {
+    expect(toDisplayTrack(view(), frame).assessment.distribution).toEqual([])
   })
 
   it('carries reason codes through unchanged', () => {
