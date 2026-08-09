@@ -152,11 +152,17 @@ if interface_is_stale; then
   say "Building the operator interface (a minute the first time)"
   (
     cd frontend
-    if [[ ! -d node_modules ]]; then
+    # Reinstall whenever package.json is newer than the last install, not merely when
+    # node_modules is absent. The absent-only check meant a pull that added a dependency —
+    # exactly what the map's basemap layer did — left an existing checkout building against
+    # packages it never installed, with a TypeScript error as the only symptom and no
+    # indication that the fix was `npm install` rather than something in the new code. Mirrors
+    # the same staleness fix already applied to the frontend/dist rebuild check below.
+    if [[ ! -d node_modules || package.json -nt node_modules/.package-lock.json ]]; then
       npm ci --silent 2>/dev/null || npm install --silent
     fi
     npm run build --silent
-  ) || fail "The interface failed to build. Run 'cd frontend && npm run build' to see why."
+  ) || fail "The interface failed to build. Run 'cd frontend && npm install && npm run build' to see why."
 fi
 
 # ---------------------------------------------------------------------------------------
