@@ -17,6 +17,32 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
+say() { printf '\033[36m▸\033[0m %s\n' "$1"; }
+fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------------------
+# Find a Python. `python3` is standard on Linux and macOS; a Windows install from
+# python.org registers only `python` (or `py`, via the launcher) unless the installer's
+# "Add python3.exe to PATH" option was used, which most people never see. Trying python3
+# first still matters — some Windows setups (WSL, some package managers) do provide it, and
+# where both exist `python3` is the one guaranteed to be Python 3.
+# ---------------------------------------------------------------------------------------
+
+PYBIN=""
+for candidate in python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    PYBIN="$candidate"
+    break
+  fi
+done
+if [[ -z "$PYBIN" ]] && command -v py >/dev/null 2>&1; then
+  PYBIN="py"   # the Windows Python launcher, present even when 'python' is not on PATH
+fi
+[[ -n "$PYBIN" ]] || fail "Python is required (3.11 or newer). Install it from python.org, then try again."
+
+PYTHON_OK=$("$PYBIN" -c 'import sys; print(1 if sys.version_info >= (3, 11) else 0)')
+[[ "$PYTHON_OK" == "1" ]] || fail "Python 3.11 or newer is required; found $("$PYBIN" --version)."
+
 SCENARIO="b_approaching_threat"
 PORT=8000
 HOST="127.0.0.1"
@@ -31,7 +57,7 @@ while [[ $# -gt 0 ]]; do
       echo "Available scenarios:"
       for f in scenarios/*/*.json; do
         printf '  %-28s %s\n' "$(basename "$f" .json)" \
-          "$(python3 -c "import json,sys;print(json.load(open('$f')).get('description','')[:60])" 2>/dev/null || true)"
+          "$("$PYBIN" -c "import json,sys;print(json.load(open('$f')).get('description','')[:60])" 2>/dev/null || true)"
       done
       exit 0
       ;;
@@ -44,17 +70,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-say() { printf '\033[36m▸\033[0m %s\n' "$1"; }
-fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; exit 1; }
-
 # ---------------------------------------------------------------------------------------
 # Prerequisites — checked up front, so a missing tool is reported before anything is built
 # ---------------------------------------------------------------------------------------
-
-command -v python3 >/dev/null || fail "python3 is required (3.11 or newer)."
-
-PYTHON_OK=$(python3 -c 'import sys; print(1 if sys.version_info >= (3, 11) else 0)')
-[[ "$PYTHON_OK" == "1" ]] || fail "Python 3.11 or newer is required; found $(python3 --version)."
 
 command -v node >/dev/null || fail "Node.js is required (20 or newer) to build the interface."
 
@@ -67,7 +85,7 @@ if [[ ! -d .venv ]]; then
   if command -v uv >/dev/null; then
     uv venv --quiet
   else
-    python3 -m venv .venv
+    "$PYBIN" -m venv .venv
   fi
 fi
 
@@ -134,6 +152,10 @@ echo
     if curl -sf -o /dev/null "${URL}/api/v1/system/mode" 2>/dev/null; then
       command -v xdg-open >/dev/null && xdg-open "$URL" >/dev/null 2>&1 && break
       command -v open >/dev/null && open "$URL" >/dev/null 2>&1 && break
+      # Git Bash on Windows has neither of the above, but it does have access to Windows's
+      # own launcher via cmd.exe. The empty "" is a required placeholder argument for
+      # `start` — without it, `start` treats the URL as a window title instead of a target.
+      command -v cmd.exe >/dev/null && cmd.exe /c start "" "$URL" >/dev/null 2>&1 && break
       break
     fi
     sleep 0.5

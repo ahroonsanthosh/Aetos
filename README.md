@@ -79,6 +79,18 @@ interface, so there is no second terminal and no proxy to configure.
 
 Needs Python 3.11+ and Node 20+. Re-running is cheap: it skips whatever is already done.
 
+### Windows
+
+`start.sh` is a bash script — run it from **Git Bash**, not PowerShell or cmd.exe. If you
+cloned with `git clone`, you already have Git for Windows installed, which includes it:
+right-click the repository folder and choose **Git Bash Here**, then run `./start.sh` exactly
+as above. It handles the Windows-specific paths (`.venv\Scripts\`) and opens your default
+browser itself.
+
+There is no native PowerShell equivalent yet. If you'd rather not install or use Git Bash, say
+so and one can be added — but treat that as untested until it has actually been run on
+Windows, the same way the Docker path below is flagged.
+
 ### Or with Docker, if you would rather not install either
 
 ```bash
