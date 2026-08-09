@@ -339,3 +339,28 @@ export interface StreamedEvent {
   track: TrackView | null
   detail: Record<string, unknown>
 }
+
+
+/** One cycle-level finding, with the tracks it is about. */
+export interface SituationFindingView {
+  code: string
+  level: RiskLevel
+  detail: string
+  track_ids: string[]
+}
+
+/**
+ * What several tracks mean together — a property of the picture, not of any one track.
+ *
+ * Its own endpoint rather than part of the track list, because the track list can be filtered
+ * and this assesses all of them.
+ */
+export interface SituationView {
+  level: RiskLevel
+  findings: SituationFindingView[]
+  track_count: number
+  /** How many distinct objects those tracks are likely to be. The gap between this and
+   *  `track_count` is the missing sensor fusion made visible, not a rounding error. */
+  object_count: number
+  assessed: boolean
+}

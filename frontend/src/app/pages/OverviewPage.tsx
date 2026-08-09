@@ -1,14 +1,20 @@
 /**
  * Overview: the operational picture. The map dominates, with the selected track beside it and
  * the track list beneath.
+ *
+ * The situation banner sits above all of it. Its findings — contacts converging from separate
+ * bearings, more objects engaged than an operator can attend to — belong to the picture as a
+ * whole and would be invisible anywhere a single track is displayed.
  */
 
 import { useEffect, useState } from 'react'
 
+import { SituationBanner } from '../../components/assessment/SituationBanner'
 import { OperationalMap } from '../../components/map/OperationalMap'
 import { TrackDetails } from '../../components/tracks/TrackDetails'
 import { TrackList } from '../../components/tracks/TrackList'
 import { api } from '../../data/client/api'
+import { useSituation } from '../../data/client/useSituation'
 import type { SensorView } from '../../data/models/api'
 import type { TrackPicture } from '../../data/client/useTrackPicture'
 import './pages.css'
@@ -21,11 +27,17 @@ interface Props {
 
 export function OverviewPage({ picture, selectedTrackId, onSelectTrack }: Props) {
   const sensors = useSensors()
+  const { situation } = useSituation()
   const selected = picture.tracks.find((t) => t.id === selectedTrackId) ?? null
 
   return (
     <div className="page page--operational">
       {picture.error && <div className="page__error">{picture.error}</div>}
+
+      {/* Above the map, because it is about the whole picture rather than anything in it.
+          Renders nothing when there is nothing to say — a permanent "situation: normal" bar
+          is one an operator stops seeing, and then its absence means nothing either. */}
+      <SituationBanner situation={situation} onSelectTrack={onSelectTrack} />
 
       <div className="page__main">
         <OperationalMap

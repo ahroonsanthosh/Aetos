@@ -27,6 +27,7 @@ from typing import Protocol
 from backend.decision.recommend import recommend
 from backend.events.store import EventStore
 from backend.events.types import EventType
+from backend.risk.correlation import SituationAssessment, assess_situation
 from backend.risk.engine import RiskEngine, RiskPolicy
 from backend.risk.factors import TrackRisk
 from backend.risk.hysteresis import LevelResolver, LevelState
@@ -90,17 +91,39 @@ class RiskService:
         self._sink = sink
         self._resolver = LevelResolver(policy.hysteresis)
 
+        self._policy = policy
         self._levels: dict[str, LevelState] = {}
         self._trails: dict[str, deque[_Sample]] = {}
         self._last: dict[str, RiskAssessment] = {}
+        self._situation = SituationAssessment()
+
+    @property
+    def situation(self) -> SituationAssessment:
+        """The most recent cycle-level finding.
+
+        Held rather than returned from `assess_cycle`, because the API reads it out of band —
+        it is a property of the picture, not of any request's track list, and deriving it from
+        a filtered or paginated response would silently answer a different question.
+        """
+        return self._situation
 
     def assess_cycle(self, tracks: list[Track], now: datetime) -> list[Track]:
-        """Score each track, returning the tracks with risk applied."""
+        """Score each track, then assess what they mean together.
+
+        The two passes are deliberately sequential and independent. Per-track scoring is a pure
+        function of one track; the situation pass reads every track and writes to none of their
+        scores. Letting it adjust them would make each score depend on how many other tracks
+        exist, which is the self-reinforcing coupling the narrow per-track input exists to
+        prevent.
+        """
         assessed: list[Track] = []
+        described: list[TrackRisk] = []
 
         for track in tracks:
             self._remember(track, now)
-            raw = self._engine.assess(self._describe(track, now), self._geometry)
+            description = self._describe(track, now)
+            described.append(description)
+            raw = self._engine.assess(description, self._geometry)
 
             state = self._resolver.resolve(raw.score, self._levels.get(track.track_id), now)
             self._levels[track.track_id] = state
@@ -118,8 +141,40 @@ class RiskService:
                 self._record(stored, assessment)
                 self._last[track.track_id] = assessment
 
+        self._assess_situation(described, now)
         self._forget_absent(tracks)
         return assessed
+
+    def _assess_situation(self, described: list[TrackRisk], now: datetime) -> None:
+        """Run the cycle-level pass and record it if the finding changed."""
+        situation = assess_situation(described, self._geometry, self._policy.situation)
+        previous = self._situation
+        self._situation = situation
+
+        if situation.codes == previous.codes and situation.level == previous.level:
+            return
+        if not situation.findings and not previous.findings:
+            return
+
+        self._events.append(
+            EventType.SITUATION_CHANGED,
+            SOURCE,
+            payload={
+                "level": str(situation.level),
+                "previous_level": str(previous.level),
+                "track_count": situation.track_count,
+                "object_count": situation.object_count,
+                "findings": [
+                    {
+                        "code": finding.code,
+                        "level": str(finding.level),
+                        "detail": finding.detail,
+                        "track_ids": list(finding.track_ids),
+                    }
+                    for finding in situation.findings
+                ],
+            },
+        )
 
     def _describe(self, track: Track, now: datetime) -> TrackRisk:
         """Reduce a track to exactly what the engine is allowed to see.

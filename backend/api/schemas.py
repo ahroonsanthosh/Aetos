@@ -595,3 +595,39 @@ class StreamedEvent(BaseModel):
             track=track,
             detail={k: v for k, v in event.payload.items() if k != TRACK_SNAPSHOT_KEY},
         )
+
+
+class SituationFindingView(BaseModel):
+    """One cycle-level finding, with the tracks it is about."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: str
+    level: str
+    detail: str
+    track_ids: list[str]
+
+
+class SituationView(BaseModel):
+    """What several tracks mean together — a property of the picture, not of any one track.
+
+    Served from its own endpoint rather than folded into the track list, because the track list
+    can be filtered and paginated and this is an assessment of *all* of them. Deriving it from a
+    partial response would silently answer a different question.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    level: str
+    findings: list[SituationFindingView]
+
+    track_count: int
+    object_count: int
+    """How many distinct objects those tracks are likely to be. Reported alongside the track
+    count rather than instead of it: the gap between the two is FM-023 made visible, and an
+    operator seeing "7 tracks, likely 3 objects" knows not to read the display as seven
+    aircraft."""
+
+    assessed: bool
+    """False when nothing is running the correlation pass. Distinct from an assessed picture
+    with no findings, which is a real statement that nothing concerning was found."""

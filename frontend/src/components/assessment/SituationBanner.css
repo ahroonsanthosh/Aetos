@@ -1,0 +1,68 @@
+.situation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.situation__finding {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.situation__finding:hover {
+  background: var(--surface-raised);
+}
+
+/* Left edge carries the severity. A findings row is scanned down its edge, not read. */
+.situation__finding--critical { border-left-color: var(--status-critical); }
+.situation__finding--high     { border-left-color: var(--status-elevated); }
+.situation__finding--medium   { border-left-color: var(--status-warning); }
+.situation__finding--low      { border-left-color: var(--status-info); }
+.situation__finding--none,
+.situation__finding--advisory { border-left-color: var(--text-disabled); }
+
+.situation__code {
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.situation__finding--critical .situation__code { color: var(--status-critical); }
+.situation__finding--high     .situation__code { color: var(--status-elevated); }
+.situation__finding--medium   .situation__code { color: var(--status-warning); }
+.situation__finding--low      .situation__code { color: var(--status-info); }
+.situation__finding--advisory .situation__code { color: var(--text-disabled); }
+
+.situation__detail {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+/* An advisory describes the display rather than the airspace, and is toned down to say so. */
+.situation__finding--advisory .situation__detail {
+  color: var(--text-muted);
+}
+
+.situation__count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.situation__tally {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}

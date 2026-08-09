@@ -20,6 +20,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.common.config import ConfigError, ConfigPaths
+from backend.risk.correlation import SituationPolicy
 from backend.risk.factors import (
     ApproachDirectnessFactor,
     ClosureFactor,
@@ -74,6 +75,9 @@ class RiskPolicy(BaseModel):
 
     factors: dict[str, FactorPolicy]
     hysteresis: HysteresisPolicy
+    situation: SituationPolicy = SituationPolicy()
+    """Cycle-level assessment. Defaulted rather than required so an existing site's policy
+    file keeps loading."""
 
     min_mitigation: float = Field(default=0.35, ge=0.0, le=1.0)
     """The floor on the harmlessness discount. Never zero: classification can be wrong, and a

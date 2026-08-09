@@ -211,6 +211,7 @@ def build_application(
         track_history=pipeline.repositories.track_history,
         projection=pipeline.projection,
         identity=LocalOperatorIdentityProvider(clock),
+        situation=pipeline.risk,
         run_mode=RunMode.SIMULATION,
     )
 

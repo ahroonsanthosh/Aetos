@@ -100,11 +100,27 @@ and unauditable by anyone asked to trust the output.
 Validation is strict (`extra="forbid"`), so a typo in a factor name is a startup error rather
 than a silently ignored setting.
 
+## What several tracks mean together
+
+`correlation.py` runs a second pass after per-track scoring and produces a **separate finding**
+— served from `GET /situation`, never folded into any track's score. Contacts converging from
+separate bearings, and more objects engaged at once than an operator can attend to, are
+properties of the picture that no per-track factor can describe.
+
+The separation is the design, not a convenience. Letting a cycle-level view adjust individual
+scores would make every score depend on how many other tracks exist: a busy sky raises every
+score, which raises the count of alarming tracks. That is a feedback loop with no evidence in
+it, and there is a test that drives the real service with one track and then with a full
+coordinated approach and asserts the subject's score does not move.
+
+Because sensor fusion is not built, tracks are first clustered on a co-located **and**
+co-moving test, so one drone seen by four sensors is one object rather than a four-axis
+approach (FM-023). That is not fusion — nothing is merged, no track state changes — and the
+over-count is reported to the operator rather than quietly absorbed: *"8 tracks · likely 5
+objects"*.
+
 ## Known limits
 
-- **No inter-track reasoning.** Several contacts converging from different bearings is a
-  recognised pattern this factor set cannot see, because every factor assesses one track alone.
-  It needs a cycle-level view and is not built.
 - **Constant-velocity geometry.** Time-to-boundary assumes the current course is held. It is
   labelled as a projection everywhere it surfaces.
 - **Rule-based.** Every number traces to a factor and a sentence, which is what lets an
@@ -118,7 +134,8 @@ than a silently ignored setting.
 | `factors.py` | `EscalationFactor` and the nine implementations; mitigation |
 | `engine.py` | Combination, confidence, policy loading |
 | `hysteresis.py` | Score → level, ADR 0007 |
-| `service.py` | Per-cycle orchestration, loiter memory, write-back, `RISK_CHANGED` events |
+| `correlation.py` | Track clustering and cycle-level situation findings |
+| `service.py` | Per-cycle orchestration, loiter memory, write-back, `RISK_CHANGED` / `SITUATION_CHANGED` events |
 
 See [ADR 0013](../../docs/adr/0013-risk-by-escalating-factors.md) and
 [ADR 0007](../../docs/adr/0007-risk-hysteresis.md).

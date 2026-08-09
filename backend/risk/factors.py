@@ -294,7 +294,7 @@ class ClosureFactor(EscalationFactor):
         fast_mps = self._policy.parameter("fast_mps", 25.0)
         minimum_mps = self._policy.parameter("minimum_mps", 1.0)
 
-        closure = _closure_rate_mps(risk)
+        closure = closure_rate_mps(risk)
         if closure <= minimum_mps:
             if closure < -minimum_mps:
                 return self.silent(f"Opening from the site at {abs(closure):.0f} m/s.")
@@ -326,7 +326,7 @@ class ApproachDirectnessFactor(EscalationFactor):
             # course swings with small position errors.
             return self.silent("Too slow for its course to mean anything.")
 
-        offset = _bearing_offset_deg(risk)
+        offset = bearing_offset_deg(risk)
         if offset is None:
             return self.silent("Over the site; no approach bearing to assess.")
         if offset >= spread_deg:
@@ -528,10 +528,14 @@ def mitigation_for(risk: TrackRisk, minimum: float) -> tuple[float, str | None]:
 
 # --------------------------------------------------------------------------------------
 # Shared geometry helpers
+#
+# Public because `correlation.py` needs the same two questions answered — is this closing, and
+# is it pointed at us — for clusters rather than tracks. Two implementations of "closing" that
+# could drift apart is a worse outcome than a slightly wider surface here.
 # --------------------------------------------------------------------------------------
 
 
-def _closure_rate_mps(risk: TrackRisk) -> float:
+def closure_rate_mps(risk: TrackRisk) -> float:
     """Speed along the line to the site origin. Positive closing, negative opening."""
     east, north = risk.position.east_m, risk.position.north_m
     distance = math.hypot(east, north)
@@ -542,7 +546,7 @@ def _closure_rate_mps(risk: TrackRisk) -> float:
     return -((risk.velocity.east_mps * east + risk.velocity.north_mps * north) / distance)
 
 
-def _bearing_offset_deg(risk: TrackRisk) -> float | None:
+def bearing_offset_deg(risk: TrackRisk) -> float | None:
     """Angle between the velocity vector and the bearing from the track to the site."""
     to_site_e, to_site_n = -risk.position.east_m, -risk.position.north_m
     if math.hypot(to_site_e, to_site_n) <= 0.0:

@@ -152,30 +152,45 @@ H tests against.
 does not hide or de-duplicate the tracks, because suppressing them in the display would
 conceal a real limitation of the current build.
 
-### FM-026 — Risk cannot see relationships between tracks
-**Status:** Open — needs a cycle-level assessment pass · **Severity:** Medium
+### FM-026 — Risk could not see relationships between tracks
+**Status:** Closed, with an interim mechanism · **Severity:** was Medium
 
-Every risk factor assesses one track in isolation. Several contacts converging on the asset
-from different bearings at the same time is a recognised and important pattern, and the engine
-scores each of them exactly as it would score one arriving alone.
+Every risk factor assesses one track alone, by design — the narrow input is what stops a factor
+depending on the previous risk level, which is how a score becomes self-reinforcing. But
+several contacts converging on the asset from different bearings is a situation no per-track
+factor can describe, and the engine scored each of them exactly as it would score one arriving
+alone.
 
-**Cause.** `RiskEngine.assess` takes a single `TrackRisk` by design — the narrow input is what
-stops a factor quietly depending on the previous risk level, which is how a score becomes
-self-reinforcing. Correlated approach needs the opposite: a view of every track at once.
+**Fix.** `backend/risk/correlation.py` runs a cycle-level pass *after* per-track scoring and
+produces a **separate finding**, served from `GET /situation`. It never modifies any track's
+score — `tests/unit/test_risk_correlation.py` drives the real service with one track and then
+with a full coordinated approach and asserts the subject's score is identical, because the
+alternative is a feedback loop with no evidence in it: a busy sky raises every score, which
+raises the count of alarming tracks, which raises every score.
 
-**Consequence.** A coordinated approach reads as several independent medium-risk contacts
-rather than one high-risk situation. Compounded by FM-023, which already turns one object into
-several tracks — so "several tracks converging" is currently ambiguous between a real swarm and
-a fusion artefact, and inferring intent from it before fusion exists would generate confident
-nonsense.
+Findings: `coordinated_approach` (contacts closing from bearings far enough apart to be
+separate axes), `simultaneous_engagement` (more objects engaged at once than an operator can
+reasonably attend to), and `duplicate_tracks_suspected` — see below.
 
-**Intended handling:** a cycle-level pass after per-track scoring, taking the assessed tracks
-and raising a separate finding rather than mutating individual scores. It has to run after
-fusion for the reason above.
+**The FM-023 problem, and why this did not have to wait for fusion.** Counting *tracks* would
+have reported one drone seen by four sensors as a four-axis coordinated approach. Fragments of
+one object and genuinely distinct contacts are separable without doing fusion's job, though:
+fragments are co-located **and** co-moving, because they are observations of the same thing,
+while contacts converging on an asset are hundreds of metres apart on different bearings. So
+tracks are clustered on that test and the situation is assessed over clusters. Verified live:
+on `d_multiple_simultaneous` the pass resolved 8 tracks to 5 objects and counted objects, not
+tracks, when deciding whether the picture was saturated.
 
-**Not a workaround candidate:** counting nearby tracks inside a per-track factor. That would
-make each track's score depend on how many other tracks exist, which is exactly the
-self-reinforcing coupling the narrow input exists to prevent.
+**This is not fusion and does not claim to be.** It merges nothing, changes no track state,
+re-runs no association, and its output is scoped to risk. It answers one question — how many
+distinct objects are these tracks likely to be — because the situation assessment cannot ask
+anything sensible without it. When `backend/fusion` exists it answers that question properly
+and the clustering here is deleted.
+
+**Remaining, and deliberately visible.** The over-count is now *reported* rather than silently
+absorbed: `duplicate_tracks_suspected` states plainly that the display is showing more tracks
+than there are objects, and the banner carries "8 tracks · likely 5 objects". That is FM-023
+made visible to the operator instead of left for them to discover.
 
 ### FM-025 — Classification was overwritten by the next tracking update
 **Status:** Closed · **Severity:** High while open — the interface stated the opposite of what the system had concluded

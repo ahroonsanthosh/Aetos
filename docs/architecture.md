@@ -108,7 +108,7 @@ makes backend restart recoverable.
 | `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
 | `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
-| `backend/risk` | Score + confidence + reason codes + hysteresis | Recommend an action, or hold track state |
+| `backend/risk` | Score + confidence + reason codes + hysteresis; cycle-level situation findings | Recommend an action, or hold track state |
 | `backend/decision` | Recommendation category | Score risk, or execute anything, ever |
 | `backend/system_health` | Watchdog, degraded mode, self-test | Suppress alerts |
 | `backend/api` | REST + WebSocket | Hold authoritative state |

@@ -43,6 +43,11 @@ class EventType(StrEnum):
     # Assessment
     CLASSIFICATION_CHANGED = "CLASSIFICATION_CHANGED"
     RISK_CHANGED = "RISK_CHANGED"
+
+    SITUATION_CHANGED = "SITUATION_CHANGED"
+    """A cycle-level finding about several tracks together — a coordinated approach, or the
+    display over-counting one object as several. Carries no `track_id`, because it is not about
+    any one track; the tracks involved are listed in the payload."""
     ZONE_ENTERED = "ZONE_ENTERED"
     ZONE_EXITED = "ZONE_EXITED"
 
