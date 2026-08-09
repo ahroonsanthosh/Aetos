@@ -164,15 +164,21 @@ echo
 
 # Open a browser once the server is actually answering, rather than immediately — otherwise
 # the tab loads before the port is listening and shows a connection error.
+#
+# Deliberately Linux/macOS only (xdg-open, open). A Windows attempt via `cmd.exe /c start`
+# was tried here and reverted: spawning a native Windows console process from Git Bash can,
+# on some setups, deliver a console control event to every process attached to the same
+# console — including this script's own foreground server — which was observed to kill the
+# server moments after it started, with no crash and no error, just a clean shutdown that
+# looked identical to Ctrl-C. Auto-opening a tab is a convenience; taking the server down to
+# get it is not a trade worth making, especially for a mechanism this brittle to verify
+# without a real Windows machine. On Windows, the URL printed above is the fallback: it has
+# to be opened by hand, which is a minor inconvenience next to the alternative.
 (
   for _ in $(seq 1 40); do
     if curl -sf -o /dev/null "${URL}/api/v1/system/mode" 2>/dev/null; then
       command -v xdg-open >/dev/null && xdg-open "$URL" >/dev/null 2>&1 && break
       command -v open >/dev/null && open "$URL" >/dev/null 2>&1 && break
-      # Git Bash on Windows has neither of the above, but it does have access to Windows's
-      # own launcher via cmd.exe. The empty "" is a required placeholder argument for
-      # `start` — without it, `start` treats the URL as a window title instead of a target.
-      command -v cmd.exe >/dev/null && cmd.exe /c start "" "$URL" >/dev/null 2>&1 && break
       break
     fi
     sleep 0.5
