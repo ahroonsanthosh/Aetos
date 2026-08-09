@@ -1,27 +1,34 @@
 /**
- * Concentric range rings, bearing spokes and cardinal marks — the PPI's coordinate system.
+ * Concentric range rings and their bearing ticks — the PPI's distance scale.
  *
- * Ring spacing is chosen so there are always four or five rings whatever the display range.
- * A fixed spacing would give one ring at close range and forty at long range, and a display
- * an operator has to count rings on is not giving them range at a glance.
+ * Ring spacing is chosen so there are always four or five rings whatever the display range,
+ * snapped to a round number of metres. A fixed spacing would give one ring at close range and
+ * forty at long range, and a display an operator has to count rings on is not giving them
+ * range at a glance. Continuous zoom makes this load-bearing rather than cosmetic: the rings
+ * re-step as the operator zooms, so the labels stay numbers you read rather than compute.
+ *
+ * The bearing *scale* lives in `CompassRose`. This draws only the distance structure and the
+ * short ticks that tie the two together.
  */
 
 interface Props {
+  /** Display range: sets ring *spacing* and the apparent size of every mark. */
   rangeM: number
+  /** Furthest distance from the site that is currently on screen. Rings are drawn out to
+   *  here rather than to `rangeM`, so a panned view still has a distance reference under it
+   *  instead of unlit, ungridded black. */
+  coverageM: number
 }
 
 const SPOKE_BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315]
-const CARDINALS: ReadonlyArray<{ bearing: number; label: string }> = [
-  { bearing: 0, label: 'N' },
-  { bearing: 90, label: 'E' },
-  { bearing: 180, label: 'S' },
-  { bearing: 270, label: 'W' },
-]
 
-export function RangeRings({ rangeM }: Props) {
+/** Ceiling on rings drawn at once. A far-panned view at close zoom can otherwise ask for
+ *  thousands, which is a stalled browser rather than a useful display. */
+const MAX_RINGS = 60
+
+export function RangeRings({ rangeM, coverageM }: Props) {
   const step = ringStep(rangeM)
-  const rings: number[] = []
-  for (let r = step; r <= rangeM; r += step) rings.push(r)
+  const rings = ringRadii(step, coverageM)
 
   return (
     <g className="rings" pointerEvents="none">
@@ -32,7 +39,7 @@ export function RangeRings({ rangeM }: Props) {
           cy={0}
           r={radius}
           fill="none"
-          stroke={radius === rangeM ? 'var(--grid-line-major)' : 'var(--grid-line)'}
+          stroke={isDecade(radius, step) ? 'var(--grid-line-major)' : 'var(--grid-line)'}
           strokeWidth={rangeM / 800}
         />
       ))}
@@ -90,26 +97,6 @@ export function RangeRings({ rangeM }: Props) {
         </text>
       ))}
 
-      {CARDINALS.map(({ bearing, label }) => {
-        const radians = (bearing * Math.PI) / 180
-        const x = Math.sin(radians) * rangeM * 0.94
-        const y = Math.cos(radians) * rangeM * 0.94
-        return (
-          <text
-            key={label}
-            x={x}
-            y={y}
-            transform={`scale(1, -1) translate(0, ${-2 * y})`}
-            fill="var(--text-muted)"
-            fontSize={rangeM / 40}
-            fontFamily="var(--font-mono)"
-            textAnchor="middle"
-            dominantBaseline="middle"
-          >
-            {label}
-          </text>
-        )
-      })}
     </g>
   )
 }
@@ -122,7 +109,7 @@ export function RangeRings({ rangeM }: Props) {
  * the nearest: rounding up gives too few rings, and at a 5 km range the difference is two
  * rings versus five.
  */
-function ringStep(rangeM: number): number {
+export function ringStep(rangeM: number): number {
   const rough = rangeM / 5
   const magnitude = 10 ** Math.floor(Math.log10(rough))
   const normalised = rough / magnitude
@@ -130,6 +117,20 @@ function ringStep(rangeM: number): number {
   if (normalised < 2) return magnitude
   if (normalised < 5) return 2 * magnitude
   return 5 * magnitude
+}
+
+/** Ring radii from `step` out to `coverageM`, bounded so a far-panned close zoom cannot ask
+ *  for an unbounded number of circles. */
+function ringRadii(step: number, coverageM: number): number[] {
+  const count = Math.min(MAX_RINGS, Math.max(1, Math.floor(coverageM / step)))
+  return Array.from({ length: count }, (_, i) => (i + 1) * step)
+}
+
+/** Every fifth ring is emphasised. With rings now extending past the display range, "the
+ *  outermost one" stopped being a meaningful thing to highlight — a regular major/minor
+ *  rhythm is what actually helps the eye count them. */
+function isDecade(radius: number, step: number): boolean {
+  return Math.round(radius / step) % 5 === 0
 }
 
 function formatRange(metres: number): string {
