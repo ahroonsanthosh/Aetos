@@ -1,0 +1,111 @@
+/*
+ * Aetos design tokens.
+ *
+ * Every colour, size and spacing value in the interface comes from here. A component that
+ * writes a literal colour is a bug — see docs/design_tokens.md.
+ *
+ * The palette is deliberately narrow and almost entirely achromatic. Colour is a status
+ * signal, never decoration: if amber and red appear on screen they mean something, and an
+ * operator learns to trust that. An interface that uses colour freely for emphasis destroys
+ * exactly that reflex, which is the one thing a warning colour is for.
+ */
+
+:root {
+  /* ---- Surfaces. Near-black through to panel grey. ---- */
+  --surface-void: #07090b;      /* behind everything; the map's ground */
+  --surface-base: #0b0e12;      /* application background */
+  --surface-panel: #12171d;     /* panels and cards */
+  --surface-raised: #1a2028;    /* headers within panels, hover states */
+  --surface-inset: #090c10;     /* wells, code, log rows */
+
+  /* ---- Lines. Structure comes from hairlines, not shadows or rounding. ---- */
+  --line-subtle: #1c232c;
+  --line: #263039;
+  --line-strong: #37444f;
+
+  /* ---- Type. ---- */
+  --text-primary: #dfe6ed;
+  --text-secondary: #93a1b0;
+  --text-muted: #61707f;
+  --text-disabled: #43505c;
+
+  /* ---- Status. The only saturated colours in the system. ---- */
+  --status-nominal: #3fb98f;    /* healthy, connected */
+  --status-info: #4ba3d9;       /* normal sensor data, informational */
+  --status-notice: #6fb3d6;
+  --status-warning: #d99b3f;    /* attention required */
+  --status-elevated: #e07a3f;
+  --status-critical: #d9534f;   /* severe */
+  --status-inert: #5a6875;      /* not built, not connected — deliberately colourless */
+
+  /* Dimmed variants, for fills and trails behind their solid counterparts. */
+  --status-nominal-dim: #3fb98f26;
+  --status-info-dim: #4ba3d926;
+  --status-warning-dim: #d99b3f26;
+  --status-critical-dim: #d9534f26;
+
+  /* ---- Track and instrument colours. ---- */
+  --track-default: #4ba3d9;
+  --track-selected: #e8f1f8;
+  --track-stale: #8a97a3;
+  --track-lost: #55606b;
+  --track-trail: #4ba3d966;
+  --track-prediction: #4ba3d94d;
+
+  --grid-line: #1a232b;
+  --grid-line-major: #24303a;
+  --grid-label: #4d5a66;
+  --sensor-marker: #3fb98f;
+  --sensor-coverage: #3fb98f14;
+
+  --zone-protected: #d9534f;
+  --zone-restricted: #d99b3f;
+  --zone-monitored: #4ba3d9;
+
+  /* ---- Type scale. Small and dense: this is an instrument, not a landing page. ---- */
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+
+  --tracking-wide: 0.08em;   /* labels and headers are letterspaced, not bolded */
+  --tracking-wider: 0.14em;
+
+  /* ---- Spacing. 4px base. ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  /* ---- Geometry. Corners are square or nearly so; rounding reads as consumer software. ---- */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius: 3px;
+
+  /* ---- Layout. ---- */
+  --topbar-height: 48px;
+  --sidebar-width: 216px;
+  --sidebar-width-collapsed: 56px;
+  --details-width: 380px;
+  --bottom-height: 216px;
+
+  /* ---- Motion. Enough to track a change, never enough to draw attention. ---- */
+  --transition-fast: 90ms ease-out;
+  --transition: 160ms ease-out;
+}
+
+/*
+ * Aetos is a dark-only interface, deliberately. A light theme is not a missing feature: the
+ * display is designed for low-light operations rooms, and the status palette's contrast
+ * relationships are calibrated against a near-black ground. Re-deriving them for a light
+ * background would be a separate design pass, not a token swap.
+ */

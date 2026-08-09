@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "registry_key": "sim_eo_ir_narrow",
+  "sensor_type": "simulated_eo_ir",
+  "description": "Generic narrow-field simulated electro-optical/infrared sensor. Very precise in bearing and poor in range, the inverse of the radar profile. Classifies with a vision model, so it reports a label with a confusion model. Simulation parameters only.",
+  "coverage": {
+    "max_range_m": 4000.0,
+    "min_range_m": 50.0,
+    "azimuth_extent_deg": 30.0,
+    "elevation_min_deg": -10.0,
+    "elevation_max_deg": 30.0
+  },
+  "update_rate_hz": 10.0,
+  "uncertainty": {
+    "range_sigma_m": 120.0,
+    "cross_range_sigma_m": 1.0,
+    "cross_range_sigma_mrad": 2.0,
+    "vertical_sigma_m": 6.0
+  },
+  "confidence": {
+    "near_range": 0.95,
+    "far_range": 0.5,
+    "jitter_sigma": 0.03,
+    "false_alarm_scale": 0.7
+  },
+  "probability_of_detection": 0.75,
+  "false_alarm_rate_hz": 0.05,
+  "radial_velocity": {
+    "reported": false,
+    "sigma_mps": 0.0
+  },
+  "classification": {
+    "correct_probability": 0.8,
+    "confusable_with": ["unknown_uas", "small_uas", "bird", "unknown"],
+    "confidence_when_correct": 0.86,
+    "confidence_when_confused": 0.42
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "a_benign_transit",
+  "name": "A — Benign transit",
+  "description": "A single small rotary-wing aircraft crosses the monitored airspace from west to east at a steady 22 m/s and 120 m, never coming closer than 2.6 km to the site reference point. Nothing about it is unusual.",
+  "purpose": "The baseline. Everything downstream must be able to see an object, hold one stable track on it for the whole transit, and still decide that nothing needs an operator's attention. A system that cannot stay quiet here will be ignored when it matters.",
+  "expected_behaviour": [
+    "must form exactly one confirmed track and hold it for the whole transit",
+    "must not fragment the track into several identities",
+    "must not alert: risk stays at or below LOW and the recommendation stays MONITOR",
+    "must not report a zone entry — the object never enters a restricted or protected zone"
+  ],
+  "seed": 1001,
+  "site_id": "fictional-test-site",
+  "duration_s": 300.0,
+  "objects": [
+    {
+      "object_id": "transit-1",
+      "description": "Small rotary-wing aircraft transiting west to east, well clear of the site.",
+      "start": { "east_m": -4000.0, "north_m": 2600.0, "altitude_m": 120.0 },
+      "motion": {
+        "speed_mps": 22.0,
+        "heading_deg": 90.0,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "transit",
+      "appears_at_s": 0.0
+    }
+  ]
+}

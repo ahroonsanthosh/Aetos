@@ -1,0 +1,127 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.page--operational .page__main {
+  flex: 1;
+}
+
+.page__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.page__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+}
+
+.page__main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.page__fill {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.page__main > .map {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The track table beneath the map. Collapses before the map does. */
+.page__drawer {
+  height: var(--bottom-height);
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.page__error {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--status-critical);
+  background: var(--status-critical-dim);
+  border-bottom: 1px solid var(--status-critical);
+}
+
+.page__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.page__note {
+  max-width: 70ch;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.panel {
+  background: var(--surface-panel);
+  border: 1px solid var(--line-subtle);
+}
+
+.panel + .panel {
+  margin-top: var(--space-3);
+}
+
+.panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.panel__body {
+  padding: var(--space-4);
+}
+
+.empty-state {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.empty-state__title {
+  font-size: var(--text-sm);
+  color: var(--status-inert);
+  margin-bottom: var(--space-2);
+}
+
+.empty-state__body {
+  max-width: 60ch;
+  margin: 0 auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 1400px) {
+  .details {
+    width: 320px;
+  }
+}
+
+/* Below this the detail panel goes, but the map and the track list stay. */
+@media (max-width: 1000px) {
+  .details {
+    display: none;
+  }
+}

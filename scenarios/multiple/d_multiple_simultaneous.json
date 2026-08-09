@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "d_multiple_simultaneous",
+  "name": "D — Multiple simultaneous objects",
+  "description": "Four objects of different kinds, on four different bearings, at four different altitudes, entering at staggered times. One transits, one approaches, one orbits the site at 1.8 km, and one departs. Their paths do not cross.",
+  "purpose": "To check that identity, classification and risk are maintained per object rather than collapsed into a single worst case. Four objects must be four tracks, each with its own history, its own label and its own risk — and the approaching one must be distinguishable from the three that are not a problem.",
+  "expected_behaviour": [
+    "must maintain exactly four distinct confirmed tracks once all four have entered",
+    "must not merge two objects into one track, and must not split one into two",
+    "risk must be assessed per track: only the approaching object escalates",
+    "the orbiting object must not escalate on range alone — it is close but not closing",
+    "operator display must remain readable: no track is dropped because another is more interesting"
+  ],
+  "seed": 1004,
+  "site_id": "fictional-test-site",
+  "duration_s": 360.0,
+  "objects": [
+    {
+      "object_id": "multi-transit",
+      "description": "Small aircraft transiting south to north, well east of the site.",
+      "start": { "east_m": 3200.0, "north_m": -4000.0, "altitude_m": 130.0 },
+      "motion": {
+        "speed_mps": 24.0,
+        "heading_deg": 0.0,
+        "max_speed_mps": 30.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "transit",
+      "appears_at_s": 0.0
+    },
+    {
+      "object_id": "multi-inbound",
+      "description": "Medium aircraft closing on the site from the south-east.",
+      "start": { "east_m": 4200.0, "north_m": -4200.0, "altitude_m": 160.0 },
+      "motion": {
+        "speed_mps": 26.0,
+        "heading_deg": 315.0,
+        "max_speed_mps": 32.0
+      },
+      "true_classification": "medium_uas",
+      "behaviour": "approach",
+      "appears_at_s": 40.0
+    },
+    {
+      "object_id": "multi-orbit",
+      "description": "Small aircraft circling the site at about 1.8 km. Close, but its range is not decreasing.",
+      "start": { "east_m": 0.0, "north_m": 1800.0, "altitude_m": 95.0 },
+      "motion": {
+        "speed_mps": 18.0,
+        "heading_deg": 90.0,
+        "turn_rate_dps": 0.573,
+        "max_speed_mps": 22.0
+      },
+      "true_classification": "small_uas",
+      "behaviour": "orbit",
+      "appears_at_s": 80.0
+    },
+    {
+      "object_id": "multi-departing",
+      "description": "Large aircraft leaving the area to the north-west, climbing.",
+      "start": { "east_m": -900.0, "north_m": 900.0, "altitude_m": 80.0 },
+      "motion": {
+        "speed_mps": 30.0,
+        "heading_deg": 315.0,
+        "climb_rate_mps": 0.6,
+        "max_speed_mps": 34.0
+      },
+      "true_classification": "large_uas",
+      "behaviour": "departing",
+      "appears_at_s": 120.0
+    }
+  ]
+}

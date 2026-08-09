@@ -1,0 +1,57 @@
+.health__metrics {
+  display: flex;
+  gap: var(--space-6);
+}
+
+.health__metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.health__metric-value {
+  font-size: var(--text-xl);
+  color: var(--text-primary);
+}
+
+.health__metric-value.is-warning { color: var(--status-warning); }
+.health__metric-value.is-nominal { color: var(--status-nominal); }
+
+.health__metric-note {
+  font-size: var(--text-2xs);
+  color: var(--text-disabled);
+}
+
+.health__row {
+  display: grid;
+  grid-template-columns: 180px 130px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.health__row:last-child { border-bottom: none; }
+
+.health__name {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.health__state {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+}
+
+.health__state--ok            { color: var(--status-nominal); }
+.health__state--degraded      { color: var(--status-warning); }
+.health__state--unavailable   { color: var(--status-critical); }
+.health__state--not_built     { color: var(--status-inert); }
+.health__state--not_connected { color: var(--status-inert); }
+
+.health__detail {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

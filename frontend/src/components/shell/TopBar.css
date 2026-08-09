@@ -1,0 +1,123 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  height: var(--topbar-height);
+  flex-shrink: 0;
+  padding: 0 var(--space-4);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar__identity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.topbar__wordmark {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wider);
+  color: var(--text-primary);
+}
+
+.topbar__subtitle {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.topbar__status {
+  display: flex;
+  gap: var(--space-2);
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-shrink: 0;
+}
+
+.topbar__utc,
+.topbar__operator {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.topbar__operator {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* ---- Status chips ---- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.chip__label {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chip__value {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.chip--nominal .chip__value { color: var(--status-nominal); }
+.chip--info .chip__value    { color: var(--status-info); }
+.chip--warning .chip__value { color: var(--status-warning); }
+.chip--critical .chip__value{ color: var(--status-critical); }
+.chip--inert .chip__value   { color: var(--status-inert); }
+.chip--unknown .chip__value { color: var(--text-disabled); }
+
+.chip--warning  { border-color: color-mix(in srgb, var(--status-warning) 40%, transparent); }
+.chip--critical { border-color: color-mix(in srgb, var(--status-critical) 45%, transparent); }
+
+/* ---- Mode indicator ----
+   Deliberately the loudest element in the bar. Synthetic data being mistaken for real is the
+   failure this exists to prevent. */
+
+.mode {
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+}
+
+.mode--simulation {
+  color: var(--status-warning);
+  border-color: var(--status-warning);
+  background: var(--status-warning-dim);
+}
+
+.mode--live {
+  color: var(--status-critical);
+  border-color: var(--status-critical);
+  background: var(--status-critical-dim);
+}
+
+.mode--unknown {
+  color: var(--text-disabled);
+  border-color: var(--line);
+}

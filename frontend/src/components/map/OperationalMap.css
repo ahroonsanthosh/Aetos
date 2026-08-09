@@ -1,0 +1,71 @@
+.map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--surface-void);
+  overflow: hidden;
+}
+
+.map--empty {
+  display: grid;
+  place-items: center;
+}
+
+.map__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.map__scale,
+.map__legend {
+  position: absolute;
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+  border: 1px solid var(--line-subtle);
+  pointer-events: auto;
+}
+
+.map__scale {
+  bottom: var(--space-3);
+  left: var(--space-3);
+  align-items: center;
+}
+
+.map__legend {
+  top: var(--space-3);
+  left: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.map__scale-buttons {
+  display: flex;
+  gap: 1px;
+}
+
+.map__scale-button {
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.map__scale-button:hover {
+  color: var(--text-secondary);
+  border-color: var(--line);
+}
+
+.map__scale-button.is-active {
+  color: var(--status-info);
+  border-color: var(--status-info);
+}
+
+.track-marker text {
+  user-select: none;
+}

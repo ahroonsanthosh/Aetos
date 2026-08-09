@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "c_ambiguous_intermittent",
+  "name": "C — Ambiguous and intermittent",
+  "description": "Two problems at once. A bird wanders slowly at the far edge of radar coverage, where probability of detection and confidence are both poor. Separately, an unidentified aircraft is observed for fifty seconds, is not seen for thirty, then is observed again on the path it would have flown in between.",
+  "purpose": "To exercise the two ways a track becomes uncertain: an object whose identity the sensors genuinely cannot resolve, and an object whose observations stop and restart. Both must degrade gracefully. Neither may be resolved by guessing confidently.",
+  "expected_behaviour": [
+    "must not report a confident UAS classification for the bird — an honest low-confidence or unknown label is the correct answer",
+    "must not alert on the bird",
+    "must coast the intermittent object through the gap rather than declaring it lost immediately",
+    "must not present a coasted position as a freshly observed one",
+    "track history must survive the gap: the operator must not be shown a brand new object where an old one returned (FM-022)",
+    "classification confidence must fall while observations are missing, not stay where it was"
+  ],
+  "seed": 1003,
+  "site_id": "fictional-test-site",
+  "duration_s": 300.0,
+  "objects": [
+    {
+      "object_id": "edge-bird-1",
+      "description": "Bird drifting near the limit of radar coverage, turning slowly and unpredictably.",
+      "start": { "east_m": 6800.0, "north_m": 2000.0, "altitude_m": 90.0 },
+      "motion": {
+        "speed_mps": 12.0,
+        "heading_deg": 20.0,
+        "turn_rate_dps": 3.0,
+        "max_speed_mps": 15.0
+      },
+      "true_classification": "bird",
+      "behaviour": "erratic",
+      "appears_at_s": 0.0
+    },
+    {
+      "object_id": "intermittent-1a",
+      "description": "Unidentified aircraft, first observation window, tracking north-east.",
+      "start": { "east_m": -3000.0, "north_m": -3000.0, "altitude_m": 110.0 },
+      "motion": {
+        "speed_mps": 20.0,
+        "heading_deg": 45.0,
+        "max_speed_mps": 25.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "transit",
+      "appears_at_s": 90.0,
+      "disappears_at_s": 140.0
+    },
+    {
+      "object_id": "intermittent-1b",
+      "description": "The same aircraft after a thirty-second gap, resumed where it would have reached. Two objects because simulator truth is a flight path, not a belief about identity; reconciling them is the tracker's job and the point of the scenario.",
+      "start": { "east_m": -1869.0, "north_m": -1869.0, "altitude_m": 110.0 },
+      "motion": {
+        "speed_mps": 20.0,
+        "heading_deg": 45.0,
+        "max_speed_mps": 25.0
+      },
+      "true_classification": "unknown_uas",
+      "behaviour": "transit",
+      "appears_at_s": 170.0,
+      "disappears_at_s": 260.0
+    }
+  ]
+}
