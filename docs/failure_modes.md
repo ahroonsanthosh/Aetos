@@ -189,3 +189,23 @@ durably appended, this halts the pipeline by design.
 **Intended handling:** fail loudly and visibly rather than continuing to track without an
 audit trail. Continuing without durable events would produce confident output that cannot be
 reconstructed or defended afterwards.
+
+---
+
+## Deployment
+
+### FM-040 — Docker image is unverified
+**Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
+
+`Dockerfile` and `docker-compose.yml` were written but **never built or run**: the environment
+they were authored in had no Docker daemon. `start.sh` and the single-process serving it
+relies on are verified end to end in a browser; the container path is not.
+
+One issue was caught by inspection rather than by testing and is already fixed: a regular
+`pip install .` places `backend/` in site-packages, and `ConfigPaths.default()` derives the
+repository root from its own `__file__` — so configuration loading would have looked beside
+site-packages and failed. The image installs editable for that reason. Other issues of the
+same kind may remain.
+
+**Mitigation:** `./start.sh` is the verified path. Anyone using the container should expect to
+debug the first build.

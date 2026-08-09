@@ -27,6 +27,7 @@ import uvicorn
 from backend.api.app import create_app
 from backend.api.identity import LocalOperatorIdentityProvider
 from backend.api.services import ApiServices
+from backend.api.static import mount_frontend
 from backend.common.clock import Clock, SystemClock
 from backend.common.config import ConfigPaths, RunMode
 from backend.database.projection import TrackProjection
@@ -202,6 +203,10 @@ def build_application(
 
     app = create_app(services)
     _attach_pipeline_task(app, pipeline, scenario, tick_s)
+
+    # After the routers, so the interface's catch-all can only ever match paths the API did
+    # not claim.
+    mount_frontend(app)
     return app
 
 

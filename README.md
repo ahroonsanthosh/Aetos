@@ -61,23 +61,47 @@ a single combined pipeline function.
 
 ## Running it
 
-```bash
-# Backend, driving a scenario so there is something to see
-uv venv && uv pip install -e ".[dev]"
-python -m backend.main --scenario b_approaching_threat
-
-# Operator interface, in another terminal
-cd frontend && npm install && npm run dev     # http://localhost:5173
-```
-
-Nine scenarios are available in `scenarios/`, covering benign transit, an approaching threat,
-intermittent detection, multiple and crossing objects, sensor degradation, clutter, sensor
-disagreement and swarm saturation.
+One command. It sets up Python, builds the interface, starts everything and opens a browser.
 
 ```bash
-pytest -q                      # backend suite
-cd frontend && npm test        # interface suite
+./start.sh
 ```
+
+Then **http://localhost:8000** — a single process serves both the API and the operator
+interface, so there is no second terminal and no proxy to configure.
+
+```bash
+./start.sh --list                  # show the nine scenarios and what each one is for
+./start.sh h_track_crossing        # run a specific one
+./start.sh --no-scenario           # idle system, no synthetic data
+./start.sh --port 9000             # serve somewhere else
+```
+
+Needs Python 3.11+ and Node 20+. Re-running is cheap: it skips whatever is already done.
+
+### Or with Docker, if you would rather not install either
+
+```bash
+docker compose up      # then http://localhost:8000
+```
+
+### Tests
+
+```bash
+pytest -q                      # backend
+cd frontend && npm test        # interface
+```
+
+## Before you put this anywhere
+
+**Aetos has no authentication of any kind.** No login, no roles, no authorisation checks.
+Anyone who can reach the port has the full operator interface and the complete event log.
+This is a deliberate, recorded decision — a half-built auth system is worse than none because
+it looks like security — but it means the system must stay on a machine you control.
+`start.sh` binds to localhost and the Docker port is published to `127.0.0.1` for that reason.
+
+See [ADR 0008](docs/adr/0008-determinism-backpressure-auth.md) and `docs/failure_modes.md`
+FM-001.
 
 ## Status
 
