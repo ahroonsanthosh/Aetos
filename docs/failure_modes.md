@@ -305,13 +305,21 @@ been run successfully**, only observed to fail cleanly with actionable messages.
 
 Two assumptions in particular are unconfirmed:
 
-- The GitHub release asset naming (`..._${OS}_${ARCH}.tar.gz`) is taken from the go-pmtiles
-  release convention and is matched by pattern rather than pinned, so a naming change breaks it.
+- The GitHub release asset naming (`..._${OS}_${ARCH}.<ext>`) is taken from the go-pmtiles
+  release convention and matched by pattern rather than pinned, so a naming change breaks it.
   It fails with a message pointing at the releases page, which is the right failure, but it is
-  a failure.
+  a failure. The Windows variant (`.zip` containing `pmtiles.exe`) and the Unix one (`.tar.gz`
+  containing `pmtiles`) are both handled; only the Unix path could be exercised even as far as
+  the request.
 - Protomaps publishes dated planet builds with no "latest" alias, so the script walks back up
   to fourteen days looking for one. If the publishing cadence is slower than that it finds
   nothing and reports it.
+
+Unpacking is *not* among the unverified parts. It goes through
+`scripts/extract_archive.py` rather than `unzip` or `tar`, because Git Bash — the shell every
+Windows user of this repository is in — ships neither reliably, and the extractor is tested
+locally across zip and tar archives, flat and structured extraction, a no-match failure, and a
+path-escape attempt.
 
 **Mitigation:** `docs/basemap.md` documents the manual path in full, and every automated step
 fails with the manual equivalent. The basemap is optional throughout — with nothing installed

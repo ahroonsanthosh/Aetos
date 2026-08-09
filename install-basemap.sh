@@ -46,6 +46,14 @@ PUBLIC_DIR="frontend/public"
 TILES="$PUBLIC_DIR/basemap.pmtiles"
 FONTS_DIR="$PUBLIC_DIR/basemap-fonts"
 
+# Unpacking goes through Python rather than `unzip` or `tar`. Git Bash — the shell every
+# Windows user of this repository is in, since start.sh needs it — ships neither reliably, and
+# a missing `unzip` fails only on the platform least likely to be the one a change was tested
+# on. See scripts/extract_archive.py.
+extract_archive() {
+  "$PYBIN" "$REPO_ROOT/scripts/extract_archive.py" "$1" "$2" "$3"
+}
+
 # ---------------------------------------------------------------------------------------
 # What is already installed
 #
@@ -120,39 +128,48 @@ say "Site '$SITE' — cutting a ${RADIUS_KM} km box: $BBOX"
 # The extract tool
 # ---------------------------------------------------------------------------------------
 
+# Windows gets a .zip containing pmtiles.exe; everything else a .tar.gz containing pmtiles.
+# Assuming .tar.gz everywhere fails on the one platform this repository's users are actually
+# on, and fails by finding no matching release rather than by anything obvious.
+case "$(uname -s)" in
+  Linux)   OS="Linux";   ARCHIVE_EXT="tar.gz"; BIN_NAME="pmtiles" ;;
+  Darwin)  OS="Darwin";  ARCHIVE_EXT="tar.gz"; BIN_NAME="pmtiles" ;;
+  MINGW*|MSYS*|CYGWIN*) OS="Windows"; ARCHIVE_EXT="zip"; BIN_NAME="pmtiles.exe" ;;
+  *) fail "Unrecognised system $(uname -s). Install the pmtiles tool by hand from https://github.com/protomaps/go-pmtiles/releases and re-run." ;;
+esac
+case "$(uname -m)" in
+  x86_64|amd64) ARCH="x86_64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+  *) fail "Unrecognised architecture $(uname -m). Install the pmtiles tool by hand and re-run." ;;
+esac
+
 PMTILES_BIN="$(command -v pmtiles || true)"
-if [[ -z "$PMTILES_BIN" && -x "$REPO_ROOT/.tools/pmtiles" ]]; then
-  PMTILES_BIN="$REPO_ROOT/.tools/pmtiles"
+if [[ -z "$PMTILES_BIN" && -x "$REPO_ROOT/.tools/$BIN_NAME" ]]; then
+  PMTILES_BIN="$REPO_ROOT/.tools/$BIN_NAME"
 fi
 
 if [[ -z "$PMTILES_BIN" ]]; then
-  say "Fetching the pmtiles tool"
+  say "Fetching the pmtiles tool for ${OS}/${ARCH}"
   mkdir -p .tools
-
-  case "$(uname -s)" in
-    Linux)   OS="Linux" ;;
-    Darwin)  OS="Darwin" ;;
-    MINGW*|MSYS*|CYGWIN*) OS="Windows" ;;
-    *) fail "Unrecognised system $(uname -s). Install the pmtiles tool by hand from https://github.com/protomaps/go-pmtiles/releases and re-run." ;;
-  esac
-  case "$(uname -m)" in
-    x86_64|amd64) ARCH="x86_64" ;;
-    arm64|aarch64) ARCH="arm64" ;;
-    *) fail "Unrecognised architecture $(uname -m). Install the pmtiles tool by hand and re-run." ;;
-  esac
 
   # Asked for by name from the releases API rather than hardcoding a version, so this does not
   # rot the first time upstream cuts a release.
   # curl's own diagnostics are suppressed: this step has a good failure message of its own,
   # and a bare "curl: (22) ... 403" above it tells the reader nothing they can act on.
   ASSET="$(curl -fsSL https://api.github.com/repos/protomaps/go-pmtiles/releases/latest 2>/dev/null \
-    | grep -o "https://[^\"]*${OS}_${ARCH}\.tar\.gz" | head -1 || true)"
+    | grep -o "https://[^\"]*${OS}_${ARCH}\.${ARCHIVE_EXT}" | head -1 || true)"
 
   [[ -n "$ASSET" ]] || fail "Could not find a pmtiles release for ${OS}/${ARCH}. Download it from https://github.com/protomaps/go-pmtiles/releases, put it on your PATH, and re-run."
 
-  curl -fsSL "$ASSET" 2>/dev/null | tar -xz -C .tools pmtiles 2>/dev/null || fail "The pmtiles download failed. Fetch it by hand from https://github.com/protomaps/go-pmtiles/releases and re-run."
-  chmod +x .tools/pmtiles
-  PMTILES_BIN="$REPO_ROOT/.tools/pmtiles"
+  curl -fsSL -o ".tools/download.${ARCHIVE_EXT}" "$ASSET" 2>/dev/null \
+    || fail "The pmtiles download failed. Fetch it by hand from https://github.com/protomaps/go-pmtiles/releases and re-run."
+
+  extract_archive ".tools/download.${ARCHIVE_EXT}" ".tools" "$BIN_NAME" \
+    || fail "Could not unpack the pmtiles tool."
+  rm -f ".tools/download.${ARCHIVE_EXT}"
+
+  chmod +x ".tools/$BIN_NAME" 2>/dev/null || true
+  PMTILES_BIN="$REPO_ROOT/.tools/$BIN_NAME"
   ok "pmtiles tool ready"
 fi
 
@@ -193,12 +210,14 @@ ok "Tiles installed ($(du -h "$TILES" | cut -f1))"
 if [[ "$WANT_FONTS" == "1" && ! -d "$FONTS_DIR" ]]; then
   say "Fetching label fonts"
   TMP="$(mktemp -d)"
-  if curl -fsSL -o "$TMP/assets.zip" https://github.com/protomaps/basemaps-assets/archive/refs/heads/main.zip \
-     && (cd "$TMP" && unzip -q assets.zip 'basemaps-assets-main/fonts/*'); then
+  if curl -fsSL -o "$TMP/assets.zip" https://github.com/protomaps/basemaps-assets/archive/refs/heads/main.zip 2>/dev/null \
+     && extract_archive "$TMP/assets.zip" "$TMP" "/fonts/" \
+     && [[ -d "$TMP/basemaps-assets-main/fonts" ]]; then
+    mkdir -p "$PUBLIC_DIR"
     mv "$TMP/basemaps-assets-main/fonts" "$FONTS_DIR"
     ok "Label fonts installed"
   else
-    warn "Label fonts could not be fetched. Terrain will draw unlabelled, which is a cosmetic loss only."
+    warn "Label fonts could not be fetched. Terrain will draw unlabelled, a cosmetic loss only."
   fi
   rm -rf "$TMP"
 fi
