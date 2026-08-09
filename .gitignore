@@ -35,8 +35,11 @@ frontend/.vite/
 config/environments/local.*
 config/**/local_*.json
 
-# Runtime data — the event store and recordings are generated artefacts
-data/
+# Runtime data — the event store and recordings are generated artefacts.
+# Anchored to the repo root: an unanchored `data/` matches any directory named `data`
+# anywhere in the tree, which silently swallowed frontend/src/data/ (source code, not a
+# generated artefact) from every commit until this was caught by a cold-clone test.
+/data/
 *.db
 *.db-wal
 *.db-shm
