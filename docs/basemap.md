@@ -7,6 +7,29 @@ install one.
 **Nothing here is required.** With no tiles installed the Terrain button reports "No terrain"
 and explains why, and the display is exactly as it would be otherwise.
 
+## The short way
+
+```bash
+./install-basemap.sh
+```
+
+That works out where your site is from `config/sites/`, cuts a 50 km box around it out of the
+current Protomaps planet build, fetches the extract tool if you do not have it, installs the
+label fonts, and verifies the result. Then `./start.sh` and click **Terrain**.
+
+```bash
+./install-basemap.sh --radius 20     # smaller area, smaller download
+./install-basemap.sh --site NAME     # a site other than the default
+./install-basemap.sh --check         # what is installed right now
+```
+
+It needs a working internet connection *once*. After that the map is a local file and the
+system runs with no network at all — which is the whole reason for this approach rather than a
+hosted tile service.
+
+The rest of this page is what the script does, for anyone who needs to do it by hand or on a
+machine that cannot reach the internet.
+
 ## What you need
 
 Two files, both served from the frontend's `public/` directory:
@@ -21,7 +44,7 @@ deployment installs terrain by **copying a file**. No tile server, no API key, n
 no network at runtime — which is the property that made this worth doing at all for a system
 that has to work air-gapped.
 
-## Getting the tiles
+## Getting the tiles, by hand
 
 [Protomaps](https://protomaps.com/) builds OpenStreetMap into single-file `.pmtiles` archives.
 
@@ -41,7 +64,7 @@ the outer ring, and beyond the extract the map is simply blank.
 gives roughly 10 m per pixel; going deeper multiplies the archive size for detail that a
 tactical display does not use.
 
-## Getting the fonts
+## Getting the fonts, by hand
 
 Optional. Without them the terrain renders and labels do not.
 

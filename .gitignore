@@ -52,3 +52,7 @@ recordings/
 .idea/
 .DS_Store
 *.swp
+
+# Downloaded helper binaries (the pmtiles extract tool). Fetched on demand by
+# ./install-basemap.sh, never committed.
+/.tools/

@@ -293,6 +293,32 @@ reconstructed or defended afterwards.
 
 ## Deployment
 
+### FM-041 — The basemap installer's download path is unverified
+**Status:** Open · **Severity:** Low — affects an optional feature's setup, not runtime behaviour
+
+`install-basemap.sh` was written and tested in an environment whose network policy blocks
+`api.github.com`, `build.protomaps.com` and `github.com`. Everything that does not require the
+network is verified: site lookup, bounding-box derivation (checked at four latitudes, each
+producing exactly the requested span), platform detection, argument handling, archive
+validation by magic bytes, and every failure message. The three download steps have **never
+been run successfully**, only observed to fail cleanly with actionable messages.
+
+Two assumptions in particular are unconfirmed:
+
+- The GitHub release asset naming (`..._${OS}_${ARCH}.tar.gz`) is taken from the go-pmtiles
+  release convention and is matched by pattern rather than pinned, so a naming change breaks it.
+  It fails with a message pointing at the releases page, which is the right failure, but it is
+  a failure.
+- Protomaps publishes dated planet builds with no "latest" alias, so the script walks back up
+  to fourteen days looking for one. If the publishing cadence is slower than that it finds
+  nothing and reports it.
+
+**Mitigation:** `docs/basemap.md` documents the manual path in full, and every automated step
+fails with the manual equivalent. The basemap is optional throughout — with nothing installed
+the display is exactly as it would otherwise be.
+
+---
+
 ### FM-040 — Docker image is unverified
 **Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
 
