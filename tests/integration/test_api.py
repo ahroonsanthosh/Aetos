@@ -262,3 +262,55 @@ def test_no_endpoint_acts_on_the_physical_world(client: TestClient) -> None:
 
     for forbidden in ("engage", "fire", "neutralis", "neutraliz", "intercept", "deploy"):
         assert forbidden not in paths, f"API exposes a route containing {forbidden!r}"
+
+
+# --------------------------------------------------------------------------------------
+# System status — run mode and component health
+# --------------------------------------------------------------------------------------
+
+
+def test_mode_reports_simulation_as_a_backend_fact(client: TestClient) -> None:
+    """The interface must show simulated-versus-real unmissably, so it has to read a fact the
+    backend asserts. A frontend constant would let synthetic data be presented as real by
+    editing one line."""
+    body = client.get(f"{API_PREFIX}/system/mode").json()
+
+    assert body["mode"] == "simulation"
+    assert body["simulated"] is True
+    assert body["real_adapters_connected"] == 0
+
+
+def test_health_reports_unbuilt_modules_as_unbuilt(client: TestClient) -> None:
+    """A green light nothing computes is worse than no light. Classification, risk and alerts
+    do not exist, and the dashboard must say so rather than showing them as healthy."""
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    for absent in ("fusion", "classification", "risk", "alerts", "system_health"):
+        assert components[absent]["state"] == "not_built"
+        assert components[absent]["detail"]
+
+
+def test_health_reports_working_components_as_ok(client: TestClient) -> None:
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["event_store"]["state"] == "ok"
+    assert components["database"]["state"] == "ok"
+    assert components["tracking"]["state"] == "ok"
+
+
+def test_response_integration_is_permanently_not_connected(client: TestClient) -> None:
+    """The scope boundary, visible on the dashboard the operator actually looks at."""
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["response_integration"]["state"] == "not_connected"
+
+
+def test_health_reports_projection_position_against_the_log(client: TestClient) -> None:
+    """Projection lag is the honest measure of whether the operator's picture is current."""
+    body = client.get(f"{API_PREFIX}/system/health").json()
+
+    assert body["latest_event_seq"] > 0
+    assert body["projection_lag"] == max(0, body["latest_event_seq"] - body["projection_seq"])

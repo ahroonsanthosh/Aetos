@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from backend.api.identity import IdentityProvider
 from backend.common.clock import Clock
+from backend.common.config import RunMode
 from backend.database.projection import TrackProjection
 from backend.database.repositories import (
     ScenarioRepository,
@@ -50,3 +51,21 @@ class ApiServices:
     track_history: TrackHistoryRepository
     projection: TrackProjection
     identity: IdentityProvider
+
+    run_mode: RunMode = RunMode.SIMULATION
+    """Which run mode this deployment is configured for.
+
+    Carried here so `GET /system/mode` reports a fact the backend asserts rather than a
+    constant the frontend holds. The interface must show simulated-versus-real unmissably,
+    and a frontend-side toggle would let synthetic data be presented as real by editing one
+    line."""
+
+    def real_adapter_count(self) -> int:
+        """How many non-simulated sensor adapters are feeding the pipeline.
+
+        Structurally zero: no real sensor adapter integration exists in this build, and there
+        is no adapter registry for the API to consult. Written as a method returning a
+        computed zero rather than a literal so that wiring in a registry later changes one
+        implementation instead of every caller that assumed the answer.
+        """
+        return 0

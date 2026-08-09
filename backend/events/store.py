@@ -143,6 +143,17 @@ class SqliteEventStore(EventStore):
             self._conn = sqlite3.connect(
                 str(self._path) if self._path else ":memory:",
                 isolation_level=None,  # explicit transaction control
+                # The API reads the log from threadpool threads — /detections, /alerts and the
+                # event stream all do — and those are never the thread that opened it. Python's
+                # same-thread check would reject every one of those reads, in production as
+                # much as in tests.
+                #
+                # This relaxes the ownership check only. The single-writer guarantee (ADR 0006)
+                # is an architectural discipline about who appends, not a property of Python's
+                # thread assertion, and nothing here licenses a second writer. SQLite
+                # serialises access internally, so concurrent readers alongside the writer are
+                # exactly what WAL mode is for.
+                check_same_thread=False,
             )
             self._conn.row_factory = sqlite3.Row
             if self.is_durable:

@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from backend.api import rest, stream
+from backend.api import rest, stream, system
 from backend.api.schemas import API_PREFIX, API_VERSION
 from backend.api.services import ApiServices
 from backend.api.stream import EventBroadcaster
@@ -77,4 +77,5 @@ def create_app(services: ApiServices) -> FastAPI:
 
     app.include_router(rest.router, prefix=API_PREFIX)
     app.include_router(stream.router, prefix=API_PREFIX)
+    app.include_router(system.router, prefix=API_PREFIX)
     return app
