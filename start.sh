@@ -21,26 +21,43 @@ say() { printf '\033[36m▸\033[0m %s\n' "$1"; }
 fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------------------
-# Find a Python. `python3` is standard on Linux and macOS; a Windows install from
-# python.org registers only `python` (or `py`, via the launcher) unless the installer's
-# "Add python3.exe to PATH" option was used, which most people never see. Trying python3
-# first still matters — some Windows setups (WSL, some package managers) do provide it, and
-# where both exist `python3` is the one guaranteed to be Python 3.
+# Find a *working* Python — not merely one that exists on PATH.
+#
+# `python3` is standard on Linux and macOS; a Windows install from python.org registers
+# only `python` (or `py`, via the launcher) unless the installer's "Add python.exe to PATH"
+# option was used, which most people never see. `python3` is tried first regardless, since
+# some Windows setups do provide it and it is the one guaranteed to be Python 3 when both
+# exist.
+#
+# The harder problem is Windows's own trap: with no Python installed at all, `python` and
+# `python3` are STILL present on PATH — as "App execution alias" stub files Windows ships by
+# default — and `command -v` cannot tell them apart from the real thing, because they are
+# real, executable files. Running one does not run Python; it prints a Microsoft Store
+# redirect message and exits. So each candidate is actually invoked and its output checked,
+# not just located.
 # ---------------------------------------------------------------------------------------
 
 PYBIN=""
-for candidate in python3 python; do
-  if command -v "$candidate" >/dev/null 2>&1; then
+PYTHON_OK=""
+for candidate in python3 python py; do
+  command -v "$candidate" >/dev/null 2>&1 || continue
+
+  probe=$("$candidate" -c 'import sys; print(1 if sys.version_info >= (3, 11) else 0)' 2>/dev/null || true)
+  if [[ "$probe" == "0" || "$probe" == "1" ]]; then
     PYBIN="$candidate"
+    PYTHON_OK="$probe"
     break
   fi
+  # Anything else — including empty output, which is what the Store stub produces once its
+  # message and non-JSON exit are swallowed — is not a real interpreter. Move on rather than
+  # surfacing whatever it printed as though it were a diagnosis of the actual problem.
 done
-if [[ -z "$PYBIN" ]] && command -v py >/dev/null 2>&1; then
-  PYBIN="py"   # the Windows Python launcher, present even when 'python' is not on PATH
-fi
-[[ -n "$PYBIN" ]] || fail "Python is required (3.11 or newer). Install it from python.org, then try again."
 
-PYTHON_OK=$("$PYBIN" -c 'import sys; print(1 if sys.version_info >= (3, 11) else 0)')
+[[ -n "$PYBIN" ]] || fail "Python was not found. On Windows, 'python' existing on PATH does not \
+mean Python is installed — Windows ships a placeholder that redirects to the Microsoft Store \
+instead of running anything. Install the real thing from https://python.org (tick 'Add \
+python.exe to PATH' during setup), close this window, reopen Git Bash, and run ./start.sh again."
+
 [[ "$PYTHON_OK" == "1" ]] || fail "Python 3.11 or newer is required; found $("$PYBIN" --version)."
 
 SCENARIO="b_approaching_threat"
