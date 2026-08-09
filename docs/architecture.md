@@ -106,7 +106,7 @@ makes backend restart recoverable.
 | `backend/events` | Append-only log, sequence ordering, replay reads | Interpret payload meaning |
 | `backend/tracking` | Where things are: association, filtering, lifecycle, prediction | Decide what things are, or how dangerous |
 | `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
-| `backend/classification` | What it is and how confident | Estimate position or velocity |
+| `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
 | `backend/risk` | Score + reason codes + hysteresis | Recommend an action |
 | `backend/decision` | Recommendation category | Execute anything, ever |
@@ -145,9 +145,9 @@ Per spec §20. Status updated as stages complete.
 | 1 | Database + Track API skeleton | **done** |
 | 2 | Simulator producing synthetic detections | **done** |
 | 3 | Tracking: detections → tracks | **done** |
-| 4 | Map: tracks → visualisation (vertical slice complete) | not started |
-| 5 | Track history | partial — retained in the log and projected; no UI |
-| 6 | Classification | not started |
+| 4 | Map: tracks → visualisation (vertical slice complete) | **done** |
+| 5 | Track history | **done** — projected, served, and shown on the map and history page |
+| 6 | Classification | **done** — weighted evidence pooling, distribution output, reason codes (ADR 0012) |
 | 7 | Risk scoring with reason codes | not started |
 | 8 | Alerts | not started |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
@@ -156,9 +156,15 @@ Per spec §20. Status updated as stages complete.
 | 12 | Chaos hardening, degraded-mode UI states | not started |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
-through ingestion into tracking, tracks are recorded in the event log and projected into the
-database, and the API serves them. What is missing between here and a usable operator system
-is the assessment half — classification, risk, alerts — and the interface.
+through ingestion into tracking, classification assesses each track from pooled evidence,
+everything is recorded in the event log and projected into the database, and the API serves
+it to an interface that draws it. What is missing between here and a usable operator system
+is risk scoring, alerting, and fusion.
+
+Classification is the newest stage and the one that changed the pipeline's shape: it produces
+a value but does not own it. The tracker holds every track's classification and carries it in
+the snapshot on every track event, so the log rebuilds into the same state the live system
+holds. See `backend/classification/README.md` for why that inversion exists.
 
 ### Verified, as against built
 
