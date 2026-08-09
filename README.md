@@ -54,9 +54,30 @@ a single combined pipeline function.
 | `backend/api/` | REST + WebSocket |
 | `sensors/` | `SensorAdapter` contract, simulated adapter, real-sensor stubs |
 | `scenarios/` | Named, reusable scenario definitions |
-| `frontend/` | Operator C2 web interface |
+| `frontend/` | Aetos operator interface — see its own README |
+| `response/` | **Empty placeholder.** Future response integration; see its README |
 | `config/` | Sites, sensor registry, environment configuration |
 | `tests/` | Unit, integration, scenario replay, chaos |
+
+## Running it
+
+```bash
+# Backend, driving a scenario so there is something to see
+uv venv && uv pip install -e ".[dev]"
+python -m backend.main --scenario b_approaching_threat
+
+# Operator interface, in another terminal
+cd frontend && npm install && npm run dev     # http://localhost:5173
+```
+
+Nine scenarios are available in `scenarios/`, covering benign transit, an approaching threat,
+intermittent detection, multiple and crossing objects, sensor degradation, clutter, sensor
+disagreement and swarm saturation.
+
+```bash
+pytest -q                      # backend suite
+cd frontend && npm test        # interface suite
+```
 
 ## Status
 

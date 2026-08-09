@@ -126,6 +126,32 @@ consuming information the simulator has and real sensors do not.
 **Intended handling:** the guard test in ADR 0002 — a full scenario run with those fields
 stripped must produce identical track states.
 
+### FM-023 — One object becomes several tracks under multi-sensor observation
+**Status:** Open — target of build stage 10 (fusion) · **Severity:** High for operator trust
+
+**Observed**, not theorised: running `b_approaching_threat` against the shipped test site,
+one drone produced three concurrent CONFIRMED tracks (TRK-00002, TRK-00009, TRK-00018), all
+at the same range and bearing with consistent kinematics.
+
+**Cause.** Three sensors observe the object, so each cycle delivers three detections of it.
+Global nearest neighbour assigns at most one detection per track (ADR 0005), which is correct
+— two detections of *different* objects must never collapse into one track. The surplus
+detections are therefore unassigned, and unassigned detections initiate new tracks. Every step
+behaves exactly as designed; what is missing is the stage that reconciles observations of one
+object across sensors.
+
+**Consequence.** An operator sees three contacts where there is one. Under a swarm scenario
+the multiplier is the sensor count, which also brings the saturation ceiling forward.
+
+**Intended handling:** `backend/fusion`, which is not built. Note that the fix belongs there
+and not in association — loosening the association gate to absorb the extra detections would
+merge genuinely distinct objects, which is a far worse failure and is precisely what scenario
+H tests against.
+
+**Interim mitigation:** none. A single-sensor site does not exhibit it. The operator interface
+does not hide or de-duplicate the tracks, because suppressing them in the display would
+conceal a real limitation of the current build.
+
 ### FM-022 — Track fragmentation on reacquisition
 **Status:** Open — target of build stage 3
 

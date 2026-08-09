@@ -1,0 +1,38 @@
+.response-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-3);
+  max-width: 900px;
+}
+
+.response-card__name {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Colourless on purpose. A response card that drew the eye would misstate what Aetos is. */
+.response-card__status {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--status-inert);
+}
+
+.response-card__row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.response-card__capabilities {
+  margin-top: var(--space-3);
+}
+
+.response-card__capabilities ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

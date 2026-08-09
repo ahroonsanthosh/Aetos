@@ -1,0 +1,110 @@
+.assessment {
+  border-top: 1px solid var(--line);
+  padding: var(--space-4);
+}
+
+.assessment__heading {
+  margin-bottom: var(--space-3);
+}
+
+.assessment__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+
+.assessment__confidence {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+}
+
+.assessment__risk--none     { color: var(--text-secondary); }
+.assessment__risk--low      { color: var(--status-info); }
+.assessment__risk--medium   { color: var(--status-warning); }
+.assessment__risk--high     { color: var(--status-elevated); }
+.assessment__risk--critical { color: var(--status-critical); }
+
+.assessment__reasons {
+  padding: var(--space-2) 0;
+}
+
+.assessment__reasons ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.assessment__reasons li {
+  padding: 1px 0;
+}
+
+.assessment__none {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.assessment__recommendation {
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+}
+
+.assessment__recommendation--info     { color: var(--status-info); border-color: var(--status-info); }
+.assessment__recommendation--warning  { color: var(--status-warning); border-color: var(--status-warning); }
+.assessment__recommendation--elevated { color: var(--status-elevated); border-color: var(--status-elevated); }
+.assessment__recommendation--critical { color: var(--status-critical); border-color: var(--status-critical); }
+
+/* The line between machine output and human authority. Visible on purpose. */
+.assessment__divider {
+  height: 1px;
+  margin: var(--space-4) 0;
+  background: var(--line-strong);
+}
+
+.assessment__human {
+  padding: var(--space-3);
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+}
+
+.assessment__human-body {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.assessment__human-status {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.assessment__unavailable {
+  padding: var(--space-3);
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+}
+
+.assessment__unavailable-title {
+  font-size: var(--text-sm);
+  color: var(--status-inert);
+  margin-bottom: var(--space-2);
+}
+
+.assessment__unavailable-body {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
