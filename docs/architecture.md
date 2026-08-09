@@ -141,19 +141,31 @@ Per spec §20. Status updated as stages complete.
 
 | # | Stage | Status |
 |---|---|---|
-| 0 | Foundation: ADRs, canonical schema, clock, geodesy, event store | in progress |
-| 1 | Database + Track API skeleton | not started |
-| 2 | Simulator producing synthetic detections | not started |
-| 3 | Tracking: detections → tracks | not started |
+| 0 | Foundation: ADRs, canonical schema, clock, geodesy, event store | **done** |
+| 1 | Database + Track API skeleton | **done** |
+| 2 | Simulator producing synthetic detections | **done** |
+| 3 | Tracking: detections → tracks | **done** |
 | 4 | Map: tracks → visualisation (vertical slice complete) | not started |
-| 5 | Track history | not started |
+| 5 | Track history | partial — retained in the log and projected; no UI |
 | 6 | Classification | not started |
 | 7 | Risk scoring with reason codes | not started |
 | 8 | Alerts | not started |
-| 9 | Scenario library and replay | not started |
-| 10 | Multi-sensor simulation and fusion | not started |
-| 11 | Sensor adapter framework finalised, real stubs in place | not started |
+| 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
+| 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
+| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
 | 12 | Chaos hardening, degraded-mode UI states | not started |
+
+The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
+through ingestion into tracking, tracks are recorded in the event log and projected into the
+database, and the API serves them. What is missing between here and a usable operator system
+is the assessment half — classification, risk, alerts — and the interface.
+
+### Verified, as against built
+
+`tests/integration/test_pipeline.py` runs the whole chain on real scenario files with real
+sensor models, and carries the ADR 0002 provenance guard: the same scenario run with and
+without the simulator's privileged fields produces identical track state. That test is the
+reason the sim/real interchangeability claim is stated as fact rather than intent.
 
 ## Decision records
 
