@@ -21,11 +21,13 @@
 import type {
   BackendTrackState,
   ClassificationLabel,
+  EventType,
   Recommendation,
   RiskLevel,
+  TrackHistoryPointView,
   TrackView,
 } from './api'
-import type { LocalFrame, SiteRelative } from './geo'
+import type { EnuPoint, LocalFrame, SiteRelative } from './geo'
 
 /** Display vocabulary. Exactly one per backend state — no invented states. */
 export type TrackDisplayState =
@@ -176,4 +178,42 @@ export function trackColourToken(track: DisplayTrack, selected: boolean): string
     }
   }
   return 'var(--track-default)'
+}
+
+/**
+ * One point in a track's recorded history — the route it has actually taken.
+ *
+ * Unlike `DisplayTrack`, which is one live snapshot, this is a single entry from
+ * `GET /tracks/{id}/history`: one point per event the backend recorded for the track, not a
+ * fixed-interval sample. A track observed every second for a minute has roughly sixty of
+ * these; a track that sat quietly CONFIRMED between two coasting cycles has few. The spacing
+ * between points is itself real information — it says how often something actually happened,
+ * not how often the display refreshed.
+ */
+export interface TrackHistoryPoint {
+  readonly seq: number
+  readonly eventType: EventType
+  readonly timestamp: Date
+  readonly state: TrackDisplayState
+  /** Site-relative position, for plotting the trail on the map. */
+  readonly enu: EnuPoint
+  /** Absolute altitude, metres above the WGS-84 ellipsoid — matches how altitude is shown
+   *  everywhere else in the interface. Kept alongside `enu` rather than derived from
+   *  `enu.upM`, which is height above the *site's* reference altitude, a different number. */
+  readonly altitudeM: number
+  readonly speedMps: number
+  readonly headingDeg: number
+}
+
+export function toHistoryPoint(view: TrackHistoryPointView, frame: LocalFrame): TrackHistoryPoint {
+  return {
+    seq: view.seq,
+    eventType: view.event_type,
+    timestamp: new Date(view.timestamp),
+    state: STATE_LABELS[view.state],
+    enu: frame.toEnu(view.position),
+    altitudeM: view.position.altitude_m,
+    speedMps: view.speed_mps,
+    headingDeg: view.heading_deg,
+  }
 }

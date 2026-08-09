@@ -4,9 +4,9 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { TrackView } from '../../src/data/models/api'
+import type { TrackHistoryPointView, TrackView } from '../../src/data/models/api'
 import { LocalFrame } from '../../src/data/models/geo'
-import { toDisplayTrack } from '../../src/data/models/track'
+import { toDisplayTrack, toHistoryPoint } from '../../src/data/models/track'
 
 const SITE = { latitude: 53.35, longitude: -6.26, altitude_m: 0 }
 const frame = new LocalFrame(SITE)
@@ -125,5 +125,63 @@ describe('site-relative derivation', () => {
 
     expect(track.siteRelative.altitudeM).toBe(120)
     expect(track.position.altitudeM).toBe(120)
+  })
+})
+
+describe('history point conversion', () => {
+  function historyView(overrides: Partial<TrackHistoryPointView> = {}): TrackHistoryPointView {
+    return {
+      seq: 7,
+      event_type: 'TRACK_UPDATED',
+      timestamp: '2026-08-08T12:00:30Z',
+      state: 'confirmed',
+      position: { latitude: 53.36, longitude: -6.26, altitude_m: 340 },
+      speed_mps: 18.5,
+      heading_deg: 270,
+      ...overrides,
+    }
+  }
+
+  it('keeps absolute altitude separate from the site-relative ENU height', () => {
+    // Regression: the two are different numbers (metres above the ellipsoid vs. metres above
+    // this particular site's reference altitude), and conflating them was a real bug caught
+    // before this ever reached a browser — the site here is at sea level, so the two happen
+    // to coincide, which is exactly the case that would have hidden the bug at a glance.
+    const point = toHistoryPoint(historyView(), frame)
+
+    expect(point.altitudeM).toBe(340)
+    expect(point.enu.upM).toBeCloseTo(340, 0)
+  })
+
+  it('distinguishes absolute altitude from ENU height when the site is not at sea level', () => {
+    const raisedSite = new LocalFrame({ latitude: 53.35, longitude: -6.26, altitude_m: 100 })
+    const point = toHistoryPoint(historyView({ position: { latitude: 53.36, longitude: -6.26, altitude_m: 340 } }), raisedSite)
+
+    expect(point.altitudeM).toBe(340)
+    expect(point.enu.upM).toBeCloseTo(240, 0) // 340m absolute, 100m site reference -> 240m relative
+  })
+
+  it('maps backend state through the same vocabulary as a live track', () => {
+    expect(toHistoryPoint(historyView({ state: 'stale' }), frame).state).toBe('STALE')
+    expect(toHistoryPoint(historyView({ state: 'new' }), frame).state).toBe('DETECTED')
+  })
+
+  it('carries the event type and flat kinematics fields through unchanged', () => {
+    const point = toHistoryPoint(
+      historyView({ event_type: 'TRACK_CONFIRMED', speed_mps: 31.2, heading_deg: 88 }),
+      frame,
+    )
+
+    expect(point.eventType).toBe('TRACK_CONFIRMED')
+    expect(point.speedMps).toBe(31.2)
+    expect(point.headingDeg).toBe(88)
+    expect(point.seq).toBe(7)
+  })
+
+  it('parses the timestamp into a real Date', () => {
+    const point = toHistoryPoint(historyView({ timestamp: '2026-08-08T12:00:30Z' }), frame)
+
+    expect(point.timestamp).toBeInstanceOf(Date)
+    expect(point.timestamp.toISOString()).toBe('2026-08-08T12:00:30.000Z')
   })
 })

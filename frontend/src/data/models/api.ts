@@ -104,14 +104,21 @@ export interface TrackListResponse {
 
 export interface TrackHistoryPointView {
   seq: number
-  recorded_at: string
+  /** Which event produced this point — TRACK_CREATED, TRACK_UPDATED, TRACK_CONFIRMED,
+   *  TRACK_STALE, TRACK_LOST. One point per recorded state change, not a fixed-interval
+   *  sample, so the spacing between points reflects how often the track actually changed. */
+  event_type: EventType
+  timestamp: string
   state: BackendTrackState
   position: PositionView
-  kinematics: KinematicsView
+  /** Flat, not nested under a kinematics object — matches the wire shape exactly. */
+  speed_mps: number
+  heading_deg: number
 }
 
 export interface TrackHistoryResponse {
   track_id: string
+  /** Oldest first. */
   points: TrackHistoryPointView[]
   count: number
 }

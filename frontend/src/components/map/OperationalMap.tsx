@@ -11,6 +11,13 @@
  * operation is site-centric, the backend already works in this frame, and a display with no
  * external tile dependency renders identically offline — which matters for a system whose
  * replay is the primary demonstration mechanism.
+ *
+ * Selecting a track is what unlocks its detail on the map: a history trail (fetched here,
+ * only for the selected track), an extended predicted path, and a full data block instead of
+ * the lean toggleable one everyone else gets. Deselecting reverses all three immediately —
+ * the trail fetch stops, the trail itself stops rendering, and the previously-selected
+ * marker reverts to the same lean presentation as its neighbours. Nothing has to be told to
+ * "declutter"; it falls out of `selected` going back to `false`.
  */
 
 import { useMemo, useState } from 'react'
@@ -18,9 +25,13 @@ import { useMemo, useState } from 'react'
 import type { SensorView, SiteView } from '../../data/models/api'
 import type { LocalFrame } from '../../data/models/geo'
 import type { DisplayTrack } from '../../data/models/track'
+import { useTrackHistory } from '../../data/client/useTrackHistory'
+import { MapDisplayOptions } from './MapDisplayOptions'
 import { RangeRings } from './RangeRings'
 import { SensorMarkers } from './SensorMarkers'
 import { TrackMarker } from './TrackMarker'
+import { TrackTrail } from './TrackTrail'
+import { useMapDisplayOptions } from './useMapDisplayOptions'
 import { ZoneOverlay } from './ZoneOverlay'
 import './OperationalMap.css'
 
@@ -47,6 +58,8 @@ export function OperationalMap({
   onSelectTrack,
 }: Props) {
   const [rangeM, setRangeM] = useState(DEFAULT_RANGE_M)
+  const { options: displayOptions, toggle: toggleDisplayOption } = useMapDisplayOptions()
+  const history = useTrackHistory(selectedTrackId, frame)
 
   const visible = useMemo(
     // The backend decides what belongs on an operator's map, not the client. A single
@@ -80,12 +93,19 @@ export function OperationalMap({
           <RangeRings rangeM={rangeM} />
           <SensorMarkers sensors={sensors} frame={frame} rangeM={rangeM} />
 
+          {/* Drawn beneath the markers, so a track sitting on top of its own trail's start
+              is never obscured by it. Only ever has points when a track is selected. */}
+          {history.trackId === selectedTrackId && (
+            <TrackTrail points={history.points} rangeM={rangeM} />
+          )}
+
           {visible.map((track) => (
             <TrackMarker
               key={track.id}
               track={track}
               selected={track.id === selectedTrackId}
               rangeM={rangeM}
+              displayOptions={displayOptions}
               onSelect={(id) => onSelectTrack(id)}
             />
           ))}
@@ -108,6 +128,8 @@ export function OperationalMap({
         </div>
       </div>
 
+      <MapDisplayOptions options={displayOptions} onToggle={toggleDisplayOption} />
+
       <div className="map__legend">
         <span className="label">{site.name}</span>
         <span className="label numeric">
@@ -116,6 +138,9 @@ export function OperationalMap({
         <span className="label">
           {visible.length} displayed / {tracks.length} tracked
         </span>
+        {selectedTrackId && history.error && (
+          <span className="label map__legend-warning">History unavailable</span>
+        )}
       </div>
     </div>
   )

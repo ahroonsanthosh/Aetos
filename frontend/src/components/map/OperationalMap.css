@@ -18,7 +18,8 @@
 }
 
 .map__scale,
-.map__legend {
+.map__legend,
+.map__display-options {
   position: absolute;
   display: flex;
   gap: var(--space-2);
@@ -34,6 +35,12 @@
   align-items: center;
 }
 
+.map__display-options {
+  bottom: var(--space-3);
+  right: var(--space-3);
+  align-items: center;
+}
+
 .map__legend {
   top: var(--space-3);
   left: var(--space-3);
@@ -41,12 +48,18 @@
   gap: var(--space-1);
 }
 
-.map__scale-buttons {
+.map__legend-warning {
+  color: var(--status-warning);
+}
+
+.map__scale-buttons,
+.map__display-buttons {
   display: flex;
   gap: 1px;
 }
 
-.map__scale-button {
+.map__scale-button,
+.map__display-button {
   padding: var(--space-1) var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -56,16 +69,37 @@
   transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.map__scale-button:hover {
+.map__scale-button:hover,
+.map__display-button:hover {
   color: var(--text-secondary);
   border-color: var(--line);
 }
 
-.map__scale-button.is-active {
+.map__scale-button.is-active,
+.map__display-button.is-active {
   color: var(--status-info);
   border-color: var(--status-info);
 }
 
 .track-marker text {
   user-select: none;
+}
+
+/* A gentle breathing pulse on the selected track's ring — enough to help the eye find it
+   again after looking elsewhere on the display, never enough to draw attention on its own.
+   The global prefers-reduced-motion rule in styles/global.css already collapses this to a
+   static ring for anyone who has asked for less motion, so no separate handling is needed
+   here. */
+.track-marker__selection-ring {
+  animation: track-selection-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes track-selection-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
