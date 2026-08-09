@@ -152,6 +152,105 @@ H tests against.
 does not hide or de-duplicate the tracks, because suppressing them in the display would
 conceal a real limitation of the current build.
 
+### FM-026 — Risk could not see relationships between tracks
+**Status:** Closed, with an interim mechanism · **Severity:** was Medium
+
+Every risk factor assesses one track alone, by design — the narrow input is what stops a factor
+depending on the previous risk level, which is how a score becomes self-reinforcing. But
+several contacts converging on the asset from different bearings is a situation no per-track
+factor can describe, and the engine scored each of them exactly as it would score one arriving
+alone.
+
+**Fix.** `backend/risk/correlation.py` runs a cycle-level pass *after* per-track scoring and
+produces a **separate finding**, served from `GET /situation`. It never modifies any track's
+score — `tests/unit/test_risk_correlation.py` drives the real service with one track and then
+with a full coordinated approach and asserts the subject's score is identical, because the
+alternative is a feedback loop with no evidence in it: a busy sky raises every score, which
+raises the count of alarming tracks, which raises every score.
+
+Findings: `coordinated_approach` (contacts closing from bearings far enough apart to be
+separate axes), `simultaneous_engagement` (more objects engaged at once than an operator can
+reasonably attend to), and `duplicate_tracks_suspected` — see below.
+
+**The FM-023 problem, and why this did not have to wait for fusion.** Counting *tracks* would
+have reported one drone seen by four sensors as a four-axis coordinated approach. Fragments of
+one object and genuinely distinct contacts are separable without doing fusion's job, though:
+fragments are co-located **and** co-moving, because they are observations of the same thing,
+while contacts converging on an asset are hundreds of metres apart on different bearings. So
+tracks are clustered on that test and the situation is assessed over clusters. Verified live:
+on `d_multiple_simultaneous` the pass resolved 8 tracks to 5 objects and counted objects, not
+tracks, when deciding whether the picture was saturated.
+
+**This is not fusion and does not claim to be.** It merges nothing, changes no track state,
+re-runs no association, and its output is scoped to risk. It answers one question — how many
+distinct objects are these tracks likely to be — because the situation assessment cannot ask
+anything sensible without it. When `backend/fusion` exists it answers that question properly
+and the clustering here is deleted.
+
+**Remaining, and deliberately visible.** The over-count is now *reported* rather than silently
+absorbed: `duplicate_tracks_suspected` states plainly that the display is showing more tracks
+than there are objects, and the banner carries "8 tracks · likely 5 objects". That is FM-023
+made visible to the operator instead of left for them to discover.
+
+### FM-025 — Classification was overwritten by the next tracking update
+**Status:** Closed · **Severity:** High while open — the interface stated the opposite of what the system had concluded
+
+**Observed** by querying `GET /tracks` on a running system after classification was built.
+Every track reported `unknown` at zero confidence, while the event log held 66
+`CLASSIFICATION_CHANGED` events with correct labels.
+
+**Cause.** `ClassificationService` applied its result to a *copy* of the track and recorded
+that copy in the log. The tracker — which owns track state and emits a full snapshot on every
+track event — knew nothing about it. Each cycle therefore ran: tracking writes
+`TRACK_UPDATED` with an unclassified snapshot, classification writes
+`CLASSIFICATION_CHANGED` with a classified one. Within a cycle classification won on
+sequence; on the *next* cycle tracking overwrote it again, and because
+`CLASSIFICATION_CHANGED` is only emitted on a significant change, most cycles left the last
+word with tracking.
+
+**Why the tests missed it.** Every unit test asserted on the value `classify_cycle` returned
+— which was correct throughout — and the integration checks counted events, which were
+present and correct too. Nothing asserted on what a consumer of the API would actually read.
+
+**Fix.** `TrackManager.apply_classification` — classification hands its answer to the owner of
+the state instead of holding a second copy, and the tracker's snapshots carry it from then on.
+One owner per piece of state is also what keeps the log replayable into the state the live
+system holds (ADR 0006). `tests/unit/test_classification_service.py` pins it by asserting
+through `active_tracks()` and through a `TRACK_UPDATED` snapshot, never through the returned
+copy.
+
+**Related:** the same class of defect — a stale field silently winning — is possible for any
+future module that produces a value belonging to a track. Risk scoring must use the same
+write-back path, not a copy.
+
+### FM-024 — Classification sees only one sensor's hint per track
+**Status:** Open — resolved by fusion (build stage 10) · **Severity:** Medium
+
+**Observed** while verifying classification against `d_multiple_simultaneous`: of 189
+classification assessments, only 34 had any sensor-reported evidence at all. The rest were
+kinematic-only.
+
+**Cause.** Association assigns at most one detection to a track per cycle (ADR 0005, and
+correctly so). Classification therefore receives the hint from whichever single detection won
+that assignment. At the shipped test site, two of four active sensors are radar profiles that
+report no classification at all, so a track whose assigned detection came from a radar gets no
+sensor evidence that cycle — even though an EO/IR or RF sensor observed the same object and
+did report one. Compounded by FM-023: because one object becomes several tracks, each track
+tends to be dominated by a single sensor, so a radar-formed track may *never* see the EO/IR
+hint for the same physical object.
+
+**Consequence.** Classification is weaker than the available evidence justifies, and leans on
+kinematic envelopes, which overlap heavily between classes and discriminate poorly on their
+own. Confidence is correspondingly low, which is at least honest.
+
+**Intended handling:** `backend/fusion`. Once observations of one object are reconciled across
+sensors, every hint for that object reaches the classifier together, which is also when
+`SensorHintEvidence`'s agreement/disagreement handling starts doing real work — it is
+implemented and tested, but currently sees one report at a time in most cycles.
+
+**Not a workaround candidate:** routing *unassigned* detections' hints to nearby tracks would
+be association by another name, done worse and outside the module that owns it.
+
 ### FM-022 — Track fragmentation on reacquisition
 **Status:** Open — target of build stage 3
 

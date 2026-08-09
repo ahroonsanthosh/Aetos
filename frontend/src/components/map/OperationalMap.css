@@ -15,22 +15,98 @@
   display: block;
   width: 100%;
   height: 100%;
+  /* Grab, not crosshair: the map is draggable, and the cursor is the only affordance saying
+     so before someone tries it. */
+  cursor: grab;
+  touch-action: none;
 }
 
-.map__scale,
-.map__legend {
+.map__canvas.is-panning {
+  cursor: grabbing;
+}
+
+.map__controls,
+.map__legend,
+.map__cursor,
+.map__display-options {
   position: absolute;
   display: flex;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
   border: 1px solid var(--line-subtle);
+  backdrop-filter: blur(6px);
   pointer-events: auto;
 }
 
-.map__scale {
+.map__controls {
   bottom: var(--space-3);
   left: var(--space-3);
+  align-items: center;
+}
+
+.map__zoom {
+  display: flex;
+  gap: 1px;
+}
+
+.map__zoom-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.map__zoom-button:hover:not(:disabled) {
+  color: var(--status-info);
+  border-color: var(--status-info);
+}
+
+.map__zoom-button:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+/* The live range, always visible. Continuous zoom means the preset buttons stop being a
+   complete answer to "how far out am I looking", and a scale you cannot read is not a
+   scale. */
+.map__range-readout {
+  min-width: 4.5rem;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* Range and bearing under the pointer. Reserves its width whether or not a figure is
+   present, so the panel does not twitch as the cursor enters and leaves the map. */
+.map__cursor {
+  top: var(--space-3);
+  right: var(--space-3);
+  align-items: center;
+  font-size: var(--text-xs);
+  color: var(--text-disabled);
+  transition: color var(--transition-fast);
+}
+
+.map__cursor.is-live {
+  color: var(--text-secondary);
+}
+
+.map__cursor .numeric {
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.map__display-options {
+  bottom: var(--space-3);
+  right: var(--space-3);
   align-items: center;
 }
 
@@ -41,12 +117,18 @@
   gap: var(--space-1);
 }
 
-.map__scale-buttons {
+.map__legend-warning {
+  color: var(--status-warning);
+}
+
+.map__scale-buttons,
+.map__display-buttons {
   display: flex;
   gap: 1px;
 }
 
-.map__scale-button {
+.map__scale-button,
+.map__display-button {
   padding: var(--space-1) var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -56,16 +138,37 @@
   transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.map__scale-button:hover {
+.map__scale-button:hover,
+.map__display-button:hover {
   color: var(--text-secondary);
   border-color: var(--line);
 }
 
-.map__scale-button.is-active {
+.map__scale-button.is-active,
+.map__display-button.is-active {
   color: var(--status-info);
   border-color: var(--status-info);
 }
 
 .track-marker text {
   user-select: none;
+}
+
+/* A gentle breathing pulse on the selected track's ring — enough to help the eye find it
+   again after looking elsewhere on the display, never enough to draw attention on its own.
+   The global prefers-reduced-motion rule in styles/global.css already collapses this to a
+   static ring for anyone who has asked for less motion, so no separate handling is needed
+   here. */
+.track-marker__selection-ring {
+  animation: track-selection-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes track-selection-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }

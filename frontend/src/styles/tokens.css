@@ -53,8 +53,16 @@
   --track-prediction: #4ba3d94d;
 
   --grid-line: #1a232b;
-  --grid-line-major: #24303a;
-  --grid-label: #4d5a66;
+  --grid-line-major: #2b3946;
+  --grid-label: #5d6b78;
+
+  /* The scope face. A shallow radial fall-off from centre to rim, so the area the display
+     actually covers reads as a lit surface against the void rather than being distinguished
+     from it only by the outer ring. Kept very dark — this sits behind live tracks, and
+     contrast belongs to them. */
+  --scope-face-inner: #0d151c;
+  --scope-face-mid: #0a1117;
+  --scope-face-outer: #070c11;
   --sensor-marker: #3fb98f;
   --sensor-coverage: #3fb98f14;
 

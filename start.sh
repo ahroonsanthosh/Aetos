@@ -128,7 +128,27 @@ fi
 # Operator interface
 # ---------------------------------------------------------------------------------------
 
-if [[ ! -f frontend/dist/index.html || frontend/package.json -nt frontend/dist/index.html ]]; then
+# Rebuild when *any* interface source is newer than the build output, not just when
+# package.json is.
+#
+# The earlier check compared against package.json alone, which meant a pull that changed
+# twenty components and no dependencies rebuilt nothing: the build output already existed
+# and package.json was not newer than it, so the stale interface was served against the new
+# backend. Silent, and exactly the kind of mismatch that is miserable to diagnose — the API
+# returns fields the page does not render, and nothing anywhere says why.
+#
+# `find -newer` rather than a glob, so nested sources count. `dist/` itself is not tracked
+# by git, so a fresh clone has no build output and takes the first branch anyway.
+interface_is_stale() {
+  [[ ! -f frontend/dist/index.html ]] && return 0
+
+  local newer
+  newer=$(find frontend/src frontend/index.html frontend/package.json frontend/vite.config.ts \
+    -newer frontend/dist/index.html -print -quit 2>/dev/null || true)
+  [[ -n "$newer" ]]
+}
+
+if interface_is_stale; then
   say "Building the operator interface (a minute the first time)"
   (
     cd frontend

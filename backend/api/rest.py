@@ -43,6 +43,8 @@ from backend.api.schemas import (
     SensorView,
     SiteListResponse,
     SiteView,
+    SituationFindingView,
+    SituationView,
     TrackHistoryPointView,
     TrackHistoryResponse,
     TrackListResponse,
@@ -120,6 +122,45 @@ async def list_tracks(
         tracks=[TrackView.from_projection(p) for p in projected],
         count=len(projected),
         as_of_seq=services.projection.last_applied_seq,
+    )
+
+
+@router.get("/situation", response_model=SituationView, tags=["tracks"])
+async def get_situation(services: ServicesDep) -> SituationView:
+    """What the current set of tracks means together.
+
+    Findings no single track can produce: several contacts converging from separate bearings,
+    more objects engaged at once than an operator can reasonably attend to, and — honestly
+    reported — the display over-counting one object as several while sensor fusion is not built.
+
+    This never modifies any track's risk score. Per-track scoring is a pure function of one
+    track, and letting a cycle-level view adjust it would make every score depend on how many
+    other tracks happen to exist.
+    """
+    source = services.situation
+    if source is None:
+        # Nothing is running the correlation pass. Reported as unassessed rather than as an
+        # empty finding: "no one looked" and "we looked and found nothing" are different
+        # statements (ADR 0011).
+        return SituationView(
+            level="none", findings=[], track_count=0, object_count=0, assessed=False
+        )
+
+    situation = source.situation
+    return SituationView(
+        level=str(situation.level),
+        findings=[
+            SituationFindingView(
+                code=finding.code,
+                level=str(finding.level),
+                detail=finding.detail,
+                track_ids=list(finding.track_ids),
+            )
+            for finding in situation.findings
+        ],
+        track_count=situation.track_count,
+        object_count=situation.object_count,
+        assessed=situation.assessed,
     )
 
 

@@ -51,15 +51,47 @@ export interface KinematicsView {
 
 export interface ClassificationView {
   label: ClassificationLabel
+  /** How much this conclusion should be believed — deliberately *not* the top label's
+   *  probability. Folds distribution peakedness, evidence weight and track maturity, so a
+   *  sharp answer built on one detection reads as uncertain (ADR 0012). */
   confidence: number
+  /** Probability across the label set. Empty means nothing has been assessed, which is
+   *  different from having been assessed as `unknown`. */
+  distribution: Partial<Record<ClassificationLabel, number>>
+  /** One human-readable justification per contributing evidence source. */
+  reasons: string[]
+  /** Computed server-side so every client does not re-derive the same emptiness check and
+   *  eventually derive it differently. */
+  assessed: boolean
+}
+
+/** One risk factor's reading. All three numbers, because a client showing only `contribution`
+ *  cannot explain why a heavily-weighted factor contributed little. */
+export interface FactorView {
+  code: string
+  weight: number
+  activation: number
+  contribution: number
+  detail: string
 }
 
 export interface ThreatView {
   risk_score: number
   risk_level: RiskLevel
-  /** Always present alongside the score. A bare number is a black box an operator cannot act on. */
+  /** How much the assessment should be believed. Separate from the score and never folded into
+   *  it — a thinly-supported track on alarming geometry is exactly what an operator must see. */
+  confidence: number
+  /** Always present alongside the score. A bare number is a black box an operator cannot act on.
+   *  Ordered by how much each factor actually moved the score. */
   reasons: string[]
+  /** Machine-readable equivalent of `reasons`, same order. */
+  codes: string[]
+  /** Every factor consulted, including the ones that found nothing. */
+  factors: FactorView[]
   recommendation: Recommendation
+  /** Whether risk assessment ran at all. A zero score from a module that ran means "nothing
+   *  here is concerning"; from one that did not it means nothing. */
+  assessed: boolean
 }
 
 export interface TrackingView {
@@ -104,14 +136,21 @@ export interface TrackListResponse {
 
 export interface TrackHistoryPointView {
   seq: number
-  recorded_at: string
+  /** Which event produced this point — TRACK_CREATED, TRACK_UPDATED, TRACK_CONFIRMED,
+   *  TRACK_STALE, TRACK_LOST. One point per recorded state change, not a fixed-interval
+   *  sample, so the spacing between points reflects how often the track actually changed. */
+  event_type: EventType
+  timestamp: string
   state: BackendTrackState
   position: PositionView
-  kinematics: KinematicsView
+  /** Flat, not nested under a kinematics object — matches the wire shape exactly. */
+  speed_mps: number
+  heading_deg: number
 }
 
 export interface TrackHistoryResponse {
   track_id: string
+  /** Oldest first. */
   points: TrackHistoryPointView[]
   count: number
 }
@@ -299,4 +338,29 @@ export interface StreamedEvent {
    *  client maintain the picture from the stream alone. */
   track: TrackView | null
   detail: Record<string, unknown>
+}
+
+
+/** One cycle-level finding, with the tracks it is about. */
+export interface SituationFindingView {
+  code: string
+  level: RiskLevel
+  detail: string
+  track_ids: string[]
+}
+
+/**
+ * What several tracks mean together — a property of the picture, not of any one track.
+ *
+ * Its own endpoint rather than part of the track list, because the track list can be filtered
+ * and this assesses all of them.
+ */
+export interface SituationView {
+  level: RiskLevel
+  findings: SituationFindingView[]
+  track_count: number
+  /** How many distinct objects those tracks are likely to be. The gap between this and
+   *  `track_count` is the missing sensor fusion made visible, not a rounding error. */
+  object_count: number
+  assessed: boolean
 }
