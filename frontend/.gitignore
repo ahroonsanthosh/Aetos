@@ -2,3 +2,9 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+
+# Basemap tile archives and glyph fonts. Hundreds of megabytes of derived geographic data
+# that belongs to a deployment rather than to the source tree — see docs/basemap.md for how
+# to obtain and install them.
+public/*.pmtiles
+public/basemap-fonts/

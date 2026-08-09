@@ -12,6 +12,10 @@
  * external tile dependency renders identically offline — which matters for a system whose
  * replay is the primary demonstration mechanism.
  *
+ * **Basemap.** An optional geographic layer can be shown beneath, following this viewport and
+ * never driving it (ADR 0014). Off by default, and unmounted when off — so the default display
+ * has no tile dependency and does not even load the map library.
+ *
  * **Navigation.** Scroll to zoom about the cursor, drag to pan, double-click to recentre on
  * the site. The viewport is `useMapViewport`; the screen-to-world conversion is the browser's
  * own `getScreenCTM`, taken from the flipped group, so it stays exact under any container
@@ -29,6 +33,7 @@ import type { SensorView, SiteView } from '../../data/models/api'
 import type { LocalFrame } from '../../data/models/geo'
 import type { DisplayTrack } from '../../data/models/track'
 import { useTrackHistory } from '../../data/client/useTrackHistory'
+import { BasemapLayer } from './BasemapLayer'
 import { CompassRose } from './CompassRose'
 import { MapControls } from './MapControls'
 import { MapDisplayOptions } from './MapDisplayOptions'
@@ -36,6 +41,7 @@ import { RangeRings } from './RangeRings'
 import { SensorMarkers } from './SensorMarkers'
 import { TrackMarker } from './TrackMarker'
 import { TrackTrail } from './TrackTrail'
+import { BASEMAP_FONTS_URL, BASEMAP_TILES_URL, useBasemap } from './useBasemap'
 import { useMapDisplayOptions } from './useMapDisplayOptions'
 import type { EnuPoint2D } from './useMapViewport'
 import {
@@ -70,6 +76,7 @@ export function OperationalMap({
 }: Props) {
   const { viewport, setRange, zoomAt, panBy, reset } = useMapViewport()
   const { options: displayOptions, toggle: toggleDisplayOption } = useMapDisplayOptions()
+  const basemap = useBasemap()
   const history = useTrackHistory(selectedTrackId, frame)
 
   const worldRef = useRef<SVGGElement | null>(null)
@@ -189,9 +196,22 @@ export function OperationalMap({
   // measure — the viewport only decides how much of that has to be drawn.
   const coverageM = gridCoverageM(viewport)
   const roseRadiusM = fullyVisibleRadiusM(viewport)
+  const showingBasemap = basemap.enabled && basemap.status === 'ready'
 
   return (
     <div className="map">
+      {/* Beneath the SVG, following its viewport and never driving it. Unmounted entirely when
+          off, which is also what unloads MapLibre. */}
+      {basemap.enabled && (
+        <BasemapLayer
+          viewport={viewport}
+          frame={frame}
+          tilesUrl={BASEMAP_TILES_URL}
+          fontsUrl={BASEMAP_FONTS_URL}
+          onStatus={basemap.report}
+        />
+      )}
+
       <svg
         className={`map__canvas ${panning ? 'is-panning' : ''}`}
         viewBox={viewBoxFor(viewport)}
@@ -220,7 +240,16 @@ export function OperationalMap({
 
         {/* One flip, here. Everything below draws in ENU metres with north up. */}
         <g transform="scale(1, -1)" ref={worldRef}>
-          <circle cx={0} cy={0} r={coverageM} fill="url(#map-scope-face)" />
+          {/* The lit scope face is the display's own ground. With a basemap under it, it
+              would be the thing hiding the terrain the operator just asked for, so it drops to
+              a wash that keeps the rings legible without obscuring what is beneath. */}
+          <circle
+            cx={0}
+            cy={0}
+            r={coverageM}
+            fill="url(#map-scope-face)"
+            opacity={showingBasemap ? 0.25 : 1}
+          />
 
           <ZoneOverlay site={site} frame={frame} rangeM={rangeM} />
           <RangeRings rangeM={rangeM} coverageM={coverageM} />
@@ -253,6 +282,7 @@ export function OperationalMap({
         onSetRange={setRange}
         onZoom={(steps) => zoomAt(steps, null)}
         onReset={reset}
+        basemap={basemap}
       />
 
       <MapDisplayOptions options={displayOptions} onToggle={toggleDisplayOption} />

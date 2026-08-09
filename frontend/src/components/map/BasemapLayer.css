@@ -1,0 +1,18 @@
+/* Beneath everything the PPI draws. Dimmed and desaturated on purpose: it is context, and a
+   full-brightness basemap competes with the tracks for the operator's attention — which is
+   the wrong way round, since one is terrain and the other is why they are looking. */
+.basemap {
+  position: absolute;
+  inset: 0;
+  filter: saturate(0.55) brightness(0.7);
+  pointer-events: none;
+}
+
+/* MapLibre injects its own canvas styling; keep it inside the layer. */
+.basemap .maplibregl-canvas-container,
+.basemap .maplibregl-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
