@@ -65,12 +65,33 @@ export interface ClassificationView {
   assessed: boolean
 }
 
+/** One risk factor's reading. All three numbers, because a client showing only `contribution`
+ *  cannot explain why a heavily-weighted factor contributed little. */
+export interface FactorView {
+  code: string
+  weight: number
+  activation: number
+  contribution: number
+  detail: string
+}
+
 export interface ThreatView {
   risk_score: number
   risk_level: RiskLevel
-  /** Always present alongside the score. A bare number is a black box an operator cannot act on. */
+  /** How much the assessment should be believed. Separate from the score and never folded into
+   *  it — a thinly-supported track on alarming geometry is exactly what an operator must see. */
+  confidence: number
+  /** Always present alongside the score. A bare number is a black box an operator cannot act on.
+   *  Ordered by how much each factor actually moved the score. */
   reasons: string[]
+  /** Machine-readable equivalent of `reasons`, same order. */
+  codes: string[]
+  /** Every factor consulted, including the ones that found nothing. */
+  factors: FactorView[]
   recommendation: Recommendation
+  /** Whether risk assessment ran at all. A zero score from a module that ran means "nothing
+   *  here is concerning"; from one that did not it means nothing. */
+  assessed: boolean
 }
 
 export interface TrackingView {

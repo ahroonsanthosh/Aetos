@@ -13,16 +13,17 @@
  * a state the system cannot enter has no business appearing in an interface that an operator
  * is meant to read as a description of reality.
  *
- * **Assessment availability.** Classification is implemented and reports its own `assessed`
- * flag; risk is not, so its half is still inferred structurally. Rather than let components
- * each decide what an unassessed track looks like, the conversion resolves both into one
- * flag and every consumer renders that one way (ADR 0011).
+ * **Assessment availability.** Classification and risk each report their own `assessed` flag
+ * from the backend. Rather than let components each decide what an unassessed track looks
+ * like, the conversion resolves them into one `available` flag plus the two specific ones, and
+ * every consumer renders those the same way (ADR 0011).
  */
 
 import type {
   BackendTrackState,
   ClassificationLabel,
   EventType,
+  FactorView,
   Recommendation,
   RiskLevel,
   TrackHistoryPointView,
@@ -54,6 +55,18 @@ const STATE_DESCRIPTIONS: Record<TrackDisplayState, string> = {
   LOST: 'No longer maintained. Retained in history.',
 }
 
+/** One risk factor as displayed: what was observed, and what it did to the score. */
+export interface RiskFactor {
+  readonly code: string
+  readonly weight: number
+  readonly activation: number
+  readonly contribution: number
+  readonly detail: string
+  /** Whether the factor found anything. A checked-and-silent factor is worth showing as such;
+   *  it is how an operator sees a concern was considered rather than overlooked. */
+  readonly material: boolean
+}
+
 export interface TrackAssessment {
   /**
    * Whether the backend has concluded anything at all about this track — either half.
@@ -74,10 +87,16 @@ export interface TrackAssessment {
   /** Whether classification specifically has assessed this track, as reported by the backend
    *  rather than inferred from the shape of the data. */
   readonly classified: boolean
-  /** Whether risk assessment has actually run. False throughout this build — the module is
-   *  not implemented — and distinguishing it from a genuine zero matters: "not assessed" and
-   *  "assessed as no risk" must never look the same. */
+  /** Whether risk assessment has actually run, as reported by the backend. Distinguishing it
+   *  from a genuine zero matters: "we looked and nothing here is concerning" and "nothing has
+   *  looked" must never render the same way. */
   readonly riskAssessed: boolean
+  /** How much the risk assessment should be believed. Never folded into the score. */
+  readonly riskConfidence: number
+  /** Machine-readable reason codes, ordered as `reasons`. */
+  readonly riskCodes: readonly string[]
+  /** Every factor consulted, including the silent ones, ordered by contribution. */
+  readonly riskFactors: readonly RiskFactor[]
   readonly riskScore: number
   readonly riskLevel: RiskLevel
   readonly reasons: readonly string[]
@@ -151,19 +170,16 @@ export function toDisplayTrack(view: TrackView, frame: LocalFrame): DisplayTrack
 /**
  * Decide whether the backend has said anything about this track beyond where it is.
  *
- * Classification reports its own `assessed` flag, so that half is taken from the backend
- * rather than inferred here — the backend is the authority on whether it assessed something,
- * and a client re-deriving it would eventually derive it differently.
- *
- * Risk has no such flag yet because the module does not exist, so it keeps the structural
- * test: a zero score with no reason codes is precisely what an unassessed track looks like,
- * and is also what the risk module will stop producing the moment it exists. That half
- * therefore starts reporting true on its own, without a code change.
+ * Both halves now report their own `assessed` flag and both are taken from the backend rather
+ * than inferred here. The backend is the authority on whether it assessed something, and a
+ * client re-deriving it would eventually derive it differently — which was a live risk while
+ * risk assessment was inferred structurally from "score is zero and there are no reasons".
+ * That heuristic was about to become wrong in the most dangerous direction: the engine can
+ * legitimately return a score of zero, meaning "we looked and nothing here is concerning",
+ * and the structural test would have reported that genuine finding as *not assessed*.
  */
 function toAssessment(view: TrackView): TrackAssessment {
   const { classification, threat } = view
-
-  const riskAssessed = threat.risk_score > 0 || threat.reasons.length > 0
 
   const distribution = Object.entries(classification.distribution ?? {})
     .map(([label, probability]) => ({
@@ -174,17 +190,31 @@ function toAssessment(view: TrackView): TrackAssessment {
     .sort((a, b) => b.probability - a.probability)
 
   return {
-    available: classification.assessed || riskAssessed,
+    available: classification.assessed || threat.assessed,
     label: classification.label,
     labelConfidence: classification.confidence,
     distribution,
     classificationReasons: classification.reasons ?? [],
     classified: classification.assessed,
-    riskAssessed,
+    riskAssessed: threat.assessed,
+    riskConfidence: threat.confidence,
     riskScore: threat.risk_score,
     riskLevel: threat.risk_level,
     reasons: threat.reasons,
+    riskCodes: threat.codes ?? [],
+    riskFactors: (threat.factors ?? []).map(toRiskFactor),
     recommendation: threat.recommendation,
+  }
+}
+
+function toRiskFactor(view: FactorView): RiskFactor {
+  return {
+    code: view.code,
+    weight: view.weight,
+    activation: view.activation,
+    contribution: view.contribution,
+    detail: view.detail,
+    material: view.activation > 0 && view.weight > 0,
   }
 }
 

@@ -161,3 +161,30 @@
   color: var(--text-muted);
   line-height: 1.5;
 }
+
+/* What was checked and found absent. Collapsed by default: an operator asking "did it consider
+   loitering?" deserves an answer, and one who is not asking should not have to read past nine
+   lines of absence to reach the recommendation. */
+.assessment__checked {
+  padding: var(--space-2) 0;
+}
+
+.assessment__checked summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.assessment__checked summary:hover {
+  color: var(--text-secondary);
+}
+
+.assessment__checked ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-disabled);
+}
+
+.assessment__checked li {
+  padding: 1px 0;
+}

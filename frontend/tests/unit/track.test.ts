@@ -4,12 +4,26 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { TrackHistoryPointView, TrackView } from '../../src/data/models/api'
+import type { ThreatView, TrackHistoryPointView, TrackView } from '../../src/data/models/api'
 import { LocalFrame } from '../../src/data/models/geo'
 import { toDisplayTrack, toHistoryPoint } from '../../src/data/models/track'
 
 const SITE = { latitude: 53.35, longitude: -6.26, altitude_m: 0 }
 const frame = new LocalFrame(SITE)
+
+function threatView(overrides: Partial<ThreatView> = {}): ThreatView {
+  return {
+    risk_score: 0,
+    risk_level: 'none',
+    confidence: 0,
+    reasons: [],
+    codes: [],
+    factors: [],
+    recommendation: 'MONITOR',
+    assessed: false,
+    ...overrides,
+  }
+}
 
 function view(overrides: Partial<TrackView> = {}): TrackView {
   return {
@@ -19,7 +33,7 @@ function view(overrides: Partial<TrackView> = {}): TrackView {
     position: { latitude: 53.36, longitude: -6.25, altitude_m: 120 },
     kinematics: { speed_mps: 20, heading_deg: 90, vertical_rate_mps: 0 },
     classification: { label: 'unknown', confidence: 0, distribution: {}, reasons: [], assessed: false },
-    threat: { risk_score: 0, risk_level: 'none', reasons: [], recommendation: 'MONITOR' },
+    threat: threatView(),
     tracking: {
       first_seen: '2026-08-08T12:00:00Z',
       last_seen: '2026-08-08T12:01:00Z',
@@ -81,12 +95,14 @@ describe('assessment availability', () => {
     )
     const scored = toDisplayTrack(
       view({
-        threat: {
+        threat: threatView({
           risk_score: 60,
           risk_level: 'medium',
-          reasons: ['approaching_protected_zone'],
+          reasons: ['Closing on the site at 24 m/s.'],
+          codes: ['closing_velocity'],
           recommendation: 'ALERT',
-        },
+          assessed: true,
+        }),
       }),
       frame,
     )
@@ -146,12 +162,13 @@ describe('assessment availability', () => {
   it('carries reason codes through unchanged', () => {
     const track = toDisplayTrack(
       view({
-        threat: {
+        threat: threatView({
           risk_score: 81,
           risk_level: 'high',
           reasons: ['approaching_protected_zone', 'persistent_track'],
           recommendation: 'ESCALATE',
-        },
+          assessed: true,
+        }),
       }),
       frame,
     )
