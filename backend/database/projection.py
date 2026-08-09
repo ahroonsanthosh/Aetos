@@ -68,6 +68,10 @@ _TRACK_EVENTS = frozenset(
         EventType.TRACK_COASTING,
         EventType.TRACK_STALE,
         EventType.TRACK_LOST,
+        # Carries a full track snapshot like the lifecycle events above, so a classification
+        # is reconstructible from the log rather than being an in-memory-only conclusion
+        # (ADR 0012).
+        EventType.CLASSIFICATION_CHANGED,
     }
 )
 

@@ -19,28 +19,33 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import logging
 from pathlib import Path
 
-import numpy as np
 import uvicorn
 
 from backend.api.app import create_app
 from backend.api.identity import LocalOperatorIdentityProvider
 from backend.api.services import ApiServices
 from backend.api.static import mount_frontend
+from backend.classification.classifier import build_default_classifier
+from backend.classification.service import ClassificationService, CycleEvidence
 from backend.common.clock import Clock, SystemClock
 from backend.common.config import ConfigPaths, RunMode
 from backend.database.projection import TrackProjection
 from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
-from backend.tracking.track_manager.manager import IncomingDetection, TrackManager
+from backend.ingestion.pipeline import IngestionPipeline
+from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
 from sensors.schemas.detection import Detection
+
+_LOG = logging.getLogger("aetos.pipeline")
 
 DEFAULT_SITE = "fictional_test_range"
 DEFAULT_TICK_S = 0.5
@@ -71,6 +76,10 @@ class Pipeline:
             state=self.repositories.projection_state,
         )
         self.tracker = TrackManager(clock, self.events, geometry.frame)
+        self.ingestion = IngestionPipeline(clock, self.events, geometry)
+        self.classification = ClassificationService(
+            build_default_classifier(), self.events, sink=self.tracker
+        )
         self._adapters: list[SimulatedSensorAdapter] = []
 
         # The site and its sensors are configuration the API reads back, so they are persisted
@@ -127,50 +136,40 @@ class Pipeline:
             adapter.start()
 
     def step(self) -> int:
-        """Run one cycle. Returns how many detections were ingested."""
+        """Run one cycle. Returns how many detections were accepted.
+
+        The order is the pipeline in `docs/architecture.md`: sensors, ingestion, tracking,
+        classification, projection. Each stage sees only what the one before it produced.
+        """
         detections: list[Detection] = []
         for adapter in self._adapters:
             detections.extend(adapter.get_detections())
 
-        self.tracker.process([self._to_incoming(d) for d in detections])
+        # Validates, deduplicates, records DETECTION_RECEIVED, and reduces to the tracker's
+        # input. The classification hints come back separately — they are evidence about what
+        # a track is, and must not reach the filter deciding where it is (ADR 0002).
+        ingested = self.ingestion.ingest(detections)
+
+        tracks = self.tracker.process(ingested.for_tracking)
+
+        self.classification.classify_cycle(
+            tracks,
+            CycleEvidence.from_assignments(
+                self.tracker.last_assignments, ingested.hints, ingested.quality
+            ),
+        )
 
         # Catch the projection up after tracking, never before: the projection reads the log,
         # and reading it before this cycle's events are appended would leave the API serving a
         # picture one cycle stale for no reason.
         self.projection.catch_up()
-        return len(detections)
+        return ingested.accepted
 
     def close(self) -> None:
         for adapter in self._adapters:
             adapter.stop()
         self.repositories.close()
         self.events.close()
-
-    def _to_incoming(self, detection: Detection) -> IncomingDetection:
-        """Ingestion's reduction: canonical Detection to the tracker's input.
-
-        Speed, heading and classification are dropped here and never cross into tracking, so
-        the tracker cannot depend on data a real sensor may not supply (ADR 0002).
-        """
-        enu = self.geometry.to_enu(
-            detection.position.latitude,
-            detection.position.longitude,
-            detection.position.altitude_m,
-        )
-
-        covariance = (
-            np.array(detection.measurement.position_covariance_enu)
-            if detection.measurement.position_covariance_enu is not None
-            else np.eye(3) * (detection.measurement.position_uncertainty_m**2)
-        )
-
-        return IncomingDetection(
-            detection_id=detection.detection_id,
-            sensor_id=detection.sensor.sensor_id,
-            timestamp=detection.timestamp,
-            position_enu=np.array([enu.east_m, enu.north_m, enu.up_m]),
-            covariance=covariance,
-        )
 
 
 def build_application(
@@ -231,12 +230,32 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
             if scenario:
 
                 async def run() -> None:
+                    consecutive_failures = 0
+
                     while True:
-                        # The tracker and the store are synchronous and are the only writers,
-                        # so this runs on the loop thread rather than in an executor. That
-                        # keeps the single-writer discipline (ADR 0006) true by construction
-                        # rather than by agreement between two threads.
-                        pipeline.step()
+                        try:
+                            # The tracker and the store are synchronous and are the only
+                            # writers, so this runs on the loop thread rather than in an
+                            # executor. That keeps the single-writer discipline (ADR 0006)
+                            # true by construction rather than by agreement between two
+                            # threads.
+                            pipeline.step()
+                            consecutive_failures = 0
+                        except Exception:
+                            # An unhandled exception here used to kill this task outright.
+                            # The server went on serving, the interface went on reporting a
+                            # live stream, and nothing was being tracked — a confident
+                            # display over dead data, which is the failure this whole system
+                            # is built to avoid. It is now logged loudly and the loop
+                            # continues, so a transient fault costs one cycle rather than
+                            # the run.
+                            consecutive_failures += 1
+                            _LOG.exception(
+                                "Pipeline cycle failed (%d consecutive). The operator "
+                                "picture is not advancing.",
+                                consecutive_failures,
+                            )
+
                         await asyncio.sleep(tick_s)
 
                 handle = asyncio.create_task(run())

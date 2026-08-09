@@ -24,11 +24,22 @@ arriving through a different door.
 
 ## Provenance
 
-Everything optional this adapter emits is marked `simulated_truth`, including the noised
-radial velocity. Range rate *is* a quantity a Doppler-capable sensor genuinely measures, so a
-future real adapter would rightly mark it `measured`; but the number this adapter produces
-originates in the simulator's own state however much noise is added to it, and the provenance
-marker records where a value came from, not how plausible it looks.
+`provenance` records **how a value was produced, not which process produced it** (ADR 0012).
+Everything optional this adapter emits is degraded before it leaves — radial velocity carries
+measurement noise, classification is a draw against a confusion model with the true label
+excluded from the alternatives — so all of it is marked `measured`, exactly as a real adapter
+would mark the same quantities.
+
+This adapter therefore emits no `simulated_truth` at all. That is a statement about its
+honesty rather than a gap: the tag is reserved for a value copied from ground truth without
+degradation, and this adapter never emits one.
+
+An earlier revision marked these fields `simulated_truth` on the reading that provenance
+records origin. That was changed because it made provenance a channel distinguishing
+simulated from real input: a downstream module discounting by provenance — which is what
+ADR 0002 instructs classification to do — would have behaved differently in SIMULATION and
+LIVE mode on identical data. Simulated-versus-real is carried by `SensorRef.sensor_type`,
+which is the correct channel for it.
 """
 
 from __future__ import annotations
@@ -402,7 +413,7 @@ class SimulatedSensorAdapter(SensorAdapter):
 
         return Kinematics(
             radial_velocity_mps=float(radial + noise),
-            provenance=Provenance.SIMULATED_TRUTH,
+            provenance=Provenance.MEASURED,
         )
 
     def _classify(self, true_label: ClassificationLabel) -> ClassificationHint | None:
@@ -415,7 +426,7 @@ class SimulatedSensorAdapter(SensorAdapter):
             return ClassificationHint(
                 label=true_label,
                 confidence=confusion.confidence_when_correct,
-                provenance=Provenance.SIMULATED_TRUTH,
+                provenance=Provenance.MEASURED,
             )
 
         # The truth is excluded from the alternatives, so a "wrong" draw is genuinely wrong.
@@ -425,7 +436,7 @@ class SimulatedSensorAdapter(SensorAdapter):
         return ClassificationHint(
             label=label,
             confidence=confusion.confidence_when_confused,
-            provenance=Provenance.SIMULATED_TRUTH,
+            provenance=Provenance.MEASURED,
         )
 
     def _false_alarms(self, elapsed_s: float) -> list[_Observation]:
@@ -504,7 +515,7 @@ class SimulatedSensorAdapter(SensorAdapter):
             radial_velocity_mps=float(
                 self._rng.normal(0.0, FALSE_ALARM_RADIAL_VELOCITY_SIGMA_MPS)
             ),
-            provenance=Provenance.SIMULATED_TRUTH,
+            provenance=Provenance.MEASURED,
         )
 
     def _false_alarm_classification(self) -> ClassificationHint | None:
@@ -514,7 +525,7 @@ class SimulatedSensorAdapter(SensorAdapter):
         return ClassificationHint(
             label=self._pick(confusion.confusable_with),
             confidence=confusion.confidence_when_confused,
-            provenance=Provenance.SIMULATED_TRUTH,
+            provenance=Provenance.MEASURED,
         )
 
     def _pick(self, labels: list[ClassificationLabel]) -> ClassificationLabel:

@@ -72,12 +72,31 @@ class KinematicsView(BaseModel):
 
 
 class ClassificationView(BaseModel):
-    """Label and confidence, always reported separately (spec §9)."""
+    """What the track is believed to be, and on what basis.
+
+    Label and confidence are reported separately (spec §9), and both are *derived from*
+    `distribution` rather than asserted beside it, so the headline cannot disagree with the
+    detail behind it.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     label: str
     confidence: float
+    """How much this conclusion should be believed — not the top label's probability. Folds
+    distribution peakedness, evidence weight and track maturity, so a sharp answer built on
+    one detection reads as uncertain (ADR 0012)."""
+
+    distribution: dict[str, float] = Field(default_factory=dict)
+    """Probability across the label set. Empty means nothing has been assessed, which is
+    different from having been assessed as `unknown`."""
+
+    reasons: list[str] = Field(default_factory=list)
+    """One human-readable justification per contributing evidence source."""
+
+    assessed: bool = False
+    """Whether anything actually classified this track. Computed here so every client does
+    not re-derive the same emptiness check and eventually derive it differently."""
 
 
 class ThreatView(BaseModel):
@@ -159,6 +178,12 @@ class TrackView(BaseModel):
             classification=ClassificationView(
                 label=str(track.classification.label),
                 confidence=track.classification.confidence,
+                distribution={
+                    str(label): probability
+                    for label, probability in track.classification.distribution.items()
+                },
+                reasons=list(track.classification.reasons),
+                assessed=track.classification.assessed,
             ),
             threat=ThreatView(
                 risk_score=track.threat.risk_score,

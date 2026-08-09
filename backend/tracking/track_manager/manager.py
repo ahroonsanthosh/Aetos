@@ -36,6 +36,7 @@ from backend.tracking.filters.kalman import (
 from backend.tracking.models import (
     EnuState,
     Track,
+    TrackClassification,
     TrackKinematics,
     TrackMetadata,
     TrackPosition,
@@ -114,6 +115,20 @@ class _ActiveTrack:
     consecutive_misses: int = 0
     contributing_sensors: set[str] = field(default_factory=set)
 
+    classification: TrackClassification = field(default_factory=TrackClassification)
+    """The most recent classification, held here but never produced or read by tracking.
+
+    The tracker owns the Track objects and is the only writer of track state (ADR 0006), so
+    every event it emits carries a full snapshot. That snapshot has to include the current
+    classification or the next `TRACK_UPDATED` silently reverts a classified track to
+    `unknown` — which is exactly what it did before this field existed: classification events
+    were written correctly and then overwritten by the following cycle's tracking event, so
+    the API served `unknown` on tracks the classifier had confidently labelled.
+
+    Carrying it does not mean tracking uses it. Nothing in this module reads this field, and
+    ADR 0002's separation is unaffected: the value is opaque here, written only through
+    `apply_classification` and passed through to `to_track`."""
+
     def seconds_since_detection(self, now: datetime) -> float:
         return (now - self.last_seen).total_seconds()
 
@@ -155,6 +170,7 @@ class TrackManager:
         self._associator = associator or GlobalNearestNeighbourAssociator(self._kalman)
         self._ids = track_id_generator()
         self._active: dict[str, _ActiveTrack] = {}
+        self._last_assignments: dict[str, str] = {}
 
     @property
     def config(self) -> TrackManagerConfig:
@@ -178,6 +194,13 @@ class TrackManager:
             ],
         )
 
+        # Recorded before the tracks are mutated, so it describes the pairing this cycle
+        # actually made. Read by classification, which needs to know whose sensor hint is
+        # whose — knowing which detection belongs to which track *is* association's job, and
+        # having every other module re-derive it from the event log would be both slower and
+        # a second implementation of the same answer.
+        self._last_assignments = dict(result.assignments)
+
         by_id = {d.detection_id: d for d in detections}
         for track_id, detection_id in result.assignments.items():
             self._apply_detection(self._active[track_id], by_id[detection_id], now)
@@ -195,6 +218,35 @@ class TrackManager:
     def active_tracks(self) -> list[Track]:
         """Every maintained track, including those not yet displayable."""
         return [self.to_track(t) for t in self._active.values()]
+
+    def apply_classification(
+        self, track_id: str, classification: TrackClassification
+    ) -> Track | None:
+        """Store a classification against a track, returning the updated Track.
+
+        Returns None for a track that is no longer maintained — a classification computed for
+        a track retired in the same cycle is stale, not an error, and dropping it is correct.
+
+        The inversion here is deliberate: classification does not hold its own copy of track
+        state, it hands its answer to the component that owns the state. One owner per piece
+        of state means an event's snapshot is always the whole truth, which is what makes the
+        log replayable (ADR 0006). Tracking still knows nothing about what the value means.
+        """
+        active = self._active.get(track_id)
+        if active is None:
+            return None
+
+        active.classification = classification
+        return self.to_track(active)
+
+    @property
+    def last_assignments(self) -> dict[str, str]:
+        """track_id -> detection_id, for the most recent `process` call.
+
+        Empty before the first cycle, and empty for a cycle in which nothing was associated.
+        A copy, so a caller cannot reach in and alter what the tracker recorded.
+        """
+        return dict(self._last_assignments)
 
     def _predict_all(self, now: datetime) -> None:
         for track in self._active.values():
@@ -433,6 +485,7 @@ class TrackManager:
                 track_confidence=self._confidence(active),
                 contributing_sensors=sorted(active.contributing_sensors),
             ),
+            classification=active.classification,
             updated_at=active.last_updated,
         )
 

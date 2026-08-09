@@ -141,6 +141,26 @@ class TrackClassification(BaseModel):
     label: ClassificationLabel = ClassificationLabel.UNKNOWN
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    distribution: dict[ClassificationLabel, float] = Field(default_factory=dict)
+    """Probability across the label set. Empty when nothing has been assessed.
+
+    `label` and `confidence` are derived from this rather than asserted beside it, so the
+    headline can never disagree with the detail. A single label discards exactly what an
+    operator needs when the system is unsure: `small_uas 0.55 / bird 0.40` and
+    `small_uas 0.55 / medium_uas 0.40` have the same top-1 answer and very different
+    operational meaning (ADR 0012)."""
+
+    reasons: list[str] = Field(default_factory=list)
+    """Human-readable justification, one per contributing evidence source. Carried for the
+    same reason risk scores carry reason codes: a judgement an operator cannot interrogate is
+    one they have to take on trust."""
+
+    @property
+    def assessed(self) -> bool:
+        """Whether anything actually classified this track, as opposed to it holding the
+        default. Distinguishes 'assessed as unknown' from 'never assessed'."""
+        return bool(self.distribution)
+
 
 class TrackThreat(BaseModel):
     """Risk assessment for this track.
