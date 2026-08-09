@@ -99,6 +99,23 @@ class ClassificationView(BaseModel):
     not re-derive the same emptiness check and eventually derive it differently."""
 
 
+class FactorView(BaseModel):
+    """One risk factor's reading, exposed so a score can be interrogated rather than trusted.
+
+    `activation` is what the factor observed; `weight` is how much policy lets that matter;
+    `contribution` is what it actually did to the combined score. All three, because a client
+    showing only the last cannot explain why a heavily-weighted factor contributed little.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: str
+    weight: float
+    activation: float
+    contribution: float
+    detail: str
+
+
 class ThreatView(BaseModel):
     """Risk assessment. `reasons` travels with the score, never without it.
 
@@ -113,8 +130,30 @@ class ThreatView(BaseModel):
 
     risk_score: int
     risk_level: str
+
+    confidence: float
+    """How much the assessment should be believed. Separate from the score and never folded
+    into it: a thinly-supported track on alarming geometry is exactly the case an operator
+    needs to see, and multiplying the two would quietly suppress it (ADR 0013)."""
+
     reasons: list[str]
+    """Human-readable, most influential first — ordered by how much each factor actually moved
+    the score, not by its configured weight."""
+
+    codes: list[str]
+    """The machine-readable equivalent of `reasons`, same order. What a client should filter
+    or alert on; the prose is for the operator."""
+
+    factors: list[FactorView]
+    """Every factor consulted, including the ones that found nothing. Keeping the silent ones
+    is what lets an operator see a concern was *checked* rather than merely absent."""
+
     recommendation: str
+
+    assessed: bool
+    """Whether risk assessment ran. A zero score from a module that ran means "nothing here is
+    concerning"; from one that did not it means nothing at all, and the interface must never
+    show them the same way (ADR 0011)."""
 
 
 class TrackingView(BaseModel):
@@ -188,8 +227,21 @@ class TrackView(BaseModel):
             threat=ThreatView(
                 risk_score=track.threat.risk_score,
                 risk_level=str(track.threat.risk_level),
+                confidence=track.threat.confidence,
                 reasons=list(track.threat.reasons),
+                codes=list(track.threat.codes),
+                factors=[
+                    FactorView(
+                        code=factor.code,
+                        weight=factor.weight,
+                        activation=factor.activation,
+                        contribution=factor.contribution,
+                        detail=factor.detail,
+                    )
+                    for factor in track.threat.factors
+                ],
                 recommendation=str(track.threat.recommendation),
+                assessed=track.threat.assessed,
             ),
             tracking=TrackingView(
                 first_seen=track.tracking.first_seen,

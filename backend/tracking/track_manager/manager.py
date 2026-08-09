@@ -41,6 +41,7 @@ from backend.tracking.models import (
     TrackMetadata,
     TrackPosition,
     TrackState,
+    TrackThreat,
 )
 
 SOURCE = "tracking"
@@ -114,6 +115,13 @@ class _ActiveTrack:
     detection_count: int = 0
     consecutive_misses: int = 0
     contributing_sensors: set[str] = field(default_factory=set)
+
+    threat: TrackThreat = field(default_factory=TrackThreat)
+    """The most recent risk assessment, held here for the same reason as `classification`
+    below: the tracker owns the Track objects and emits a full snapshot on every event, so a
+    field it does not carry is a field the next `TRACK_UPDATED` silently erases (FM-025).
+
+    Nothing in this module reads it. Written only through `apply_threat`."""
 
     classification: TrackClassification = field(default_factory=TrackClassification)
     """The most recent classification, held here but never produced or read by tracking.
@@ -237,6 +245,20 @@ class TrackManager:
             return None
 
         active.classification = classification
+        return self.to_track(active)
+
+    def apply_threat(self, track_id: str, threat: TrackThreat) -> Track | None:
+        """Store a risk assessment against a track, returning the updated Track.
+
+        The counterpart to `apply_classification`, and for the same reason: risk produces the
+        value, the tracker owns it. Returns None for a track retired in the same cycle, which
+        is stale rather than an error.
+        """
+        active = self._active.get(track_id)
+        if active is None:
+            return None
+
+        active.threat = threat
         return self.to_track(active)
 
     @property
@@ -486,6 +508,7 @@ class TrackManager:
                 contributing_sensors=sorted(active.contributing_sensors),
             ),
             classification=active.classification,
+            threat=active.threat,
             updated_at=active.last_updated,
         )
 

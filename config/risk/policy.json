@@ -1,0 +1,102 @@
+{
+  "notes": "Risk policy: what this deployment considers dangerous. See ADR 0013 for the combination rule and ADR 0007 for the hysteresis. Weights are the most a factor may contribute on its own; they are combined by noisy-OR, so they do not need to sum to anything.",
+  "min_mitigation": 0.35,
+  "factors": {
+    "zone_incursion": {
+      "group": "engagement",
+      "weight": 0.85,
+      "parameters": {}
+    },
+    "closing_on_protected_area": {
+      "group": "engagement",
+      "weight": 0.8,
+      "parameters": {
+        "horizon_s": 300.0,
+        "urgent_s": 45.0
+      }
+    },
+    "proximity_to_protected_area": {
+      "group": "engagement",
+      "weight": 0.6,
+      "parameters": {
+        "near_m": 250.0,
+        "far_m": 4000.0
+      }
+    },
+    "closing_velocity": {
+      "group": "engagement",
+      "weight": 0.45,
+      "parameters": {
+        "fast_mps": 25.0,
+        "minimum_mps": 1.0
+      }
+    },
+    "direct_approach": {
+      "group": "engagement",
+      "weight": 0.35,
+      "parameters": {
+        "minimum_speed_mps": 2.0,
+        "tolerance_deg": 25.0,
+        "spread_deg": 70.0
+      }
+    },
+    "loitering_near_asset": {
+      "group": "behaviour",
+      "weight": 0.55,
+      "parameters": {
+        "minimum_window_s": 30.0,
+        "minimum_path_m": 60.0,
+        "relevant_range_m": 3000.0,
+        "loiter_ratio": 0.35
+      }
+    },
+    "low_altitude_near_asset": {
+      "group": "behaviour",
+      "weight": 0.4,
+      "parameters": {
+        "low_m": 120.0,
+        "very_low_m": 30.0,
+        "gate_range_m": 1500.0
+      }
+    },
+    "identified_as_uas": {
+      "group": "corroborating",
+      "weight": 0.5,
+      "parameters": {}
+    },
+    "persistent_track": {
+      "group": "corroborating",
+      "weight": 0.25,
+      "parameters": {
+        "established_s": 90.0,
+        "minimum_detections": 6.0
+      }
+    }
+  },
+  "hysteresis": {
+    "escalate_dwell_s": 2.0,
+    "deescalate_dwell_s": 20.0,
+    "bands": [
+      {
+        "level": "low",
+        "rise": 20,
+        "fall": 14
+      },
+      {
+        "level": "medium",
+        "rise": 45,
+        "fall": 37
+      },
+      {
+        "level": "high",
+        "rise": 70,
+        "fall": 61
+      },
+      {
+        "level": "critical",
+        "rise": 87,
+        "fall": 79
+      }
+    ]
+  }
+}

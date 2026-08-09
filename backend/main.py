@@ -37,6 +37,8 @@ from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
 from backend.ingestion.pipeline import IngestionPipeline
+from backend.risk.engine import build_risk_engine, load_risk_policy
+from backend.risk.service import RiskService
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
@@ -79,6 +81,13 @@ class Pipeline:
         self.ingestion = IngestionPipeline(clock, self.events, geometry)
         self.classification = ClassificationService(
             build_default_classifier(), self.events, sink=self.tracker
+        )
+        self.risk = RiskService(
+            build_risk_engine(),
+            load_risk_policy(),
+            geometry,
+            self.events,
+            sink=self.tracker,
         )
         self._adapters: list[SimulatedSensorAdapter] = []
 
@@ -139,7 +148,10 @@ class Pipeline:
         """Run one cycle. Returns how many detections were accepted.
 
         The order is the pipeline in `docs/architecture.md`: sensors, ingestion, tracking,
-        classification, projection. Each stage sees only what the one before it produced.
+        classification, risk, projection. Each stage sees only what the one before it
+        produced — risk runs after classification because identity is one of its inputs, and
+        a track assessed before it was classified would be scored on geometry alone for one
+        cycle longer than necessary.
         """
         detections: list[Detection] = []
         for adapter in self._adapters:
@@ -152,12 +164,14 @@ class Pipeline:
 
         tracks = self.tracker.process(ingested.for_tracking)
 
-        self.classification.classify_cycle(
+        classified = self.classification.classify_cycle(
             tracks,
             CycleEvidence.from_assignments(
                 self.tracker.last_assignments, ingested.hints, ingested.quality
             ),
         )
+
+        self.risk.assess_cycle(classified, self.clock.now())
 
         # Catch the projection up after tracking, never before: the projection reads the log,
         # and reading it before this cycle's events are appended would leave the API serving a
