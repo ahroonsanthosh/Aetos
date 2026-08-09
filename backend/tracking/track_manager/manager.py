@@ -44,6 +44,19 @@ from backend.tracking.models import (
 
 SOURCE = "tracking"
 
+TRACK_SNAPSHOT_KEY = "track"
+"""Payload key carrying the full track state on every track event.
+
+Every event that changes a track carries the whole resulting Track, not just what changed.
+This is what makes ADR 0006's central claim true rather than aspirational: if the log carried
+only deltas, rebuilding state from it would require replaying the Kalman filter, which means
+the log would not be sufficient to reconstruct what the system believed — and 'the log is the
+source of truth' would be a slogan.
+
+The cost is a larger log. That is the right trade: the log is the audit record and the replay
+substrate, and a compact log that cannot reproduce the system's state is worth very little.
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class TrackManagerConfig:
@@ -211,6 +224,7 @@ class TrackManager:
                 "detection_id": detection.detection_id,
                 "sensor_id": detection.sensor_id,
                 "detection_count": track.detection_count,
+                TRACK_SNAPSHOT_KEY: self._snapshot(track),
             },
             track_id=track.track_id,
         )
@@ -263,6 +277,7 @@ class TrackManager:
                 payload={
                     "consecutive_misses": track.consecutive_misses,
                     "seconds_since_detection": round(elapsed, 3),
+                    TRACK_SNAPSHOT_KEY: self._snapshot(track),
                 },
                 track_id=track.track_id,
             )
@@ -336,6 +351,7 @@ class TrackManager:
                 "detection_id": detection.detection_id,
                 "sensor_id": detection.sensor_id,
                 "state": str(track.state),
+                TRACK_SNAPSHOT_KEY: self._snapshot(track),
             },
             track_id=track.track_id,
         )
@@ -367,9 +383,14 @@ class TrackManager:
                 "state": str(track.state),
                 "detection_count": track.detection_count,
                 "seconds_since_detection": round(track.seconds_since_detection(now), 3),
+                TRACK_SNAPSHOT_KEY: self._snapshot(track),
             },
             track_id=track.track_id,
         )
+
+    def _snapshot(self, active: _ActiveTrack) -> dict:
+        """The published Track as a JSON-ready dict, for embedding in an event payload."""
+        return self.to_track(active).model_dump(mode="json")
 
     def to_track(self, active: _ActiveTrack) -> Track:
         """Project internal state into the immutable published Track."""

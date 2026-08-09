@@ -64,6 +64,16 @@ class Database:
             self._conn = sqlite3.connect(
                 str(self._path) if self._path else ":memory:",
                 isolation_level=None,  # explicit transaction control
+                # The API serves synchronous endpoints from a threadpool, so the thread that
+                # reads a repository is not the thread that opened it. Python's default
+                # same-thread check would reject those reads — in production as well as in
+                # tests, since that is simply how the server runs.
+                #
+                # This relaxes the *ownership* check, not the concurrency discipline. SQLite
+                # itself serialises access internally, and writes still go through the
+                # single-writer path the architecture requires (ADR 0006); nothing here
+                # licenses concurrent writers.
+                check_same_thread=False,
             )
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA foreign_keys=ON")
