@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 from pathlib import Path
 
@@ -183,9 +184,34 @@ def _list(repos: SqliteRepositories) -> int:
     return 0
 
 
+_MSYS_ENV_VAR = "MSYSTEM"
+"""Set by Git Bash (MINGW64, MINGW32, MSYS) for every shell it starts. The reliable way to
+detect the environment below, rather than reacting to a hang."""
+
+
+def _read_password(prompt: str) -> str:
+    """`getpass.getpass`, except under Git Bash on Windows, where it hangs rather than fails.
+
+    Windows `getpass` reads the console directly through `msvcrt`, bypassing stdin entirely.
+    That requires a real Win32 console attached to the process. MinTTY — the terminal Git Bash
+    runs in — does not attach one: keystrokes go to a pipe instead, so the `msvcrt` read blocks
+    forever on a console that was never there. It looks exactly like a frozen prompt, because it
+    is one: nothing is wrong with the terminal, the wrong layer is listening.
+
+    `input()` reads through stdin, which MinTTY does connect properly, so it works — the
+    trade is that the password is not hidden while typing. That is worse than hidden entry and
+    better than a command that cannot be run at all.
+    """
+    if sys.platform == "win32" and os.environ.get(_MSYS_ENV_VAR):
+        print(f"{prompt}(visible while typing — Git Bash cannot hide input here)")
+        return input().strip()
+    return getpass.getpass(prompt)
+
+
 def _prompt_new_password() -> str | None:
-    """Prompt twice, without echo. Returns None if the two differ or it is too short."""
-    password = getpass.getpass("Password: ")
+    """Prompt twice, without echo where the terminal allows it. Returns None if the two differ
+    or it is too short."""
+    password = _read_password("Password: ")
     if len(password) < MIN_PASSWORD_LENGTH:
         print(
             f"error: password must be at least {MIN_PASSWORD_LENGTH} characters",
@@ -193,7 +219,7 @@ def _prompt_new_password() -> str | None:
         )
         return None
 
-    if password != getpass.getpass("Repeat: "):
+    if password != _read_password("Repeat: "):
         print("error: passwords do not match", file=sys.stderr)
         return None
 
