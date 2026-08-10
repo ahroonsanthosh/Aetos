@@ -13,6 +13,7 @@
 import { API_PREFIX } from '../models/api'
 import type {
   AlertListResponse,
+  AlertView,
   ModeView,
   ScenarioListResponse,
   SensorListResponse,
@@ -36,11 +37,22 @@ export class ApiError extends Error {
 }
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>('GET', path, signal)
+}
+
+/** The only non-GET call the interface makes. Kept alongside `get` rather than given its own
+ *  helper, because the error handling is the part that matters and duplicating it is how the
+ *  two drift into reporting the same failure differently. */
+async function post<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>('POST', path, signal)
+}
+
+async function request<T>(method: string, path: string, signal?: AbortSignal): Promise<T> {
   const url = `${API_PREFIX}${path}`
   let response: Response
 
   try {
-    response = await fetch(url, { signal, headers: { Accept: 'application/json' } })
+    response = await fetch(url, { method, signal, headers: { Accept: 'application/json' } })
   } catch (cause) {
     // A network failure is not a 500 and must not be reported as one. The interface shows
     // "backend unreachable", which is a different operator problem from "backend is broken".
@@ -62,6 +74,8 @@ export const api = {
     get<TrackHistoryResponse>(`/tracks/${id}/history`, signal),
   situation: (signal?: AbortSignal) => get<SituationView>('/situation', signal),
   alerts: (signal?: AbortSignal) => get<AlertListResponse>('/alerts', signal),
+  acknowledgeAlert: (alertId: string, signal?: AbortSignal) =>
+    post<AlertView>(`/alerts/${encodeURIComponent(alertId)}/acknowledge`, signal),
   sensors: (signal?: AbortSignal) => get<SensorListResponse>('/sensors', signal),
   sites: (signal?: AbortSignal) => get<SiteListResponse>('/sites', signal),
   scenarios: (signal?: AbortSignal) => get<ScenarioListResponse>('/scenarios', signal),

@@ -149,7 +149,7 @@ Per spec §20. Status updated as stages complete.
 | 5 | Track history | **done** — projected, served, and shown on the map and history page |
 | 6 | Classification | **done** — weighted evidence pooling, distribution output, reason codes (ADR 0012) |
 | 7 | Risk scoring with reason codes | **done** — nine factors, grouped combination, hysteresis, reason codes (ADR 0013) |
-| 8 | Alerts | not started |
+| 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
 | 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
@@ -158,9 +158,10 @@ Per spec §20. Status updated as stages complete.
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
 through ingestion into tracking, classification assesses each track from pooled evidence, risk
 scores it from nine factors and hysteresis turns that into a level, decision turns the level
-into a recommendation for a human, everything is recorded in the event log and projected into
-the database, and the API serves it to an interface that draws it. What is missing between
-here and a usable operator system is alerting and fusion.
+into a recommendation for a human, alerting promotes the levels that warrant interrupting
+someone into alerts an operator can acknowledge, everything is recorded in the event log and
+projected into the database, and the API serves it to an interface that draws it. What is
+missing between here and a usable operator system is fusion.
 
 Two of those stages produce values they do not own. Classification and risk each write their
 result back through the tracker, which holds it and carries it in the snapshot on every track
@@ -197,3 +198,4 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0012](adr/0012-classification-by-weighted-evidence.md) | Classification by weighted evidence; what provenance means |
 | [0013](adr/0013-risk-by-escalating-factors.md) | Risk as combined escalating factors, discounted only by evidence of harmlessness |
 | [0014](adr/0014-optional-basemap.md) | An optional self-hosted basemap beneath the PPI |
+| [0015](adr/0015-alerting-as-promotion.md) | Alerting promotes risk levels; it does not assess |

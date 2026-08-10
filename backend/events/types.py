@@ -53,6 +53,11 @@ class EventType(StrEnum):
 
     # Operator-facing
     ALERT_CREATED = "ALERT_CREATED"
+    ALERT_ESCALATED = "ALERT_ESCALATED"
+    """An open alert reached a higher risk level than it was raised at. A distinct event
+    rather than a second `ALERT_CREATED`, because it is the same incident getting worse — two
+    creations would tell an operator reviewing the log that two aircraft came at them."""
+
     ALERT_CLEARED = "ALERT_CLEARED"
     RECOMMENDATION_CHANGED = "RECOMMENDATION_CHANGED"
     OPERATOR_ACKNOWLEDGED = "OPERATOR_ACKNOWLEDGED"

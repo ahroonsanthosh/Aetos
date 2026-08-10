@@ -157,17 +157,31 @@ export interface TrackHistoryResponse {
 
 export interface AlertView {
   alert_id: string
-  seq: number
-  created_at: string
-  track_id: string | null
-  source: string
-  cleared: boolean
-  detail: Record<string, unknown>
+  track_id: string
+  state: 'active' | 'acknowledged' | 'cleared'
+  raised_at: string
+  raised_level: RiskLevel
+  /** The worst level reached while open. Never falls, so an alert that has since subsided
+   *  still reports what it was at its height. */
+  peak_level: RiskLevel
+  level: RiskLevel
+  score: number
+  confidence: number
+  codes: string[]
+  reasons: string[]
+  updated_at: string
+  escalated_at: string | null
+  acknowledged_at: string | null
+  acknowledged_by: string | null
 }
 
 export interface AlertListResponse {
   alerts: AlertView[]
   count: number
+  /** Whether anything was in a position to raise an alert. An empty list with this false is
+   *  "nothing is watching"; with it true, "nothing is wrong". Never render one as the
+   *  other. */
+  assessing: boolean
 }
 
 export interface GeoPointView {

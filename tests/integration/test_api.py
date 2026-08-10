@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.alerting.policy import load_alert_policy
+from backend.alerting.service import AlertService
 from backend.api.app import API_PREFIX, create_app
 from backend.api.identity import LocalOperatorIdentityProvider
 from backend.api.services import ApiServices
@@ -22,7 +24,18 @@ from backend.common.geodesy import GeodeticPoint, LocalFrame
 from backend.database.projection import TrackProjection
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
+from backend.risk.correlation import SituationAssessment
 from backend.tracking.filters.kalman import isotropic_covariance
+from backend.tracking.models import (
+    EnuState,
+    RiskLevel,
+    Track,
+    TrackKinematics,
+    TrackMetadata,
+    TrackPosition,
+    TrackState,
+    TrackThreat,
+)
 from backend.tracking.track_manager.manager import IncomingDetection, TrackManager
 from backend.zones.geometry import load_site_geometry
 
@@ -281,14 +294,72 @@ def test_mode_reports_simulation_as_a_backend_fact(client: TestClient) -> None:
 
 
 def test_health_reports_unbuilt_modules_as_unbuilt(client: TestClient) -> None:
-    """A green light nothing computes is worse than no light. Classification, risk and alerts
-    do not exist, and the dashboard must say so rather than showing them as healthy."""
+    """A green light nothing computes is worse than no light.
+
+    Fusion and the health watchdog do not exist at all. Classification, risk and alerting do,
+    but this fixture builds an API over a bare projection with no pipeline behind it, so from
+    this endpoint's point of view they are equally absent — and it must say so rather than
+    reporting a module it has no handle to as healthy.
+    """
     body = client.get(f"{API_PREFIX}/system/health").json()
     components = {c["component"]: c for c in body["components"]}
 
     for absent in ("fusion", "classification", "risk", "alerts", "system_health"):
         assert components[absent]["state"] == "not_built"
         assert components[absent]["detail"]
+
+
+def test_health_reports_attached_modules_as_running(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """The converse, and the case that regressed silently.
+
+    These rows were hardcoded NOT_BUILT and stayed that way for the whole period after risk
+    and classification landed — the dashboard asserted "every track scores zero" while the
+    track list showed live scores. Pin the reporting to the handles, so the next module to
+    land cannot repeat it.
+    """
+    services = ApiServices(
+        clock=clock,
+        events=events,
+        sites=repositories.sites,
+        sensors=repositories.sensors,
+        scenarios=repositories.scenarios,
+        tracks=repositories.tracks,
+        track_history=repositories.track_history,
+        projection=projection,
+        identity=LocalOperatorIdentityProvider(clock),
+        alerts=AlertService(load_alert_policy(), events),
+        situation=_SituationStub(),
+        classification_running=True,
+    )
+    client = TestClient(create_app(services))
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    for present in ("classification", "risk", "alerts"):
+        assert components[present]["state"] == "ok", present
+        assert "not running" not in components[present]["detail"]
+
+    # Still absent, and must not have been swept along by the same change.
+    assert components["fusion"]["state"] == "not_built"
+    assert components["system_health"]["state"] == "not_built"
+
+
+class _SituationStub:
+    """Stands in for `RiskService` as a situation source.
+
+    Only the presence of the handle is under test here — the health endpoint reports whether
+    risk is attached, not what it currently thinks.
+    """
+
+    @property
+    def situation(self) -> SituationAssessment:
+        return SituationAssessment()
 
 
 def test_health_reports_working_components_as_ok(client: TestClient) -> None:
@@ -314,3 +385,113 @@ def test_health_reports_projection_position_against_the_log(client: TestClient) 
 
     assert body["latest_event_seq"] > 0
     assert body["projection_lag"] == max(0, body["latest_event_seq"] - body["projection_seq"])
+
+
+# --------------------------------------------------------------------------------------
+# Alerts
+# --------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def alerting(events: SqliteEventStore) -> AlertService:
+    return AlertService(load_alert_policy(), events)
+
+
+@pytest.fixture
+def alerting_client(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+    alerting: AlertService,
+) -> TestClient:
+    services = ApiServices(
+        clock=clock,
+        events=events,
+        sites=repositories.sites,
+        sensors=repositories.sensors,
+        scenarios=repositories.scenarios,
+        tracks=repositories.tracks,
+        track_history=repositories.track_history,
+        projection=projection,
+        identity=LocalOperatorIdentityProvider(clock),
+        alerts=alerting,
+    )
+    return TestClient(create_app(services))
+
+
+def test_alerts_without_an_alerting_service_say_so(client: TestClient) -> None:
+    """The field that stops an empty feed reading as an all-clear. Nothing is evaluating
+    tracks here, and the response has to be able to say that (ADR 0011)."""
+    body = client.get(f"{API_PREFIX}/alerts").json()
+
+    assert body["alerts"] == []
+    assert body["assessing"] is False
+
+
+def test_alerts_with_a_service_report_assessing(alerting_client: TestClient) -> None:
+    body = alerting_client.get(f"{API_PREFIX}/alerts").json()
+
+    assert body["assessing"] is True
+
+
+def test_a_raised_alert_is_served_with_its_reason_codes(
+    alerting_client: TestClient, alerting: AlertService
+) -> None:
+    alerting.review_cycle([_alerting_track()], EPOCH)
+
+    body = alerting_client.get(f"{API_PREFIX}/alerts").json()
+
+    assert body["count"] == 1
+    served = body["alerts"][0]
+    assert served["track_id"] == "TRK-ALERT-1"
+    assert served["codes"] == ["closing_velocity"]
+    assert served["reasons"]
+    assert served["peak_level"] == "high"
+
+
+def test_acknowledging_marks_the_alert_without_clearing_it(
+    alerting_client: TestClient, alerting: AlertService
+) -> None:
+    """The operator action this endpoint exists for, and the thing it must not do."""
+    alerting.review_cycle([_alerting_track()], EPOCH)
+    alert_id = alerting.active[0].alert_id
+
+    response = alerting_client.post(f"{API_PREFIX}/alerts/{alert_id}/acknowledge")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "acknowledged"
+    assert alerting_client.get(f"{API_PREFIX}/alerts").json()["count"] == 1
+
+
+def test_acknowledging_an_unknown_alert_is_a_404(alerting_client: TestClient) -> None:
+    response = alerting_client.post(f"{API_PREFIX}/alerts/ALT-99999/acknowledge")
+
+    assert response.status_code == 404
+
+
+def test_acknowledging_without_alerting_reports_not_implemented(client: TestClient) -> None:
+    response = client.post(f"{API_PREFIX}/alerts/ALT-00001/acknowledge")
+
+    assert response.status_code == 501
+
+
+def _alerting_track() -> Track:
+    """A track already carrying a HIGH assessment, as risk would have written it back."""
+    return Track(
+        track_id="TRK-ALERT-1",
+        state=TrackState.CONFIRMED,
+        enu=EnuState(east_m=-900.0, north_m=0.0, up_m=110.0, velocity_east_mps=28.0),
+        position=TrackPosition(latitude=51.8971, longitude=-8.4697, altitude_m=110.0),
+        kinematics=TrackKinematics(speed_mps=28.0, heading_deg=90.0, vertical_rate_mps=0.0),
+        threat=TrackThreat(
+            risk_score=82,
+            risk_level=RiskLevel.HIGH,
+            confidence=0.9,
+            reasons=["Closing on the site at 28 m/s."],
+            codes=["closing_velocity"],
+            assessed=True,
+        ),
+        tracking=TrackMetadata(first_seen=EPOCH, last_seen=EPOCH, detection_count=14),
+        updated_at=EPOCH,
+    )

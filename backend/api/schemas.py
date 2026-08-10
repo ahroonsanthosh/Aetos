@@ -26,10 +26,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.alerting.models import Alert, AlertState
 from backend.database.projection import TRACK_SNAPSHOT_KEY
 from backend.database.records import ProjectedTrack, ScenarioRecord, SensorRecord
 from backend.events.types import Event, EventType
-from backend.tracking.models import Track
+from backend.tracking.models import RiskLevel, Track
 from backend.zones.site import Site, Zone
 from sensors.schemas.detection import Detection
 
@@ -350,27 +351,71 @@ class DetectionListResponse(ScannedListResponse):
 
 
 class AlertView(BaseModel):
-    """An alert, derived from an `ALERT_CREATED` event.
+    """An open alert as the operator interface sees it.
 
-    Loosely typed on purpose. The module that will produce alerts does not exist, so no alert
-    model has been agreed; inventing fields here would publish a contract nothing has
-    committed to. `detail` is the event payload as recorded.
+    Carries risk's reason codes and sentences unchanged rather than a severity alone. An alert
+    that cannot say why it fired leaves an operator with two options, obey or dismiss, and the
+    second one is what they will learn to do (spec §10).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     alert_id: str
-    seq: int
-    created_at: datetime
-    track_id: str | None
-    source: str
-    cleared: bool
-    detail: dict[str, Any]
+    track_id: str
+    state: AlertState
+
+    raised_at: datetime
+    raised_level: RiskLevel
+    peak_level: RiskLevel
+    """The worst level reached while open. Never falls, so an alert that has since subsided
+    still reports what it was at its height."""
+
+    level: RiskLevel
+    score: int
+    confidence: float
+
+    codes: list[str]
+    reasons: list[str]
+
+    updated_at: datetime
+    escalated_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
+
+    @classmethod
+    def of(cls, alert: Alert) -> AlertView:
+        return cls(
+            alert_id=alert.alert_id,
+            track_id=alert.track_id,
+            state=alert.state,
+            raised_at=alert.raised_at,
+            raised_level=alert.raised_level,
+            peak_level=alert.peak_level,
+            level=alert.level,
+            score=alert.score,
+            confidence=alert.confidence,
+            codes=list(alert.codes),
+            reasons=list(alert.reasons),
+            updated_at=alert.updated_at,
+            escalated_at=alert.escalated_at,
+            acknowledged_at=alert.acknowledged_at,
+            acknowledged_by=alert.acknowledged_by,
+        )
 
 
-class AlertListResponse(ScannedListResponse):
+class AlertListResponse(BaseModel):
+    """Open alerts, plus whether anything was in a position to raise them.
+
+    `assessing` is the field that stops an empty list reading as an all-clear. It is false
+    when no alerting service is attached, and no consumer should render "no alerts" without
+    consulting it (ADR 0011).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     alerts: list[AlertView]
     count: int
+    assessing: bool
 
 
 class SensorView(BaseModel):

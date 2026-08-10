@@ -24,6 +24,8 @@ from pathlib import Path
 
 import uvicorn
 
+from backend.alerting.policy import load_alert_policy
+from backend.alerting.service import AlertService
 from backend.api.app import create_app
 from backend.api.identity import LocalOperatorIdentityProvider
 from backend.api.services import ApiServices
@@ -89,6 +91,13 @@ class Pipeline:
             self.events,
             sink=self.tracker,
         )
+        self.alerting = AlertService(load_alert_policy(), self.events)
+
+        # Alerts outlive the process that raised them. Rebuilding from the log before the
+        # first cycle is what makes that true — without it a restart discharges every open
+        # alert, and an operator cannot tell an empty feed from a quiet sky.
+        self.alerting.rebuild()
+
         self._adapters: list[SimulatedSensorAdapter] = []
 
         # The site and its sensors are configuration the API reads back, so they are persisted
@@ -148,10 +157,10 @@ class Pipeline:
         """Run one cycle. Returns how many detections were accepted.
 
         The order is the pipeline in `docs/architecture.md`: sensors, ingestion, tracking,
-        classification, risk, projection. Each stage sees only what the one before it
-        produced — risk runs after classification because identity is one of its inputs, and
-        a track assessed before it was classified would be scored on geometry alone for one
-        cycle longer than necessary.
+        classification, risk, alerting, projection. Each stage sees only what the one before
+        it produced — risk runs after classification because identity is one of its inputs,
+        and a track assessed before it was classified would be scored on geometry alone for
+        one cycle longer than necessary.
         """
         detections: list[Detection] = []
         for adapter in self._adapters:
@@ -171,7 +180,14 @@ class Pipeline:
             ),
         )
 
-        self.risk.assess_cycle(classified, self.clock.now())
+        now = self.clock.now()
+        assessed = self.risk.assess_cycle(classified, now)
+
+        # Last, and reading the assessed tracks rather than the risk engine. Alerting decides
+        # only whether a level warrants interrupting a human; it has no opinion on how that
+        # level was reached, and taking its input from `track.threat` is what keeps it that
+        # way (ADR 0015).
+        self.alerting.review_cycle(assessed, now)
 
         # Catch the projection up after tracking, never before: the projection reads the log,
         # and reading it before this cycle's events are appended would leave the API serving a
@@ -211,6 +227,8 @@ def build_application(
         track_history=pipeline.repositories.track_history,
         projection=pipeline.projection,
         identity=LocalOperatorIdentityProvider(clock),
+        alerts=pipeline.alerting,
+        classification_running=True,
         situation=pipeline.risk,
         run_mode=RunMode.SIMULATION,
     )

@@ -143,13 +143,28 @@ async def get_health(services: ServicesDep) -> SystemHealthView:
         )
     )
 
-    # Modules the pipeline is designed around but which do not exist yet. Listed explicitly so
-    # the dashboard shows the shape of the finished system and where the gaps currently are.
+    # Modules whose state this endpoint can actually observe, reported from the handles the
+    # API holds rather than from a constant.
+    #
+    # These were hardcoded NOT_BUILT and stayed that way after the modules landed, so the
+    # dashboard went on asserting that "every track scores zero" while the track list beside
+    # it showed live scores. A health endpoint is the last place a stale constant belongs: it
+    # is the thing an operator consults precisely when they have stopped trusting the rest of
+    # the display, and it was the one component reporting on itself without evidence.
+    components.append(_module_health("classification", services.classification_running,
+        running="Track identity is being assessed from kinematics and sensor evidence.",
+        absent="Classification is not running; tracks report no label."))
+    components.append(_module_health("risk", services.situation is not None,
+        running="Tracks are scored each cycle, with reason codes.",
+        absent="Threat assessment is not running; every track scores zero."))
+    components.append(_module_health("alerts", services.alerts is not None,
+        running="Risk levels are being promoted to alerts against the alerting policy.",
+        absent="Alert generation is not running; the alert feed is empty."))
+
+    # Genuinely absent. Listed explicitly so the dashboard shows the shape of the finished
+    # system and where the gaps still are.
     for component, detail in (
         ("fusion", "Multi-sensor reconciliation is not implemented."),
-        ("classification", "Classification is not implemented; tracks report no label."),
-        ("risk", "Threat assessment is not implemented; every track scores zero."),
-        ("alerts", "Alert generation is not implemented; the alert feed is empty."),
         ("system_health", "The watchdog and degraded-mode controller are not implemented."),
     ):
         components.append(
@@ -174,6 +189,23 @@ async def get_health(services: ServicesDep) -> SystemHealthView:
         latest_event_seq=latest_seq,
         projection_seq=projection_seq,
         projection_lag=max(0, latest_seq - projection_seq),
+    )
+
+
+def _module_health(
+    component: str, is_running: bool, *, running: str, absent: str
+) -> ComponentHealth:
+    """Report a pipeline module from whether the API actually holds a handle to it.
+
+    NOT_BUILT rather than a degraded state when absent: the module is not failing, it is not
+    there. An API constructed over a bare projection — which the tests do — genuinely has no
+    risk or alerting behind it, and reporting those as healthy would make the endpoint useless
+    for the one question it exists to answer.
+    """
+    return ComponentHealth(
+        component=component,
+        state=ComponentState.OK if is_running else ComponentState.NOT_BUILT,
+        detail=running if is_running else absent,
     )
 
 
