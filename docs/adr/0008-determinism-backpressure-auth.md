@@ -40,6 +40,11 @@ This makes saturation a defined, observable, testable state rather than an emerg
 
 ### 3. Authentication — stubbed behind an interface, deliberately not half-built
 
+> **Superseded by [ADR 0016](0016-authentication-and-authorisation.md) (2026-08-10).** The
+> reasoning below stands and is left unedited: it is why authentication was not built earlier,
+> and the decision to build it followed from the deployment changing rather than from the
+> argument being wrong. §1 and §2 of this record are unaffected.
+
 Spec §14 lists a `users` table. No authentication or authorisation requirement is stated
 anywhere else: no roles, no session model, no statement of who may acknowledge an alert.
 

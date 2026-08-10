@@ -106,14 +106,30 @@ cd frontend && npm test        # interface
 
 ## Before you put this anywhere
 
-**Aetos has no authentication of any kind.** No login, no roles, no authorisation checks.
-Anyone who can reach the port has the full operator interface and the complete event log.
-This is a deliberate, recorded decision — a half-built auth system is worse than none because
-it looks like security — but it means the system must stay on a machine you control.
-`start.sh` binds to localhost and the Docker port is published to `127.0.0.1` for that reason.
+**Aetos requires a login, and refuses to start in a configuration that would expose it.**
+Session cookies, three roles (`viewer` / `operator` / `admin`), scrypt password hashing, and
+an audit trail that records who logged in, who acknowledged what, and when.
 
-See [ADR 0008](docs/adr/0008-determinism-backpressure-auth.md) and `docs/failure_modes.md`
-FM-001.
+It does **not** terminate TLS. It binds loopback by default and refuses to bind anything else
+without `--behind-proxy`, which is your assertion that a reverse proxy in front of it is
+handling TLS. It also refuses to start unauthenticated off loopback, or with no accounts at
+all. Create the first account before deploying:
+
+```bash
+python -m backend.auth.admin add --username alice --role admin
+```
+
+**[docs/deployment.md](docs/deployment.md)** has the proxy configuration and a post-deploy
+checklist. [ADR 0016](docs/adr/0016-authentication-and-authorisation.md) explains the design;
+`docs/failure_modes.md` FM-001 records what this replaced.
+
+For a single-user machine, `--no-auth` restores the old behaviour — every action attributed to
+one local operator with nothing checked. It works on loopback only, and `GET /system/health`
+says so in as many words when it is in use.
+
+**Read `docs/failure_modes.md` before relying on this.** Authentication is closed; sensor
+silence, restart recovery and saturation are not, and they matter more on a site than on a
+laptop.
 
 ## Status
 

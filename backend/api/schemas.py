@@ -576,7 +576,7 @@ class ScenarioView(BaseModel):
     definition: dict[str, Any]
     created_at: datetime
     created_by: str
-    """The operator this was attributed to. Asserted, not authenticated — see FM-001."""
+    """The operator this was attributed to — an authenticated account since ADR 0016."""
 
     @classmethod
     def from_record(cls, record: ScenarioRecord) -> ScenarioView:

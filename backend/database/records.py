@@ -91,8 +91,11 @@ class ScenarioRecord(BaseModel):
 
     created_at: datetime
     created_by: str = Field(min_length=1, max_length=128)
-    """Operator identity from `OperatorContext`. Attributable in structure, not authenticated
-    in fact — see FM-001."""
+    """Operator identity from `OperatorContext`, never from the request body.
+
+    Authenticated in fact since ADR 0016: this names an account that presented a credential.
+    Rows written before then carry the single local operator identity, and the event log
+    distinguishes the two eras through `Identity.authenticated`."""
 
 
 class ProjectedTrack(BaseModel):

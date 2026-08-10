@@ -11,16 +11,37 @@ Status values: **Mitigated** (handled and tested) · **Partial** (handled, gaps 
 ## Known limitations accepted at V0
 
 ### FM-001 — No authentication or authorisation
-**Status:** Accepted · **Severity:** High if deployed, none in current use
+**Status:** Closed · **Severity:** was High if deployed
 
-Aetos has no login, no roles and no authorisation checks (ADR 0008). Operator actions are
-attributable in structure — every `OPERATOR_ACKNOWLEDGED` event carries an operator
-identity — but that identity is asserted, not authenticated.
+**What it was.** Aetos had no login, no roles and no authorisation checks (ADR 0008 §3, now
+superseded). Operator actions were attributable in structure — every `OPERATOR_ACKNOWLEDGED`
+event carried an operator identity — but that identity was asserted, not authenticated, so the
+log could not prove *who* did anything. Anyone who could reach the port had the full operator
+interface and the complete event log.
 
-**Consequence:** the event log does not currently prove *who* did something. Any claim that
-it constitutes an audit trail of operator action is not yet supportable.
+**Fix.** `backend/auth/` and ADR 0016. Session cookies with a two-sided expiry, three ordered
+roles, scrypt password hashing, lockout, and an audit trail of login, logout and lockout.
+`Identity.authenticated` is now true and `OperatorContext.basis` reads `session` — both fields
+existed from the first commit for exactly this day, which is what makes the two eras of the log
+distinguishable rather than silently merged.
 
-**Mitigation:** Aetos must not be exposed to an untrusted network in its current state.
+**What made it stay closed.** `tests/integration/test_auth_api.py` walks the application's own
+route table and makes an unauthenticated request to every route, failing unless each is either
+gated or on a short named public list. A new endpoint added without a gate fails the suite
+without anyone having to remember the test exists. Three deliberate mutations — removing the
+router gate, accepting any authenticated user, accepting unauthenticated WebSocket upgrades —
+were each caught.
+
+**And the deployment posture is enforced rather than documented.** `guard_bind` refuses to
+start with authentication disabled off loopback, with no accounts off loopback, or off loopback
+without `--behind-proxy`. Aetos does not terminate TLS; that flag is an explicit assertion that
+something in front of it does. See `docs/deployment.md`.
+
+**What is still open, and deliberately named.** No password reset flow, no multi-factor, no
+administrator view of active sessions. `LocalOperatorIdentityProvider` still exists for
+single-user machines and tests, so a deployment *can* run unauthenticated — bounded by the
+startup guard rather than by convention, and `GET /system/health` says so in as many words when
+it happens.
 
 ### FM-002 — Tangent-plane approximation bounds site extent
 **Status:** Accepted · **Severity:** Low at intended scale
@@ -271,7 +292,7 @@ state; track history retained after LOST rather than deleted.
 is rebuilt by replaying from the log. Recovery is a chaos test, not an assumption.
 
 ### FM-031 — UI crash silencing alerts
-**Status:** Open — target of build stage 12
+**Status:** Partial — alerting is backend-side; the chaos test is not written
 
 If alerting lives in the dashboard process, losing the dashboard loses alerting silently —
 the worst possible failure, because nothing indicates anything is wrong.

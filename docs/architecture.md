@@ -199,3 +199,4 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0013](adr/0013-risk-by-escalating-factors.md) | Risk as combined escalating factors, discounted only by evidence of harmlessness |
 | [0014](adr/0014-optional-basemap.md) | An optional self-hosted basemap beneath the PPI |
 | [0015](adr/0015-alerting-as-promotion.md) | Alerting promotes risk levels; it does not assess |
+| [0016](adr/0016-authentication-and-authorisation.md) | Session authentication, three roles, and a startup guard |

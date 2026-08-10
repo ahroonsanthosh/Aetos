@@ -1,7 +1,7 @@
 """REST and WebSocket surface. Reads state; never owns it.
 
 See `backend/api/README.md`. Two things to know before using this module: there is no
-authentication (ADR 0008, FM-001), and the WebSocket stream is fed by reading the event log by
+authentication (ADR 0016), and the WebSocket stream is fed by reading the event log by
 sequence number rather than by producers pushing into it (ADR 0006).
 """
 
