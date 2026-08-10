@@ -445,3 +445,22 @@ def test_the_raw_session_token_is_never_stored(
     assert rows
     for row in rows:
         assert token not in str(tuple(row))
+
+
+def test_health_names_the_access_control_posture(client: TestClient, auth: AuthService) -> None:
+    """Reported in the authenticated listing, not only the liveness one.
+
+    The warning in `_liveness_only` is unreachable when a deployment runs unauthenticated —
+    `LocalOperatorIdentityProvider` resolves an operator for everyone, so that branch never runs
+    in the one configuration it exists to warn about. This row is what makes the posture visible
+    in both modes; the companion assertion for the unauthenticated case lives in
+    `tests/integration/test_api.py`, which builds an app over that provider.
+    """
+    auth.create_user("alice", PASSWORD, Role.VIEWER)
+    login(client, "alice")
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    posture = {c["component"]: c for c in body["components"]}["access_control"]
+
+    assert posture["state"] == "ok"
+    assert "NO authentication" not in posture["detail"]

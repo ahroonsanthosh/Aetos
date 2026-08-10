@@ -7,6 +7,7 @@
 #   ./start.sh --list                   show the available scenarios
 #   ./start.sh --port 9000              serve somewhere else
 #   ./start.sh --no-scenario            serve an idle system, no synthetic data
+#   ./start.sh --no-auth                no login, localhost only (see ADR 0016)
 #
 # Sets up the Python environment, builds the operator interface if it is not already built,
 # and serves both from a single process. Safe to run repeatedly: everything it does is
@@ -63,6 +64,7 @@ python.exe to PATH' during setup), close this window, reopen Git Bash, and run .
 SCENARIO="b_approaching_threat"
 PORT=8000
 HOST="127.0.0.1"
+NO_AUTH=0
 
 # ---------------------------------------------------------------------------------------
 # Arguments
@@ -79,6 +81,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --no-scenario) SCENARIO=""; shift ;;
+    --no-auth) NO_AUTH=1; shift ;;
     --port) PORT="$2"; shift 2 ;;
     --host) HOST="$2"; shift 2 ;;
     -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -174,8 +177,42 @@ if interface_is_stale; then
 fi
 
 # ---------------------------------------------------------------------------------------
-# Run
+# Accounts
+#
+# Aetos requires a login (ADR 0016). On a fresh checkout there are no accounts, which would
+# leave someone staring at a sign-in screen they cannot get past with nothing saying why —
+# the interface cannot tell "wrong password" from "no accounts exist", and must not, because
+# that distinction is exactly the oracle the login endpoint refuses to give an attacker.
+#
+# So it is answered here instead, where the database can simply be counted.
 # ---------------------------------------------------------------------------------------
+
+ACCOUNTS="skipped"
+if [[ "$NO_AUTH" != "1" ]]; then
+ACCOUNTS=$("$PY" - <<'PY' 2>/dev/null || echo "unknown"
+from backend.common.clock import SystemClock
+from backend.common.config import ConfigPaths
+from backend.database.sqlite import SqliteRepositories
+
+repos = SqliteRepositories(SystemClock(), ConfigPaths.default().repo_root / "data" / "aetos.db")
+print(repos.users.count())
+repos.close()
+PY
+)
+fi
+
+if [[ "$ACCOUNTS" == "0" ]]; then
+  echo
+  printf '\033[33m!\033[0m No operator accounts exist yet, so nobody can sign in.\n'
+  echo
+  printf '  Create one:\n'
+  printf '    \033[36mpython -m backend.auth.admin add --username you --role admin\033[0m\n'
+  echo
+  printf '  Or run without authentication, for a machine only you can reach:\n'
+  printf '    \033[36m./start.sh --no-auth\033[0m\n'
+  echo
+  exit 1
+fi
 
 URL="http://${HOST}:${PORT}"
 
@@ -191,7 +228,12 @@ printf '  Interface  \033[36m%s\033[0m\n' "$URL"
 printf '  API docs   %s/api/v1/docs\n' "$URL"
 echo
 printf '  Data is \033[33mSIMULATED\033[0m. No real sensor is connected.\n'
-printf '  There is no authentication — do not expose this beyond localhost.\n'
+if [[ "$NO_AUTH" == "1" ]]; then
+  printf '  \033[33mNo authentication\033[0m — anyone who can reach this port has full access.\n'
+else
+  printf '  Sign in with an account from \033[36mpython -m backend.auth.admin\033[0m.\n'
+fi
+printf '  Bound to localhost. To deploy to a site, see docs/deployment.md.\n'
 echo
 printf '  Ctrl-C to stop.\n'
 echo
@@ -220,6 +262,7 @@ echo
 ) &
 
 ARGS=(--host "$HOST" --port "$PORT")
+[[ "$NO_AUTH" == "1" ]] && ARGS+=(--no-auth)
 [[ -n "$SCENARIO" ]] && ARGS+=(--scenario "$SCENARIO")
 
 exec "$PY" -m backend.main "${ARGS[@]}"

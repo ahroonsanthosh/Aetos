@@ -495,3 +495,18 @@ def _alerting_track() -> Track:
         tracking=TrackMetadata(first_seen=EPOCH, last_seen=EPOCH, detection_count=14),
         updated_at=EPOCH,
     )
+
+
+def test_health_warns_when_no_authentication_is_configured(client: TestClient) -> None:
+    """This fixture uses `LocalOperatorIdentityProvider` — the `--no-auth` deployment mode.
+
+    That provider resolves an operator for every caller, so the unauthenticated liveness branch
+    never runs and cannot carry this warning. Without a row in the full listing, a deployment
+    with no access control would report as entirely healthy, which is the exact shape of a green
+    light that nothing computes.
+    """
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    posture = {c["component"]: c for c in body["components"]}["access_control"]
+
+    assert posture["state"] == "not_connected"
+    assert "NO authentication" in posture["detail"]

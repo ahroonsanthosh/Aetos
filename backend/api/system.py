@@ -163,6 +163,32 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
     # it showed live scores. A health endpoint is the last place a stale constant belongs: it
     # is the thing an operator consults precisely when they have stopped trusting the rest of
     # the display, and it was the one component reporting on itself without evidence.
+    # Access control, reported in the authenticated listing as well as the liveness one.
+    #
+    # This row exists because the warning in `_liveness_only` is unreachable when the
+    # deployment has no authentication: `LocalOperatorIdentityProvider` resolves an operator
+    # for everyone, so that branch never runs in the one configuration it was written to warn
+    # about. Reporting the posture here too is what makes the claim true in both modes rather
+    # than only in the one where it was never needed.
+    components.append(
+        ComponentHealth(
+            component="access_control",
+            state=(
+                ComponentState.OK
+                if services.identity.requires_credential
+                else ComponentState.NOT_CONNECTED
+            ),
+            detail=(
+                "Operators authenticate and roles are enforced."
+                if services.identity.requires_credential
+                else (
+                    "NO authentication is configured. Anyone who can reach this port has full "
+                    "operator access and the complete event log (FM-001)."
+                )
+            ),
+        )
+    )
+
     components.append(_module_health("classification", services.classification_running,
         running="Track identity is being assessed from kinematics and sensor evidence.",
         absent="Classification is not running; tracks report no label."))
