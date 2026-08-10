@@ -1,0 +1,93 @@
+.login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  background: var(--surface-void);
+}
+
+.login__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-5);
+  background: var(--surface-panel);
+  border: 1px solid var(--line-subtle);
+}
+
+.login__brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  letter-spacing: 0.18em;
+  color: var(--text-primary);
+}
+
+.login__subtitle {
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* The simulated-data notice, before anyone has logged in. Muted rather than alarming: it is a
+   statement of fact about the deployment, not a warning about a condition. */
+.login__mode {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--status-warning);
+  background: var(--status-warning-dim);
+  border-left: 2px solid var(--status-warning);
+}
+
+.login__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.login__input {
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+  transition: border-color var(--transition-fast);
+}
+
+.login__input:focus {
+  outline: none;
+  border-color: var(--status-info);
+}
+
+.login__error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--status-critical);
+}
+
+.login__submit {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  background: var(--surface-inset);
+  border: 1px solid var(--line);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.login__submit:hover:not(:disabled) {
+  color: var(--status-info);
+  border-color: var(--status-info);
+}
+
+.login__submit:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}

@@ -17,7 +17,8 @@ rejected. `environment` must equal the file name.
 **`prod.json` is a placeholder. It does not describe a production deployment and must not be
 used as one.**
 
-Aetos has no authentication, no authorisation and no roles (ADR 0008, failure mode FM-001).
+Aetos authenticates operators and enforces three roles (ADR 0016). Nothing in this directory
+configures that — accounts live in the database and the policy in `config/auth/`.
 Operator actions are attributable in structure but not authenticated in fact, so the event log
 does not currently prove *who* did anything. **Aetos in its current state must not be exposed to
 an untrusted network.** `prod.json` exists so that the three-environment structure is real

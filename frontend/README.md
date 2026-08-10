@@ -105,4 +105,6 @@ dependency and renders identically offline.
   not discovered there.** History is retained permanently and reachable by ID, but no
   endpoint enumerates every ID the system has ever created — so a LOST track needs to be
   looked up by an ID already known (from the Event Log, for instance), not found by browsing.
-- **There is no authentication.** The operator identity is asserted, not verified (FM-001).
+- **The console requires a sign-in.** The operator identity comes from a validated session,
+  and the role decides what the interface *offers* — never what it permits, which the backend
+  decides on every request (ADR 0016).

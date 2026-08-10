@@ -15,9 +15,12 @@ lines and two apps can coexist in one process without discovering each other.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
+from backend.alerting.models import Alert
 from backend.api.identity import IdentityProvider
+from backend.auth.service import AuthService
 from backend.common.clock import Clock
 from backend.common.config import RunMode
 from backend.database.projection import TrackProjection
@@ -53,6 +56,37 @@ class ApiServices:
     track_history: TrackHistoryRepository
     projection: TrackProjection
     identity: IdentityProvider
+    """Resolves the operator an action is attributed to.
+
+    Which implementation is here decides whether this deployment has access control at all.
+    `SessionIdentityProvider` checks a credential; `LocalOperatorIdentityProvider` does not and
+    reports `requires_credential == False`, which is what lets the startup guard refuse to
+    expose it on a network interface (ADR 0016).
+    """
+
+    auth: AuthService | None = None
+    """Login, logout and account management.
+
+    Optional, and absent in tests that build an API over a bare projection. When it is None the
+    auth routes report themselves unavailable rather than pretending to succeed — an
+    authentication endpoint that returns 200 without checking anything is worse than one that is
+    missing.
+    """
+
+    alerts: AlertSource | None = None
+    """Where `GET /alerts` reads open alerts from, and where acknowledgements go.
+
+    Optional on the same terms as `situation`, and absent for the same reason: an API built
+    over a bare projection in a test has no alerting service behind it. A missing source is
+    reported as *alerting not running* rather than as an empty feed — an empty alert list and
+    an absent alerting module must never render identically (ADR 0011).
+
+    Note this is the one place the API reaches state it does not read from the log. It is
+    still not authoritative: `AlertService` is itself a projection of the log and rebuilds
+    from it at startup. Reading it here rather than rescanning the log per request is what
+    stops an alert raised ten thousand events ago from falling outside the scan window and
+    silently disappearing from the feed.
+    """
 
     situation: SituationSource | None = None
     """Where `GET /situation` reads the cycle-level finding from.
@@ -61,6 +95,16 @@ class ApiServices:
     source is reported as *not assessed* rather than as an empty finding — "nothing is running
     the correlation pass" and "the pass ran and found nothing" are different statements, and
     the interface must not show them the same way (ADR 0011).
+    """
+
+    classification_running: bool = False
+    """Whether a classification service is attached to the pipeline feeding this API.
+
+    A plain flag rather than a handle, because unlike risk and alerting there is nothing for
+    the API to *read* from classification — its output already arrives on the track. The flag
+    exists only so `GET /system/health` can answer from a fact the wiring asserts instead of
+    from a constant, which is how that endpoint came to report classification unbuilt for as
+    long as it did after the module landed.
     """
 
     run_mode: RunMode = RunMode.SIMULATION
@@ -80,6 +124,23 @@ class ApiServices:
         implementation instead of every caller that assumed the answer.
         """
         return 0
+
+
+class AlertSource(Protocol):
+    """Anything that can report and advance open alerts — in practice `AlertService`.
+
+    Note what is absent: no method raises or clears an alert. Those are consequences of
+    assessment, decided by the pipeline against a policy; exposing them here would let an API
+    request manufacture an alert with no risk finding underneath it, which is precisely the
+    kind of thing an operator must be able to rule out when reading the log.
+    """
+
+    @property
+    def active(self) -> list[Alert]: ...
+
+    def get(self, alert_id: str) -> Alert | None: ...
+
+    def acknowledge(self, alert_id: str, operator_id: str, now: datetime) -> Alert | None: ...
 
 
 class SituationSource(Protocol):

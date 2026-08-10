@@ -25,10 +25,15 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import ValidationError
 
-from backend.api.identity import OperatorContext
+from backend.api.deps import (
+    RequireAdmin,
+    RequireOperator,
+    ServicesDep,
+    require_role,
+)
 from backend.api.schemas import (
     DETECTION_SNAPSHOT_KEY,
     AlertListResponse,
@@ -51,19 +56,23 @@ from backend.api.schemas import (
     TrackView,
 )
 from backend.api.services import ApiServices
+from backend.auth.models import Role
 from backend.database.records import ScenarioDefinition
 from backend.events.types import Event, EventType
 from backend.tracking.models import TrackState
 from sensors.schemas.detection import Detection
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role(Role.VIEWER))])
+"""Every route on this router requires at least `viewer`.
+
+Declared once, at the router, rather than per handler. A route added later is gated by default
+and has to opt *out* visibly — the failure worth designing against is not a wrong role on an
+endpoint someone thought about, it is an endpoint nobody thought about at all. Handlers
+needing more than viewer take `RequireOperator` or `RequireAdmin` as well.
+"""
 
 DEFAULT_SCAN_LIMIT = 1000
 MAX_SCAN_LIMIT = 10_000
-
-ALERT_ID_KEY = "alert_id"
-"""Payload key by which an `ALERT_CLEARED` event names the alert it clears. Asserted here
-because the alerting module does not exist; see the note on `GET /alerts`."""
 
 _NOT_IMPLEMENTED = status.HTTP_501_NOT_IMPLEMENTED
 
@@ -74,23 +83,8 @@ _SCENARIO_ENGINE_ABSENT = (
 )
 
 
-def _services(request: Request) -> ApiServices:
-    return request.app.state.services
-
-
-ServicesDep = Annotated[ApiServices, Depends(_services)]
-
-
-def _operator(services: ServicesDep) -> OperatorContext:
-    """The operator an action is attributed to.
-
-    Resolved from server-side configuration and nothing else. No header, cookie or body field
-    reaches this, so a client cannot name itself — see `backend/api/identity.py` and FM-001.
-    """
-    return services.identity.resolve()
-
-
-OperatorDep = Annotated[OperatorContext, Depends(_operator)]
+# Request dependencies live in `backend/api/deps.py`; see the note there on why they are no
+# longer defined per router.
 
 
 # --------------------------------------------------------------------------------------
@@ -260,61 +254,66 @@ async def list_detections(
 
 
 @router.get("/alerts", response_model=AlertListResponse, tags=["alerts"])
-async def list_alerts(
-    services: ServicesDep,
-    from_seq: Annotated[int, Query(ge=1)] = 1,
-    limit: Annotated[int, Query(ge=1, le=MAX_SCAN_LIMIT)] = DEFAULT_SCAN_LIMIT,
-    include_cleared: Annotated[bool, Query()] = False,
-) -> AlertListResponse:
-    """Alerts, derived from `ALERT_CREATED` events in the log.
+async def list_alerts(services: ServicesDep) -> AlertListResponse:
+    """Open alerts, worst first.
 
-    **This will be empty.** No module in this build produces alert events — alerting is build
-    stage 8 — so there is nothing for this to find. The endpoint is a real read of the log
-    rather than a placeholder returning invented rows, which is why it is honest to expose it:
-    the day something appends `ALERT_CREATED`, this answers with it and nothing here changes.
+    Read from the alerting service rather than by scanning the log. The service is itself a
+    projection of the log and rebuilds from it at startup, so this is not a second source of
+    truth — but it does not have a scan window, and an alert raised ten thousand events ago is
+    exactly the one that must not fall off the end of the feed.
 
-    Two things are provisional. Alerts have no model yet, so `detail` is the recorded payload
-    passed through. And this scans the log per request, which does not scale; when alerting
-    lands it should get a projection alongside the track one, for the same reason tracks have
-    one.
+    Acknowledged alerts are still open and still listed. Acknowledgement records that a human
+    saw the alert, not that the aircraft went away.
+
+    `assessing` distinguishes an empty feed from an absent one. Consumers must not render "no
+    alerts" without it (ADR 0011).
     """
-    cleared_ids: set[str] = set()
-    created: list[AlertView] = []
-    scanned = 0
-    next_seq = from_seq
+    if services.alerts is None:
+        return AlertListResponse(alerts=[], count=0, assessing=False)
 
-    for event in services.events.read_from(from_seq, limit=limit):
-        scanned += 1
-        next_seq = event.seq + 1
+    views = [AlertView.of(alert) for alert in services.alerts.active]
+    return AlertListResponse(alerts=views, count=len(views), assessing=True)
 
-        if event.event_type is EventType.ALERT_CLEARED:
-            alert_id = event.payload.get(ALERT_ID_KEY)
-            if isinstance(alert_id, str):
-                cleared_ids.add(alert_id)
-        elif event.event_type is EventType.ALERT_CREATED:
-            created.append(
-                AlertView(
-                    alert_id=event.event_id,
-                    seq=event.seq,
-                    created_at=event.timestamp,
-                    track_id=event.track_id,
-                    source=event.source,
-                    cleared=False,
-                    detail=event.payload,
-                )
-            )
 
-    alerts = [a.model_copy(update={"cleared": a.alert_id in cleared_ids}) for a in created]
-    if not include_cleared:
-        alerts = [a for a in alerts if not a.cleared]
+@router.post("/alerts/{alert_id}/acknowledge", response_model=AlertView, tags=["alerts"])
+async def acknowledge_alert(
+    services: ServicesDep,
+    operator: RequireOperator,
+    alert_id: Annotated[str, Path(min_length=1, max_length=64)],
+) -> AlertView:
+    """Record that an operator has seen an alert.
 
-    return AlertListResponse(
-        alerts=alerts,
-        count=len(alerts),
-        from_seq=from_seq,
-        next_seq=next_seq,
-        scanned=scanned,
+    Deliberately does not clear it. Only the assessed risk subsiding, or the track being lost,
+    ends an alert — otherwise a busy operator could clear the display of an incursion that is
+    still happening, and the record would show the alert ending at the moment someone stopped
+    wanting to look at it.
+
+    Attribution comes from the identity provider, never from the request. With no
+    authentication in this build every acknowledgement resolves to the same configured local
+    operator, and the log says so via `authenticated=false` rather than implying otherwise.
+    """
+    if services.alerts is None:
+        raise HTTPException(
+            status_code=_NOT_IMPLEMENTED,
+            detail=(
+                "Alerting is not running in this deployment, so there is no alert to "
+                "acknowledge."
+            ),
+        )
+
+    acknowledged = services.alerts.acknowledge(
+        alert_id, operator.identity.operator_id, services.clock.now()
     )
+    if acknowledged is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No open alert {alert_id!r}. It may have already cleared — cleared alerts "
+                "stay in the event log but are not acknowledgeable."
+            ),
+        )
+
+    return AlertView.of(acknowledged)
 
 
 # --------------------------------------------------------------------------------------
@@ -372,7 +371,7 @@ async def list_scenarios(services: ServicesDep) -> ScenarioListResponse:
 )
 async def create_scenario(
     services: ServicesDep,
-    operator: OperatorDep,
+    operator: RequireAdmin,
     request: ScenarioCreateRequest,
 ) -> ScenarioView:
     """Store a scenario definition.

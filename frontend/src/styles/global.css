@@ -80,3 +80,15 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Shown for the moment between load and knowing whether there is a session. Deliberately
+   plain: anything more elaborate draws the eye to a state that should last milliseconds. */
+.app-booting {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  background: var(--surface-void);
+}

@@ -16,11 +16,13 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Collection, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
+from backend.auth.models import Credential, Session, User
 from backend.common.clock import Clock
 from backend.common.identifiers import IdGenerator
 from backend.database.connection import Database, DatabaseError
@@ -32,13 +34,16 @@ from backend.database.records import (
     TrackHistoryEntry,
 )
 from backend.database.repositories import (
+    CredentialRepository,
     ProjectionStateRepository,
     RepositoryError,
     ScenarioRepository,
     SensorRepository,
+    SessionRepository,
     SiteRepository,
     TrackHistoryRepository,
     TrackRepository,
+    UserRepository,
 )
 from backend.tracking.models import Track, TrackState
 from backend.zones.site import Site
@@ -98,6 +103,47 @@ CREATE TABLE IF NOT EXISTS projection_state (
     projection       TEXT PRIMARY KEY,
     last_applied_seq INTEGER NOT NULL
 );
+
+-- Accounts. Reference data: not derived from the log and not rebuildable from it. `username`
+-- is UNIQUE at the database level rather than merely checked in Python, because two accounts
+-- answering to one login name is a question with no safe answer at authentication time.
+CREATE TABLE IF NOT EXISTS users (
+    user_id    TEXT PRIMARY KEY,
+    username   TEXT NOT NULL UNIQUE,
+    role       TEXT NOT NULL,
+    enabled    INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    document   TEXT NOT NULL
+);
+
+-- Password verifiers, in their own table so no query that loads an account also loads its
+-- secret. ON DELETE CASCADE is declared for correctness even though accounts are never
+-- deleted; an orphaned credential is a live verifier for an account nobody can see.
+CREATE TABLE IF NOT EXISTS credentials (
+    user_id       TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+);
+
+-- Live sessions. The one table here whose rows are meant to be deleted: the audit trail of who
+-- logged in and out lives in the event log, so removing a session loses nothing of record and
+-- keeping it would leave a usable credential alive past its purpose.
+--
+-- Indexed on token_hash because that is the only way a session is ever looked up — the token
+-- itself is never stored.
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id      TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    token_hash      TEXT NOT NULL UNIQUE,
+    last_seen_at    TEXT NOT NULL,
+    absolute_expiry TEXT NOT NULL,
+    document        TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions (absolute_expiry);
 """
 
 
@@ -332,6 +378,148 @@ class SqliteProjectionStateRepository(ProjectionStateRepository):
         self._db.execute("DELETE FROM projection_state WHERE projection = ?", (projection,))
 
 
+class SqliteUserRepository(UserRepository):
+    """Accounts. Note the absence of a delete: see `UserRepository`."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def upsert(self, user: User) -> None:
+        self._db.execute(
+            "INSERT INTO users (user_id, username, role, enabled, updated_at, document)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(user_id) DO UPDATE SET"
+            " username = excluded.username, role = excluded.role,"
+            " enabled = excluded.enabled, updated_at = excluded.updated_at,"
+            " document = excluded.document",
+            (
+                user.user_id,
+                user.username,
+                str(user.role),
+                int(user.enabled),
+                user.updated_at.isoformat(),
+                user.model_dump_json(),
+            ),
+        )
+
+    def get(self, user_id: str) -> User | None:
+        row = self._db.query_one("SELECT document FROM users WHERE user_id = ?", (user_id,))
+        return _validate(User, row["document"], f"user {user_id}") if row else None
+
+    def by_username(self, username: str) -> User | None:
+        row = self._db.query_one("SELECT document FROM users WHERE username = ?", (username,))
+        return _validate(User, row["document"], f"user {username!r}") if row else None
+
+    def list_all(self) -> list[User]:
+        rows = self._db.query("SELECT user_id, document FROM users ORDER BY username")
+        return [_validate(User, r["document"], f"user {r['user_id']}") for r in rows]
+
+    def count(self) -> int:
+        row = self._db.query_one("SELECT COUNT(*) AS n FROM users")
+        return int(row["n"]) if row else 0
+
+
+class SqliteCredentialRepository(CredentialRepository):
+    """Password verifiers.
+
+    Deliberately has no `list_all`. There is no legitimate reason to enumerate every hash in the
+    system, and an interface that offers it is an interface someone will eventually use.
+    """
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def set_for_user(self, credential: Credential) -> None:
+        self._db.execute(
+            "INSERT INTO credentials (user_id, password_hash, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(user_id) DO UPDATE SET"
+            " password_hash = excluded.password_hash, updated_at = excluded.updated_at",
+            (credential.user_id, credential.password_hash, credential.updated_at.isoformat()),
+        )
+
+    def get(self, user_id: str) -> Credential | None:
+        row = self._db.query_one(
+            "SELECT user_id, password_hash, updated_at FROM credentials WHERE user_id = ?",
+            (user_id,),
+        )
+        if row is None:
+            return None
+        return Credential(
+            user_id=row["user_id"],
+            password_hash=row["password_hash"],
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+
+class SqliteSessionRepository(SessionRepository):
+    """Live sessions, looked up only ever by token hash."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def create(self, session: Session) -> None:
+        self._db.execute(
+            "INSERT INTO sessions"
+            " (session_id, user_id, token_hash, last_seen_at, absolute_expiry, document)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session.session_id,
+                session.user_id,
+                session.token_hash,
+                session.last_seen_at.isoformat(),
+                session.absolute_expiry.isoformat(),
+                session.model_dump_json(),
+            ),
+        )
+
+    def by_token_hash(self, token_hash: str) -> Session | None:
+        row = self._db.query_one(
+            "SELECT session_id, document FROM sessions WHERE token_hash = ?", (token_hash,)
+        )
+        return _validate(Session, row["document"], f"session {row['session_id']}") if row else None
+
+    def touch(self, session_id: str, last_seen_at: datetime) -> None:
+        """Slide the idle expiry.
+
+        Rewrites the document as well as the column, because the document is what
+        `by_token_hash` re-validates into a `Session` — updating only the column would leave
+        every read seeing the login-time value, and the idle timeout would then fire on schedule
+        regardless of activity.
+        """
+        with self._db.transaction():
+            row = self._db.query_one(
+                "SELECT document FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            if row is None:
+                return
+            session = _validate(Session, row["document"], f"session {session_id}")
+            renewed = session.model_copy(update={"last_seen_at": last_seen_at})
+            self._db.execute(
+                "UPDATE sessions SET last_seen_at = ?, document = ? WHERE session_id = ?",
+                (last_seen_at.isoformat(), renewed.model_dump_json(), session_id),
+            )
+
+    def revoke(self, session_id: str) -> None:
+        self._db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+    def revoke_all_for_user(self, user_id: str) -> int:
+        cursor = self._db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+
+    def purge_expired(self, before: datetime) -> int:
+        """Remove sessions past their absolute ceiling.
+
+        Only the absolute expiry is used here, never the idle one: idle expiry depends on the
+        policy in force, and a policy loosened tomorrow must not find that yesterday's sweep
+        already deleted the sessions it would have kept. Idle expiry is enforced on read, which
+        is where the policy is known.
+        """
+        cursor = self._db.execute(
+            "DELETE FROM sessions WHERE absolute_expiry <= ?", (before.isoformat(),)
+        )
+        return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+
+
 class SqliteRepositories:
     """Every repository over one connection, opened together.
 
@@ -353,6 +541,9 @@ class SqliteRepositories:
         self.scenarios: ScenarioRepository = SqliteScenarioRepository(self._db)
         self.tracks: TrackRepository = SqliteTrackRepository(self._db)
         self.track_history: TrackHistoryRepository = SqliteTrackHistoryRepository(self._db)
+        self.users: UserRepository = SqliteUserRepository(self._db)
+        self.credentials: CredentialRepository = SqliteCredentialRepository(self._db)
+        self.sessions: SessionRepository = SqliteSessionRepository(self._db)
         self.projection_state: ProjectionStateRepository = SqliteProjectionStateRepository(
             self._db
         )

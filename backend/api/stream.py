@@ -29,10 +29,19 @@ from collections.abc import Callable
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from backend.api.schemas import StreamedEvent
+from backend.auth.policy import SESSION_COOKIE_NAME
 from backend.events.store import EventStore
 from backend.events.types import Event, EventType
 
 router = APIRouter()
+
+WS_UNAUTHENTICATED = 4401
+"""Close code for an upgrade refused for want of a session.
+
+In the 4000-4999 application range, and chosen to echo HTTP 401 so it reads unambiguously in a
+packet capture. The client must treat it as terminal and stop reconnecting; every other close
+code means retry.
+"""
 
 STREAMED_EVENT_TYPES = frozenset(
     {
@@ -207,8 +216,28 @@ async def stream_events(
 
     Read from the event log by sequence number, which is what makes this the same read path as
     replay rather than a parallel one (ADR 0006).
+
+    **Requires a session**, checked before the upgrade is accepted. This endpoint carries the
+    entire live picture, so leaving it open while the REST surface is gated would make the gate
+    decorative — anyone who could open a socket would get everything the console shows,
+    continuously.
+
+    Authenticated by cookie because that is the only credential a browser can present on a
+    WebSocket upgrade: the API cannot set headers on one, and a token in the query string ends
+    up in access logs and browser history. Cookies are sent automatically on a same-origin
+    upgrade, so this needs no client-side token handling at all.
     """
     services = websocket.app.state.services
+
+    if services.identity.resolve(websocket.cookies.get(SESSION_COOKIE_NAME)) is None:
+        # Refused before `accept()`, so no socket is ever established. The close code is in the
+        # application range and distinct from anything emitted on a restart, because the
+        # client's reconnect loop has to tell "not allowed, stop trying" from "gone away,
+        # retry" — retrying an authentication failure forever is how a logged-out tab quietly
+        # becomes a denial of service against its own backend.
+        await websocket.close(code=WS_UNAUTHENTICATED, reason="Authentication required.")
+        return
+
     broadcaster = websocket.app.state.broadcaster
     start = from_seq if from_seq is not None else services.events.latest_seq() + 1
     await broadcaster.stream(websocket, start)

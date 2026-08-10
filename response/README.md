@@ -47,9 +47,12 @@ backend refactor.
 A dedicated design pass, done deliberately and separately, covering at minimum:
 
 - **Authorisation** — who may authorise an action, how that authority is established and
-  verified, and how it is revoked. Aetos currently has *no authentication at all*
-  (`docs/failure_modes.md` FM-001); operator actions are attributable in structure but not
-  authenticated in fact. That gap alone disqualifies this layer from being built today.
+  verified, and how it is revoked. Aetos now authenticates operators and enforces three roles
+  (ADR 0016), which closes the *identity* half of this question and none of the rest. Knowing
+  which account made a request is a precondition for authorising a physical action, not an
+  answer to it: nothing here establishes who is permitted to authorise one, on what evidence,
+  under whose command authority, or how that permission is withdrawn in the moment it needs to
+  be.
 - **Safety** — interlocks, geographic and temporal constraints, abort paths, and the failure
   behaviour of every one of them. What happens when the network drops mid-action is a design
   question, not an implementation detail.
