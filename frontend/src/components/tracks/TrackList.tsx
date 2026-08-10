@@ -41,9 +41,10 @@ export function TrackList({ tracks, selectedTrackId, onSelectTrack }: Props) {
             <th className="label">Hdg</th>
             <th className="label" title="Confidence the track exists at all">Conf</th>
             <th className="label">Obs</th>
-            {/* Two columns, not one. Classification is implemented and risk is not, so
-                collapsing them would let a classified track's absent risk score read as a
-                risk assessment that came back clear. */}
+            {/* Two columns, not one. Both are implemented now, but they answer different
+                questions and can disagree — a confidently classified bird still gets a risk
+                score, and an unclassified track can still be scored on geometry alone.
+                Collapsing them would hide which of the two is the unassessed one. */}
             <th className="label">Class</th>
             <th className="label">Risk</th>
           </tr>
@@ -91,7 +92,7 @@ export function TrackList({ tracks, selectedTrackId, onSelectTrack }: Props) {
                 ) : (
                   <span
                     className="track-list__unassessed"
-                    title="Risk assessment is not implemented in this build"
+                    title="Risk has not yet scored this track — usually a track created within the last cycle"
                   >
                     not assessed
                   </span>
