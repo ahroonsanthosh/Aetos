@@ -116,8 +116,13 @@ handling TLS. It also refuses to start unauthenticated off loopback, or with no 
 all. Create the first account before deploying:
 
 ```bash
-python -m backend.auth.admin add --username alice --role admin
+# Use the interpreter inside .venv, not the bare `python` on PATH — the dependencies live
+# there. On Windows the layout is Scripts, not bin.
+.venv/bin/python -m backend.auth.admin add --username alice --role admin           # Linux, macOS
+.venv/Scripts/python.exe -m backend.auth.admin add --username alice --role admin   # Windows
 ```
+
+`./start.sh` prints the correct command for your machine if no account exists yet.
 
 **[docs/deployment.md](docs/deployment.md)** has the proxy configuration and a post-deploy
 checklist. [ADR 0016](docs/adr/0016-authentication-and-authorisation.md) explains the design;

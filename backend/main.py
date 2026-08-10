@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -255,7 +256,8 @@ def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count
     if user_count == 0:
         raise StartupRefused(
             f"Refusing to bind {host} with no accounts: nobody could log in. Create one "
-            "first:\n    python -m backend.auth.admin add --username <name> --role admin"
+            f"first:\n    {sys.executable} -m backend.auth.admin add --username <name> "
+            "--role admin"
         )
 
     if not behind_proxy:

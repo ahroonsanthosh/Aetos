@@ -206,7 +206,11 @@ if [[ "$ACCOUNTS" == "0" ]]; then
   printf '\033[33m!\033[0m No operator accounts exist yet, so nobody can sign in.\n'
   echo
   printf '  Create one:\n'
-  printf '    \033[36mpython -m backend.auth.admin add --username you --role admin\033[0m\n'
+  # "$PY", not "python". The dependencies live in .venv, and the bare interpreter on PATH
+  # almost certainly cannot import pydantic — on Windows the venv is .venv/Scripts/python.exe,
+  # which nobody guesses. This script already resolved the right one; printing anything else
+  # hands out a command that cannot work.
+  printf '    \033[36m%s -m backend.auth.admin add --username you --role admin\033[0m\n' "$PY"
   echo
   printf '  Or run without authentication, for a machine only you can reach:\n'
   printf '    \033[36m./start.sh --no-auth\033[0m\n'
@@ -231,7 +235,7 @@ printf '  Data is \033[33mSIMULATED\033[0m. No real sensor is connected.\n'
 if [[ "$NO_AUTH" == "1" ]]; then
   printf '  \033[33mNo authentication\033[0m — anyone who can reach this port has full access.\n'
 else
-  printf '  Sign in with an account from \033[36mpython -m backend.auth.admin\033[0m.\n'
+  printf '  Sign in with an account from \033[36m%s -m backend.auth.admin\033[0m.\n' "$PY"
 fi
 printf '  Bound to localhost. To deploy to a site, see docs/deployment.md.\n'
 echo

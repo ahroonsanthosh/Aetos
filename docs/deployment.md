@@ -11,8 +11,14 @@ laptop.
 ## 1. Create the first account
 
 ```bash
-python -m backend.auth.admin add --username alice --role admin
+.venv/bin/python -m backend.auth.admin add --username alice --role admin
 ```
+
+On Windows in Git Bash the interpreter is `.venv/Scripts/python.exe` instead. Use the one
+inside `.venv` either way: the dependencies are installed there, and the bare `python` on PATH
+fails with `ModuleNotFoundError: No module named 'pydantic'` before argparse ever runs — which
+reads like a broken install rather than the wrong interpreter. `./start.sh` prints the right
+command for your machine when no account exists.
 
 Prompts for the password twice, without echo. There is no default credential and no generated
 first-run password: the first account is a deliberate act by someone who already has access to
@@ -25,17 +31,19 @@ auditor should hold `viewer`, and the difference shows up in the event log.
 Other commands:
 
 ```bash
-python -m backend.auth.admin list
-python -m backend.auth.admin passwd  --username alice
-python -m backend.auth.admin role    --username bob --role viewer
-python -m backend.auth.admin disable --username bob      # also ends every session it holds
-python -m backend.auth.admin unlock  --username alice    # clears a lockout early
+PY=.venv/bin/python          # .venv/Scripts/python.exe on Windows
+
+$PY -m backend.auth.admin list
+$PY -m backend.auth.admin passwd  --username alice
+$PY -m backend.auth.admin role    --username bob --role viewer
+$PY -m backend.auth.admin disable --username bob      # also ends every session it holds
+$PY -m backend.auth.admin unlock  --username alice    # clears a lockout early
 ```
 
 ## 2. Run Aetos on loopback
 
 ```bash
-python -m backend.main --host 127.0.0.1 --port 8000 --behind-proxy
+.venv/bin/python -m backend.main --host 127.0.0.1 --port 8000 --behind-proxy
 ```
 
 Bind loopback even with a proxy in front. Anything else leaves the port reachable directly,
@@ -109,9 +117,9 @@ Worth doing once, so the failure modes are familiar before they happen at an awk
 Each of these refuses to start and says why:
 
 ```bash
-python -m backend.main --host 0.0.0.0 --no-auth        # unauthenticated on a network
-python -m backend.main --host 0.0.0.0                  # no --behind-proxy: cookies in clear
-python -m backend.main --host 0.0.0.0 --behind-proxy   # before any account exists
+$PY -m backend.main --host 0.0.0.0 --no-auth        # unauthenticated on a network
+$PY -m backend.main --host 0.0.0.0                  # no --behind-proxy: cookies in clear
+$PY -m backend.main --host 0.0.0.0 --behind-proxy   # before any account exists
 ```
 
 ## 5. Verify after deploying
@@ -131,9 +139,13 @@ curl -b jar https://aetos.example.org/api/v1/tracks       # expect 200
 Then open the site in a browser: you should get the sign-in screen, not the console.
 
 The health endpoint is deliberately readable without a session so a monitoring probe works, but
-it answers liveness only. If it ever reports
-`"This deployment has NO authentication configured"`, the process is running with `--no-auth`
-and every visitor has full operator access.
+it answers liveness only until you authenticate.
+
+Once signed in, the component named `access_control` is the one to watch. It reads `ok` when
+operators authenticate, and `not_connected` with *"NO authentication is configured. Anyone who
+can reach this port has full operator access and the complete event log"* when the process is
+running with `--no-auth`. Worth alerting on: it is the difference between a guarded console and
+an open one, stated by the backend rather than assumed from how it was launched.
 
 ## What is still true after all this
 

@@ -1,11 +1,22 @@
 """Account management from the command line.
 
-    python -m backend.auth.admin add --username alice --role admin
-    python -m backend.auth.admin list
-    python -m backend.auth.admin passwd --username alice
-    python -m backend.auth.admin role --username bob --role viewer
-    python -m backend.auth.admin disable --username bob
-    python -m backend.auth.admin unlock --username alice
+**Run this with the interpreter inside `.venv`, not the bare `python` on PATH.** The
+dependencies are installed into the virtual environment `start.sh` creates, so the system
+interpreter almost certainly cannot import pydantic and fails before argparse ever runs:
+
+    .venv/bin/python -m backend.auth.admin ...          # Linux, macOS
+    .venv/Scripts/python.exe -m backend.auth.admin ...  # Windows, in Git Bash
+
+Written out because the Windows layout is `Scripts` rather than `bin` and nobody guesses that,
+and because the resulting `ModuleNotFoundError` names pydantic — which looks like a broken
+install rather than the wrong interpreter.
+
+    ... add --username alice --role admin
+    ... list
+    ... passwd --username alice
+    ... role --username bob --role viewer
+    ... disable --username bob
+    ... unlock --username alice
 
 This exists because the first account has to come from somewhere, and every other option is
 worse. A default credential ships a known password to every deployment. A first-run generated
@@ -158,7 +169,8 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
 def _list(repos: SqliteRepositories) -> int:
     users = repos.users.list_all()
     if not users:
-        print("No accounts. Create one with: python -m backend.auth.admin add ...")
+        print(f"No accounts. Create one with:\n  {sys.executable} -m backend.auth.admin add "
+              "--username <name> --role admin")
         return 0
 
     print(f"{'USERNAME':<24} {'ROLE':<10} {'STATE':<10} CREATED")
