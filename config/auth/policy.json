@@ -1,0 +1,10 @@
+{
+  "notes": "Authentication policy. See ADR 0016. Session expiry is deliberately two-sided: idle_timeout_s slides on activity so an operator working an incursion is never logged out mid-incident, while absolute_timeout_s is a hard ceiling from login so a stolen cookie kept warm by an attacker still dies. Lockout is short and self-clearing on purpose — anyone who knows a username can trip it, and on a console that may be the only view of the sky, a lockout needing an administrator to clear is its own hazard. Raising scrypt_n is safe at any time: stored hashes carry the parameters they were made with and each account is re-hashed on its next successful login.",
+  "idle_timeout_s": 3600.0,
+  "absolute_timeout_s": 43200.0,
+  "max_failed_attempts": 5,
+  "lockout_duration_s": 900.0,
+  "scrypt_n": 65536,
+  "scrypt_r": 8,
+  "scrypt_p": 2
+}

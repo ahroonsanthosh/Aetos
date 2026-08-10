@@ -62,6 +62,29 @@ class EventType(StrEnum):
     RECOMMENDATION_CHANGED = "RECOMMENDATION_CHANGED"
     OPERATOR_ACKNOWLEDGED = "OPERATOR_ACKNOWLEDGED"
 
+    # Access control. These are what make the log able to answer "who did this" rather than
+    # only "what happened" — before authentication existed, every operator action named an
+    # identity the system had never checked (FM-001, ADR 0016).
+    #
+    # No payload on any of these ever carries a password, a session token, or a hash of
+    # either. A failed login records the username that was tried and nothing that was supplied
+    # with it; `tests/integration/test_auth_api.py` asserts that rather than trusting it.
+    OPERATOR_LOGIN_SUCCEEDED = "OPERATOR_LOGIN_SUCCEEDED"
+    OPERATOR_LOGIN_FAILED = "OPERATOR_LOGIN_FAILED"
+    """Recorded for a wrong password, an unknown username, and a disabled account alike. The
+    payload distinguishes them; the operator-facing response deliberately does not."""
+
+    OPERATOR_LOGGED_OUT = "OPERATOR_LOGGED_OUT"
+    OPERATOR_LOCKED_OUT = "OPERATOR_LOCKED_OUT"
+    """Failed attempts crossed the policy threshold. Recorded because a lockout an operator
+    cannot explain is indistinguishable, from the console, from a system fault."""
+
+    USER_CREATED = "USER_CREATED"
+    USER_ROLE_CHANGED = "USER_ROLE_CHANGED"
+    USER_ENABLEMENT_CHANGED = "USER_ENABLEMENT_CHANGED"
+    USER_PASSWORD_CHANGED = "USER_PASSWORD_CHANGED"
+    """That a password changed, never what it changed to."""
+
     # Scenario control
     SCENARIO_STARTED = "SCENARIO_STARTED"
     SCENARIO_STOPPED = "SCENARIO_STOPPED"

@@ -3,8 +3,15 @@
 Two kinds of thing are stored here, and the distinction is the most important idea in this
 module:
 
-**Reference data** — sites, sensors, scenario definitions. Configuration and inputs. Nothing
-derives them from the event log and nothing can rebuild them if they are lost.
+**Reference data** — sites, sensors, scenario definitions, accounts. Configuration and inputs.
+Nothing derives them from the event log and nothing can rebuild them if they are lost.
+
+**Credentials and sessions** are a third kind, called out separately because the distinction
+above does not cover them. Accounts are reference data. Sessions are neither reference data nor
+a projection: they are live authorisation state, derived from nothing, disposable by design,
+and the only rows in the system that *should* be deleted. They get the one bulk-delete method
+in these interfaces (`SessionRepository.revoke_all_for_user`), because revoking access has to
+be a single operation that cannot half-succeed.
 
 **Projections** — tracks and track history. Derived state, and *only* derived state. The event
 log is the source of truth (ADR 0006); these tables are a materialised read of it, kept so the
@@ -25,6 +32,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Sequence
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from backend.database.records import (
     ProjectedTrack,
@@ -35,6 +44,13 @@ from backend.database.records import (
 )
 from backend.tracking.models import TrackState
 from backend.zones.site import Site
+
+if TYPE_CHECKING:
+    # Type-only, and it has to stay that way. `backend.auth.service` depends on these
+    # interfaces, so a runtime import here would close the loop
+    # auth -> database.repositories -> auth and fail at import time. The annotations are
+    # strings under `from __future__ import annotations`, so nothing is needed at runtime.
+    from backend.auth.models import Credential, Session, User
 
 
 class RepositoryError(RuntimeError):
@@ -188,3 +204,102 @@ class ProjectionStateRepository(ABC):
     @abstractmethod
     def reset(self, projection: str) -> None:
         """Forget the position, so the next catch-up starts from `seq` 0."""
+
+
+class UserRepository(ABC):
+    """Accounts.
+
+    Reference data: nothing derives an account from the log, and nothing can rebuild one if the
+    table is lost. So there is no `discard_all()` here, and no per-row delete either — an
+    account named in ten thousand `OPERATOR_ACKNOWLEDGED` events cannot be deleted without
+    orphaning every one of them. `set_enabled` ends someone's access while leaving the record
+    their history points at intact.
+
+    Note what this interface does *not* expose: any way to read a password. Credentials live
+    behind `CredentialRepository`, and the separation is deliberate — see
+    `backend/auth/models.py`.
+    """
+
+    @abstractmethod
+    def upsert(self, user: User) -> None:
+        """Store an account, replacing any existing one with the same `user_id`."""
+
+    @abstractmethod
+    def get(self, user_id: str) -> User | None:
+        ...
+
+    @abstractmethod
+    def by_username(self, username: str) -> User | None:
+        """Look an account up by the name someone types at a login prompt."""
+
+    @abstractmethod
+    def list_all(self) -> list[User]:
+        ...
+
+    @abstractmethod
+    def count(self) -> int:
+        """How many accounts exist.
+
+        Its own method rather than `len(list_all())` because the startup guard calls it on every
+        boot to decide whether the system has any way to be logged into, and that check must not
+        require loading and validating every account to answer.
+        """
+
+
+class CredentialRepository(ABC):
+    """Password verifiers, one per account.
+
+    Separate from `UserRepository` so that no code path which loads an account also loads its
+    secret. A repository returning both would make leaking the hash a matter of one careless
+    response model, rather than something that cannot happen.
+    """
+
+    @abstractmethod
+    def set_for_user(self, credential: Credential) -> None:
+        """Store or replace an account's verifier."""
+
+    @abstractmethod
+    def get(self, user_id: str) -> Credential | None:
+        ...
+
+
+class SessionRepository(ABC):
+    """Live sessions.
+
+    The one place in this module where deletion is correct. A session is disposable state with
+    no historical value — the *fact* that someone logged in and out is recorded in the event
+    log, which is where the audit trail lives, so removing the row loses nothing that matters
+    and leaving it would keep a usable credential alive past its purpose.
+
+    Sessions are looked up by a hash of the token, never by the token. See
+    `backend/auth/models.py` for why.
+    """
+
+    @abstractmethod
+    def create(self, session: Session) -> None:
+        ...
+
+    @abstractmethod
+    def by_token_hash(self, token_hash: str) -> Session | None:
+        ...
+
+    @abstractmethod
+    def touch(self, session_id: str, last_seen_at: datetime) -> None:
+        """Record activity, sliding the idle expiry out."""
+
+    @abstractmethod
+    def revoke(self, session_id: str) -> None:
+        ...
+
+    @abstractmethod
+    def revoke_all_for_user(self, user_id: str) -> int:
+        """End every session an account holds. Returns how many were ended.
+
+        One operation rather than a loop over `revoke`, because disabling an account or changing
+        its role has to take effect everywhere at once. A partial revocation leaves the holder of
+        the surviving session with access they were just judged not to have.
+        """
+
+    @abstractmethod
+    def purge_expired(self, before: datetime) -> int:
+        """Delete sessions that can no longer be valid. Returns how many were removed."""
