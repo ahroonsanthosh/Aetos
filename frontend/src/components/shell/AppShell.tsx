@@ -22,14 +22,11 @@ interface Props {
 export function AppShell({ streamStatus, trackCount, children }: Props) {
   return (
     <div className="shell">
-      <TopBar
-        streamStatus={streamStatus}
-        trackCount={trackCount}
-        /* No authentication exists (FM-001). The operator identity is the single configured
-           local one, shown so actions are attributable in structure — not because anyone has
-           been authenticated. */
-        operator="LOCAL OPERATOR"
-      />
+      {/* The operator is read from the session rather than passed in. It used to be the
+          string "LOCAL OPERATOR", hardcoded here because no authentication existed; showing a
+          name the system had never verified was the honest thing to do then and would be a
+          lie now. */}
+      <TopBar streamStatus={streamStatus} trackCount={trackCount} />
       <div className="shell__body">
         <Sidebar />
         <main className="shell__content">{children}</main>

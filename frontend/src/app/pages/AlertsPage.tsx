@@ -1,73 +1,202 @@
 /**
  * Alert feed.
  *
- * Alert generation is not implemented in the backend, so this feed is empty and says why. An
- * empty feed that looked like "all clear" would be the more dangerous reading (ADR 0011).
+ * Shows open alerts — including acknowledged ones, which are still open. Acknowledgement
+ * records that a human saw the alert, not that the aircraft went away, and a page that hid
+ * acknowledged alerts would let an operator clear their own display of a live incursion.
  *
- * The gap is specifically *promotion*, not assessment: risk scores every track and emits
- * `RISK_CHANGED`, but nothing turns those into an alert with an identity and a lifecycle.
- * Say that precisely. An earlier version of this page blamed the missing feed on risk
- * assessment "not having been built", which stayed on screen after risk was built and told
- * the operator nothing was evaluating tracks while the Tracks page showed live scores beside
- * it. A stale disclaimer is worse than no disclaimer: it spends the credibility that makes
- * the honest ones worth reading.
+ * The empty state distinguishes "nothing is wrong" from "nothing is watching" using the
+ * response's `assessing` flag rather than inferring it from an empty array. Those two are the
+ * same shape on the wire and opposite in meaning (ADR 0011). An earlier version of this page
+ * had no such flag to consult and hardcoded the pessimistic reading, which then stayed on
+ * screen after alerting was built.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api } from '../../data/client/api'
-import type { AlertView } from '../../data/models/api'
+import type { AlertListResponse, AlertView } from '../../data/models/api'
 import { PageHeader } from './TracksPage'
 import './pages.css'
 import './tables.css'
 
+const REFRESH_MS = 2000
+
 export function AlertsPage() {
-  const [alerts, setAlerts] = useState<AlertView[] | null>(null)
+  const [feed, setFeed] = useState<AlertListResponse | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [pending, setPending] = useState<string | null>(null)
+
+  // Held in a ref so the polling effect does not restart on every tick.
+  const acknowledging = useRef(false)
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setFeed(await api.alerts(signal))
+      setFailed(false)
+    } catch {
+      if (!signal?.aborted) setFailed(true)
+    }
+  }, [])
 
   useEffect(() => {
     const abort = new AbortController()
-    api
-      .alerts(abort.signal)
-      .then((response) => setAlerts(response.alerts))
-      .catch(() => setAlerts([]))
-    return () => abort.abort()
-  }, [])
+    void load(abort.signal)
+    const timer = window.setInterval(() => {
+      if (!acknowledging.current) void load(abort.signal)
+    }, REFRESH_MS)
+
+    return () => {
+      abort.abort()
+      window.clearInterval(timer)
+    }
+  }, [load])
+
+  const acknowledge = useCallback(
+    async (alertId: string) => {
+      acknowledging.current = true
+      setPending(alertId)
+      try {
+        await api.acknowledgeAlert(alertId)
+        await load()
+      } catch {
+        setFailed(true)
+      } finally {
+        setPending(null)
+        acknowledging.current = false
+      }
+    },
+    [load],
+  )
+
+  const alerts = feed?.alerts ?? []
+  const subtitle = feed ? `${feed.count} open` : undefined
 
   return (
     <div className="page">
-      <PageHeader title="Alerts" subtitle={alerts ? `${alerts.length} active` : undefined} />
+      <PageHeader title="Alerts" subtitle={subtitle} />
       <div className="page__body">
-        {alerts?.length ? (
-          <div className="panel">
+        {failed && (
+          <div className="panel alerts__banner alerts__banner--error">
+            The alert feed could not be read. What is shown below may be out of date.
+          </div>
+        )}
+
+        {alerts.length ? (
+          <div className="panel alerts">
             {alerts.map((alert) => (
-              <div key={alert.alert_id} className="alert-row">
-                <span className="numeric alert-row__time">
-                  {new Date(alert.created_at).toISOString().slice(11, 19)}Z
-                </span>
-                <span className="numeric alert-row__track">{alert.track_id ?? '—'}</span>
-                <span className="alert-row__source">{alert.source}</span>
-              </div>
+              <AlertRow
+                key={alert.alert_id}
+                alert={alert}
+                busy={pending === alert.alert_id}
+                onAcknowledge={acknowledge}
+              />
             ))}
           </div>
         ) : (
           <div className="panel">
-            <div className="empty-state">
-              <div className="empty-state__title">No alerts</div>
-              <p className="empty-state__body">
-                Alert generation is not implemented in this build. This is not an
-                &ldquo;all clear&rdquo;.
-              </p>
-              <p className="empty-state__body">
-                Risk assessment <em>is</em> running: every track carries a score, a level and
-                reason codes, shown on the Tracks page and in the assessment panel. What is
-                missing is the step after it — nothing promotes a risk level into an alert
-                that persists, can be acknowledged, and stays put once raised. Judge the
-                current picture from the track list, not from this page.
-              </p>
-            </div>
+            <EmptyState feed={feed} />
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function EmptyState({ feed }: { feed: AlertListResponse | null }) {
+  if (feed === null) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state__title">Loading</div>
+      </div>
+    )
+  }
+
+  if (!feed.assessing) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state__title">Alerting is not running</div>
+        <p className="empty-state__body">
+          No alerting service is attached to this deployment, so nothing is evaluating tracks
+          against alert thresholds. This is <strong>not</strong> an &ldquo;all clear&rdquo; —
+          judge the current picture from the track list.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="empty-state">
+      <div className="empty-state__title">No open alerts</div>
+      <p className="empty-state__body">
+        Alerting is running and no track currently meets the threshold. Tracks below it are
+        still assessed and scored — the track list shows every one, with its risk level.
+      </p>
+    </div>
+  )
+}
+
+function AlertRow({
+  alert,
+  busy,
+  onAcknowledge,
+}: {
+  alert: AlertView
+  busy: boolean
+  onAcknowledge: (alertId: string) => void
+}) {
+  const acknowledged = alert.state === 'acknowledged'
+
+  return (
+    <div className={`alert-card alert-card--${alert.peak_level}`}>
+      <div className="alert-card__head">
+        <span className={`alert-card__level alert-card__level--${alert.peak_level}`}>
+          {alert.peak_level.toUpperCase()}
+        </span>
+        <span className="numeric alert-card__track">{alert.track_id}</span>
+        <span className="numeric alert-card__score">{alert.score}</span>
+        <span className="numeric alert-card__time">
+          {new Date(alert.raised_at).toISOString().slice(11, 19)}Z
+        </span>
+
+        {/* Only shown once the current level has actually fallen below the peak. Displaying
+            "now MEDIUM" on an alert still sitting at its peak would read as de-escalation
+            that has not happened. */}
+        {alert.level !== alert.peak_level && (
+          <span className="alert-card__now">now {alert.level.toUpperCase()}</span>
+        )}
+
+        {alert.escalated_at && <span className="alert-card__escalated">ESCALATED</span>}
+
+        <span className="alert-card__actions">
+          {acknowledged ? (
+            <span
+              className="alert-card__acknowledged"
+              title={`Acknowledged by ${alert.acknowledged_by ?? 'an operator'}. The alert is still open.`}
+            >
+              ACKNOWLEDGED
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="alert-card__ack-button"
+              disabled={busy}
+              onClick={() => onAcknowledge(alert.alert_id)}
+              title="Record that you have seen this alert. It does not clear it."
+            >
+              {busy ? '…' : 'Acknowledge'}
+            </button>
+          )}
+        </span>
+      </div>
+
+      {/* Risk's own sentences, unedited. An alert that cannot say why it fired leaves an
+          operator with obey or dismiss. */}
+      <ul className="alert-card__reasons">
+        {alert.reasons.map((reason, index) => (
+          <li key={alert.codes[index] ?? reason}>{reason}</li>
+        ))}
+      </ul>
     </div>
   )
 }

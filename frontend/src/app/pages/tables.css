@@ -45,15 +45,112 @@
   border-color: var(--status-info);
 }
 
-.alert-row {
-  display: grid;
-  grid-template-columns: 100px 120px 1fr;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-sm);
+/* One alert. A card rather than a table row because the reasons underneath it are the
+   substance — a row that fitted the severity and the track ID would have had to truncate the
+   part an operator actually needs to act on. */
+.alert-card {
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--line-subtle);
+
+  /* The severity, restated as a stripe. Colour alone carries this on the level chip, and
+     colour alone is not a channel everyone has — the stripe gives the same information a
+     second way, and survives a monochrome display. */
+  border-left: 3px solid var(--status-inert);
 }
 
-.alert-row__time  { color: var(--text-muted); }
-.alert-row__track { color: var(--text-primary); }
-.alert-row__source{ color: var(--text-secondary); }
+.alert-card--medium   { border-left-color: var(--status-warning); }
+.alert-card--high     { border-left-color: var(--status-elevated); }
+.alert-card--critical { border-left-color: var(--status-critical); }
+
+.alert-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.alert-card__level {
+  min-width: 5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+}
+
+.alert-card__level--none     { color: var(--text-secondary); }
+.alert-card__level--low      { color: var(--status-info); }
+.alert-card__level--medium   { color: var(--status-warning); }
+.alert-card__level--high     { color: var(--status-elevated); }
+.alert-card__level--critical { color: var(--status-critical); }
+
+.alert-card__track { color: var(--text-primary); }
+.alert-card__score { color: var(--text-secondary); min-width: 2.5rem; }
+.alert-card__time  { color: var(--text-muted); }
+
+/* Shown only when the current level has fallen below the peak, so the card can say both what
+   this was at its worst and what it is now without implying either. */
+.alert-card__now {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.alert-card__escalated {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--status-critical);
+}
+
+.alert-card__actions {
+  margin-left: auto;
+}
+
+.alert-card__ack-button {
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--surface-inset);
+  border: 1px solid var(--line-subtle);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.alert-card__ack-button:hover:not(:disabled) {
+  color: var(--status-info);
+  border-color: var(--status-info);
+}
+
+.alert-card__ack-button:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+/* Deliberately muted. An acknowledged alert is still open, and styling it as a success state
+   would say the opposite of what acknowledgement means. */
+.alert-card__acknowledged {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.alert-card__reasons {
+  margin: var(--space-2) 0 0;
+  padding-left: 5.75rem;
+  list-style: none;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.alert-card__reasons li {
+  padding: 1px 0;
+}
+
+.alerts__banner {
+  padding: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.alerts__banner--error {
+  color: var(--status-warning);
+  border-left: 3px solid var(--status-warning);
+}

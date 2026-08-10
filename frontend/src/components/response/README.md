@@ -17,6 +17,6 @@ routes through `backend/decision/` and stops there.
 
 Response execution is a genuine future capability for this project, not a permanently disabled
 feature — but it requires its own authorisation, safety and audit design pass before any code
-is written. See [`response/README.md`](../../../../response/README.md) at the repository root,
-which also notes that Aetos currently has no authentication at all (FM-001), and that this
-alone disqualifies the layer from being built today.
+is written. See [`response/README.md`](../../../../response/README.md) at the repository root
+for what that pass has to cover. Operator authentication now exists (ADR 0016), which settles
+who *made* a request and settles nothing about who may authorise a physical action.

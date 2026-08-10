@@ -5,23 +5,31 @@
 The only surface the operator interface talks to. It reads state and it accepts operator
 actions. It does not hold state, decide anything, or run anything.
 
-## There is no authentication
+## Authentication
 
-**Aetos has no login, no roles and no authorisation checks.** Every action is attributed to a
-single configured local operator, and that identity is *asserted*, not verified.
+**Every route requires a session except a liveness probe and the login flow itself.** Log in at
+`POST /auth/login` for a cookie; roles are `viewer` (read), `operator` (read and acknowledge)
+and `admin` (also manage accounts). See [ADR 0016](../../docs/adr/0016-authentication-and-authorisation.md).
 
-The consequence, stated plainly: **the event log does not currently prove who did something.**
-Any claim that it constitutes an audit trail of operator action is not yet supportable.
-**Aetos in this state must not be exposed to an untrusted network.**
+Two properties are worth knowing when reading this module:
 
-This is a decision ([ADR 0008](../../docs/adr/0008-determinism-backpressure-auth.md), FM-001),
-not an omission. A half-built authentication system is worse than none, because it looks like
-security and invites the system to be exposed on the assumption that something is checking.
+**The gate is fail-closed and applied at the router.** A route added later is gated by default
+and has to opt out visibly. `tests/integration/test_auth_api.py` walks the real route table and
+fails if any route answers without a session and is not on a short named public list — so an
+endpoint nobody thought about cannot ship ungated.
 
-What does exist is the seam: `Identity`, `OperatorContext` and `IdentityProvider` in
-`identity.py`. Every operator action carries an operator context, so actions are attributable
-in structure from the first one ever recorded, and `authenticated=False` travels with the
-identity so a future audit export cannot present an assumed identity as a verified one.
+**401 and 403 mean different things.** No session versus a session without the rank. The
+interface sends the first to the login page and must not send the second there, because logging
+in again will not help.
+
+The seam that made this possible was here from the first commit: `Identity`, `OperatorContext`
+and `IdentityProvider` in `identity.py`. `Identity.authenticated` now reads true and
+`OperatorContext.basis` reads `session`, which is what distinguishes the two eras of the event
+log rather than silently merging them.
+
+A deployment can still run unauthenticated with `--no-auth`, for a single-user machine. It works
+on loopback only — `guard_bind` in `backend/main.py` refuses anything else — and
+`GET /system/health` says so in as many words when it is in use.
 
 `IdentityProvider.resolve()` takes no request and reads nothing a client sends. There is no
 header, cookie or body field by which a caller can name itself — a client's claim about who it
@@ -158,8 +166,10 @@ a recommendation presented to a human operator.
 
 - No process entrypoint. Nothing yet decides which site to load or where the database lives;
   configuration loading belongs to `backend/common` (ADR 0009) and has not been built.
-- No rate limiting, no request size limits, no CORS policy. All are network-exposure concerns,
-  and the system is not to be network-exposed in this state (FM-001).
+- No rate limiting except on login, no request size limits, no CORS policy. The first is best
+  added at the reverse proxy that terminates TLS (`docs/deployment.md`); the third is not
+  needed while the bundle is served from this process, and would become necessary the moment a
+  cross-origin client existed.
 - `GET /alerts` and `GET /detections` scan the log per request and bound the *scan* rather than
   the result, reporting `next_seq` so a caller can page honestly. Alerts should get their own
   projection when the alerting module lands, for the same reason tracks have one.

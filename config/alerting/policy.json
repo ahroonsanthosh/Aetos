@@ -1,0 +1,7 @@
+{
+  "notes": "Alerting policy: when a risk level is promoted to an alert that demands a human's attention. See ADR 0015. Raising is deliberately stricter than the risk bands themselves — MEDIUM is already visible on the track list and the map, and an interrupt that fires too readily trains operators to ignore the feed. clear_at_or_below must stay strictly below raise_at; the gap between them is the hysteresis band.",
+  "raise_at": "high",
+  "clear_at_or_below": "medium",
+  "clear_dwell_s": 20.0,
+  "clear_on_track_lost": true
+}

@@ -17,8 +17,10 @@ from collections.abc import Iterator
 _DETECTION_PREFIX = "det"
 _TRACK_PREFIX = "TRK"
 _EVENT_PREFIX = "evt"
+_ALERT_PREFIX = "ALT"
 
 _TRACK_ID_PATTERN = re.compile(r"^TRK-\d{5,}$")
+_ALERT_ID_PATTERN = re.compile(r"^ALT-(\d{5,})$")
 
 
 class IdGenerator:
@@ -68,6 +70,29 @@ def event_id_generator() -> IdGenerator:
     is the total order. See docs/adr/0006.
     """
     return IdGenerator(_EVENT_PREFIX, width=8)
+
+
+def alert_id_generator(start: int = 1) -> IdGenerator:
+    """Alert IDs.
+
+    `start` exists because alert identifiers must not be reused across a restart. Alerts are
+    rebuilt by replaying the log, so the generator has to resume above the highest identifier
+    the log already contains — a second `ALT-00007` would make two distinct alerts
+    indistinguishable in the record, and an acknowledgement of one would appear to
+    acknowledge the other. See `alert_id_sequence`.
+    """
+    return IdGenerator(_ALERT_PREFIX, width=5, start=start)
+
+
+def alert_id_sequence(value: str) -> int | None:
+    """The counter inside an alert identifier, or None if it is not one.
+
+    Used when resuming the generator after replay. Returning None rather than raising lets a
+    caller scan a log that may contain identifiers written by an older format without having
+    to guard every entry.
+    """
+    match = _ALERT_ID_PATTERN.match(value)
+    return int(match.group(1)) if match else None
 
 
 def is_valid_track_id(value: str) -> bool:

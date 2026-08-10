@@ -16,6 +16,7 @@ import type { SiteView, StreamedEvent, TrackView } from '../models/api'
 import { LocalFrame } from '../models/geo'
 import { toDisplayTrack, type DisplayTrack } from '../models/track'
 import { api, ApiError } from './api'
+import { useAuth } from './auth'
 import { EventStream, type StreamStatus } from './stream'
 
 export interface TrackPicture {
@@ -29,6 +30,12 @@ export interface TrackPicture {
 }
 
 export function useTrackPicture(): TrackPicture {
+  // The console is only mounted with a session, so a 401 here means the session ended while
+  // someone was watching. Handing that to the auth layer is what turns it into a login page
+  // rather than a picture that stops updating while still looking live — the most dangerous
+  // failure this interface can have, because a frozen display and a quiet sky look identical.
+  const { sessionExpired } = useAuth()
+
   const [tracksById, setTracksById] = useState<Map<string, TrackView>>(new Map())
   const [site, setSite] = useState<SiteView | null>(null)
   const [status, setStatus] = useState<StreamStatus>('connecting')
@@ -64,11 +71,18 @@ export function useTrackPicture(): TrackPicture {
         const stream = new EventStream(snapshot.as_of_seq, {
           onEvent: applyEvent,
           onStatusChange: setStatus,
+          onUnauthenticated: sessionExpired,
         })
         streamRef.current = stream
         stream.start()
       } catch (cause) {
         if (cancelled) return
+
+        if (cause instanceof ApiError && cause.status === 401) {
+          sessionExpired()
+          return
+        }
+
         setStatus('closed')
         setError(
           cause instanceof ApiError
@@ -118,7 +132,7 @@ export function useTrackPicture(): TrackPicture {
       streamRef.current?.close()
       streamRef.current = null
     }
-  }, [reloadToken])
+  }, [reloadToken, sessionExpired])
 
   const frame = useMemo(() => (site ? new LocalFrame(site.reference) : null), [site])
 
