@@ -121,3 +121,29 @@
   color: var(--text-disabled);
   border-color: var(--line);
 }
+
+/* The role beside the name. An operator sharing a console with a viewer needs to be able to
+   tell at a glance which one is signed in — otherwise the first sign that they are the wrong
+   one is an action being refused. */
+.topbar__role {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.topbar__signout {
+  margin-left: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--line-subtle);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.topbar__signout:hover {
+  color: var(--text-secondary);
+  border-color: var(--line);
+}

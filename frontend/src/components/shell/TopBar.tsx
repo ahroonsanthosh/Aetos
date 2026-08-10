@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../../data/client/api'
+import { useAuth } from '../../data/client/auth'
 import type { ModeView, SystemHealthView } from '../../data/models/api'
 import type { StreamStatus } from '../../data/client/stream'
 import './TopBar.css'
@@ -21,12 +22,12 @@ import './TopBar.css'
 interface Props {
   streamStatus: StreamStatus
   trackCount: number
-  operator: string
 }
 
 const HEALTH_POLL_MS = 15_000
 
-export function TopBar({ streamStatus, trackCount, operator }: Props) {
+export function TopBar({ streamStatus, trackCount }: Props) {
+  const { session, signOut } = useAuth()
   const [mode, setMode] = useState<ModeView | null>(null)
   const [health, setHealth] = useState<SystemHealthView | null>(null)
   const [utc, setUtc] = useState(() => new Date())
@@ -97,9 +98,23 @@ export function TopBar({ streamStatus, trackCount, operator }: Props) {
         <span className="topbar__utc numeric" title="Coordinated Universal Time">
           {formatUtc(utc)}
         </span>
-        <span className="topbar__operator" title="No authentication is configured (FM-001)">
-          {operator}
-        </span>
+        {session && (
+          <span
+            className="topbar__operator"
+            title={`Signed in as ${session.display_name} (${session.role}). Every action is recorded against this account.`}
+          >
+            {session.display_name}
+            <span className="topbar__role">{session.role}</span>
+          </span>
+        )}
+        <button
+          type="button"
+          className="topbar__signout"
+          onClick={() => void signOut()}
+          title="End this session"
+        >
+          Sign out
+        </button>
       </div>
     </header>
   )

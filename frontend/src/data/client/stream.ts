@@ -21,11 +21,21 @@
 import { API_PREFIX } from '../models/api'
 import type { StreamedEvent } from '../models/api'
 
-export type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'closed'
+export type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'closed' | 'unauthenticated'
+
+export const WS_UNAUTHENTICATED = 4401
+/** Close code the backend sends when the upgrade is refused for want of a session.
+
+    Must match `WS_UNAUTHENTICATED` in `backend/api/stream.py`. Terminal: it is the one close
+    code this client must not retry, because the cookie will not become valid on its own. */
 
 export interface StreamHandlers {
   onEvent: (event: StreamedEvent) => void
   onStatusChange: (status: StreamStatus) => void
+  /** The session is gone. Optional so a caller that does not care need not supply it, but the
+   *  console does: it is what turns an expired session into a login page rather than a picture
+   *  that quietly stops updating while still looking live. */
+  onUnauthenticated?: () => void
 }
 
 const INITIAL_RECONNECT_DELAY_MS = 500
@@ -105,9 +115,20 @@ export class EventStream {
       this.handlers.onEvent(event)
     }
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       this.socket = null
       if (this.closedByCaller) return
+
+      // The backend refused the upgrade for want of a session. Retrying cannot help — the
+      // cookie will not become valid on its own — and a logged-out tab left open would
+      // otherwise reconnect forever, turning an expired session into a slow denial of service
+      // against its own backend. Every other close code means retry.
+      if (event.code === WS_UNAUTHENTICATED) {
+        this.handlers.onStatusChange('unauthenticated')
+        this.handlers.onUnauthenticated?.()
+        return
+      }
+
       this.scheduleReconnect()
     }
 

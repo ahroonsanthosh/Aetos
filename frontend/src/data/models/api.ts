@@ -155,6 +155,20 @@ export interface TrackHistoryResponse {
   count: number
 }
 
+export type Role = 'viewer' | 'operator' | 'admin'
+
+/** Who the caller is, from `GET /auth/me`.
+ *
+ * Carries nothing secret and nothing to enforce with. The role here decides what the interface
+ * *offers*; what it *permits* is decided by the backend on every request, so a viewer who
+ * crafts an acknowledge call by hand is refused regardless of what this page rendered. */
+export interface SessionView {
+  operator_id: string
+  display_name: string
+  role: Role
+  authenticated: boolean
+}
+
 export interface AlertView {
   alert_id: string
   track_id: string
