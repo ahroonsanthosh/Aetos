@@ -196,3 +196,4 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0011](adr/0011-frontend-honest-rendering.md) | The interface renders only what the backend actually knows |
 | [0012](adr/0012-classification-by-weighted-evidence.md) | Classification by weighted evidence; what provenance means |
 | [0013](adr/0013-risk-by-escalating-factors.md) | Risk as combined escalating factors, discounted only by evidence of harmlessness |
+| [0014](adr/0014-optional-basemap.md) | An optional self-hosted basemap beneath the PPI |

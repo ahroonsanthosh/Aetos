@@ -78,6 +78,26 @@ export class LocalFrame {
     }
   }
 
+  /**
+   * ENU metres back to geodetic degrees — the inverse of `toEnu`.
+   *
+   * Added for the basemap layer, which has to be told where to centre in latitude and
+   * longitude while the rest of the display thinks entirely in metres from the site. Exact
+   * inverse of `toEnu` by construction: both use the same two per-degree scale factors, so a
+   * round trip returns the input rather than something close to it.
+   */
+  toGeodetic(enu: { eastM: number; northM: number }): { latitude: number; longitude: number } {
+    return {
+      latitude: this.origin.latitude + enu.northM / this.metresPerDegreeLatitude,
+      longitude: this.origin.longitude + enu.eastM / this.metresPerDegreeLongitude,
+    }
+  }
+
+  /** The site's own reference position. */
+  get reference(): PositionView {
+    return this.origin
+  }
+
   /** Site-relative range, bearing and altitude, for the track details panel. */
   toSiteRelative(position: PositionView): SiteRelative {
     const enu = this.toEnu(position)

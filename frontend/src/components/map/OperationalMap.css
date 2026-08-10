@@ -19,6 +19,16 @@
      so before someone tries it. */
   cursor: grab;
   touch-action: none;
+
+  /* Above the basemap layer, explicitly. Without this the SVG paints *below* it whatever the
+     DOM order says: `.basemap` is `position: absolute`, and CSS stacking rules place any
+     positioned element above an unpositioned one regardless of source order. With real tiles
+     rendered, that silently buried every ring, zone and track under solid terrain — the PPI
+     would still exist, just invisible, which is a far worse failure than the basemap not
+     showing at all. Caught by forcing the basemap fully opaque and screenshotting, not by
+     eye: MapLibre's own tiles were never opaque enough in testing to reveal it. */
+  position: relative;
+  z-index: 1;
 }
 
 .map__canvas.is-panning {
@@ -29,6 +39,12 @@
 .map__legend,
 .map__cursor,
 .map__display-options {
+  /* Above the SVG's own z-index: 1 explicitly, not just by relying on being later in the DOM.
+     Positioned siblings with an explicit z-index stack by that number regardless of source
+     order, so once the canvas was pulled out of the default paint layer to clear the
+     basemap, these had to be pulled out with it — otherwise the legend and range controls
+     would have gone the same way the tracks nearly did: silently behind glass. */
+  z-index: 2;
   position: absolute;
   display: flex;
   gap: var(--space-2);

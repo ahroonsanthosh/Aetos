@@ -3,9 +3,9 @@
   "site_id": "fictional_test_range",
   "name": "Aetos Fictional Test Range",
   "reference": {
-    "latitude": 45.0,
-    "longitude": 0.0,
-    "altitude_m": 120.0
+    "latitude": 51.8971,
+    "longitude": -8.4697,
+    "altitude_m": 5.0
   },
   "protected_radius_m": 800.0,
   "zones": [
@@ -16,8 +16,8 @@
       "geometry": {
         "shape": "circle",
         "centre": {
-          "latitude": 45.0,
-          "longitude": 0.0
+          "latitude": 51.8971,
+          "longitude": -8.4697
         },
         "radius_m": 800.0
       }
@@ -29,8 +29,8 @@
       "geometry": {
         "shape": "circle",
         "centre": {
-          "latitude": 45.0,
-          "longitude": 0.0
+          "latitude": 51.8971,
+          "longitude": -8.4697
         },
         "radius_m": 2500.0
       }
@@ -42,8 +42,8 @@
       "geometry": {
         "shape": "circle",
         "centre": {
-          "latitude": 45.0,
-          "longitude": 0.0
+          "latitude": 51.8971,
+          "longitude": -8.4697
         },
         "radius_m": 8000.0
       }
@@ -56,20 +56,20 @@
         "shape": "polygon",
         "vertices": [
           {
-            "latitude": 44.9945983,
-            "longitude": 0.0253628
+            "latitude": 51.8917039,
+            "longitude": -8.4406486
           },
           {
-            "latitude": 44.9945758,
-            "longitude": 0.0760883
+            "latitude": 51.8916753,
+            "longitude": -8.3825461
           },
           {
-            "latitude": 45.0053735,
-            "longitude": 0.0761026
+            "latitude": 51.9024602,
+            "longitude": -8.3825252
           },
           {
-            "latitude": 45.0053961,
-            "longitude": 0.0253675
+            "latitude": 51.9024889,
+            "longitude": -8.4406418
           }
         ]
       },
@@ -82,8 +82,8 @@
       "sensor_id": "radar_north",
       "registry_key": "sim_radar_medium",
       "position": {
-        "latitude": 45.0107978,
-        "longitude": 0.0
+        "latitude": 51.907885,
+        "longitude": -8.4697
       },
       "height_m": 12.0,
       "boresight_deg": 0.0
@@ -92,8 +92,8 @@
       "sensor_id": "radar_south",
       "registry_key": "sim_radar_medium",
       "position": {
-        "latitude": 44.9892022,
-        "longitude": 0.0
+        "latitude": 51.886315,
+        "longitude": -8.4697
       },
       "height_m": 12.0,
       "boresight_deg": 180.0
@@ -102,8 +102,8 @@
       "sensor_id": "eo_ir_east",
       "registry_key": "sim_eo_ir_narrow",
       "position": {
-        "latitude": 44.9999994,
-        "longitude": 0.0114143
+        "latitude": 51.8970992,
+        "longitude": -8.4566254
       },
       "height_m": 8.0,
       "boresight_deg": 90.0
@@ -112,8 +112,8 @@
       "sensor_id": "eo_ir_west",
       "registry_key": "sim_eo_ir_narrow",
       "position": {
-        "latitude": 44.9999994,
-        "longitude": -0.0114143
+        "latitude": 51.8970992,
+        "longitude": -8.4827746
       },
       "height_m": 8.0,
       "boresight_deg": 270.0,
@@ -123,8 +123,8 @@
       "sensor_id": "rf_central",
       "registry_key": "sim_rf_wide",
       "position": {
-        "latitude": 45.0,
-        "longitude": 0.0
+        "latitude": 51.8971,
+        "longitude": -8.4697
       },
       "height_m": 25.0,
       "boresight_deg": 0.0
