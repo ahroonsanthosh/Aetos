@@ -25,10 +25,15 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import ValidationError
 
-from backend.api.identity import OperatorContext
+from backend.api.deps import (
+    RequireAdmin,
+    RequireOperator,
+    ServicesDep,
+    require_role,
+)
 from backend.api.schemas import (
     DETECTION_SNAPSHOT_KEY,
     AlertListResponse,
@@ -51,12 +56,20 @@ from backend.api.schemas import (
     TrackView,
 )
 from backend.api.services import ApiServices
+from backend.auth.models import Role
 from backend.database.records import ScenarioDefinition
 from backend.events.types import Event, EventType
 from backend.tracking.models import TrackState
 from sensors.schemas.detection import Detection
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role(Role.VIEWER))])
+"""Every route on this router requires at least `viewer`.
+
+Declared once, at the router, rather than per handler. A route added later is gated by default
+and has to opt *out* visibly — the failure worth designing against is not a wrong role on an
+endpoint someone thought about, it is an endpoint nobody thought about at all. Handlers
+needing more than viewer take `RequireOperator` or `RequireAdmin` as well.
+"""
 
 DEFAULT_SCAN_LIMIT = 1000
 MAX_SCAN_LIMIT = 10_000
@@ -70,23 +83,8 @@ _SCENARIO_ENGINE_ABSENT = (
 )
 
 
-def _services(request: Request) -> ApiServices:
-    return request.app.state.services
-
-
-ServicesDep = Annotated[ApiServices, Depends(_services)]
-
-
-def _operator(services: ServicesDep) -> OperatorContext:
-    """The operator an action is attributed to.
-
-    Resolved from server-side configuration and nothing else. No header, cookie or body field
-    reaches this, so a client cannot name itself — see `backend/api/identity.py` and FM-001.
-    """
-    return services.identity.resolve()
-
-
-OperatorDep = Annotated[OperatorContext, Depends(_operator)]
+# Request dependencies live in `backend/api/deps.py`; see the note there on why they are no
+# longer defined per router.
 
 
 # --------------------------------------------------------------------------------------
@@ -280,7 +278,7 @@ async def list_alerts(services: ServicesDep) -> AlertListResponse:
 @router.post("/alerts/{alert_id}/acknowledge", response_model=AlertView, tags=["alerts"])
 async def acknowledge_alert(
     services: ServicesDep,
-    operator: OperatorDep,
+    operator: RequireOperator,
     alert_id: Annotated[str, Path(min_length=1, max_length=64)],
 ) -> AlertView:
     """Record that an operator has seen an alert.
@@ -373,7 +371,7 @@ async def list_scenarios(services: ServicesDep) -> ScenarioListResponse:
 )
 async def create_scenario(
     services: ServicesDep,
-    operator: OperatorDep,
+    operator: RequireAdmin,
     request: ScenarioCreateRequest,
 ) -> ScenarioView:
     """Store a scenario definition.

@@ -20,6 +20,7 @@ from typing import Protocol
 
 from backend.alerting.models import Alert
 from backend.api.identity import IdentityProvider
+from backend.auth.service import AuthService
 from backend.common.clock import Clock
 from backend.common.config import RunMode
 from backend.database.projection import TrackProjection
@@ -55,6 +56,22 @@ class ApiServices:
     track_history: TrackHistoryRepository
     projection: TrackProjection
     identity: IdentityProvider
+    """Resolves the operator an action is attributed to.
+
+    Which implementation is here decides whether this deployment has access control at all.
+    `SessionIdentityProvider` checks a credential; `LocalOperatorIdentityProvider` does not and
+    reports `requires_credential == False`, which is what lets the startup guard refuse to
+    expose it on a network interface (ADR 0016).
+    """
+
+    auth: AuthService | None = None
+    """Login, logout and account management.
+
+    Optional, and absent in tests that build an API over a bare projection. When it is None the
+    auth routes report themselves unavailable rather than pretending to succeed — an
+    authentication endpoint that returns 200 without checking anything is worse than one that is
+    missing.
+    """
 
     alerts: AlertSource | None = None
     """Where `GET /alerts` reads open alerts from, and where acknowledgements go.

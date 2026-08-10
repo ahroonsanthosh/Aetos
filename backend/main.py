@@ -27,9 +27,11 @@ import uvicorn
 from backend.alerting.policy import load_alert_policy
 from backend.alerting.service import AlertService
 from backend.api.app import create_app
-from backend.api.identity import LocalOperatorIdentityProvider
+from backend.api.identity import LocalOperatorIdentityProvider, SessionIdentityProvider
 from backend.api.services import ApiServices
 from backend.api.static import mount_frontend
+from backend.auth.policy import load_auth_policy
+from backend.auth.service import AuthService
 from backend.classification.classifier import build_default_classifier
 from backend.classification.service import ClassificationService, CycleEvidence
 from backend.common.clock import Clock, SystemClock
@@ -90,6 +92,14 @@ class Pipeline:
             geometry,
             self.events,
             sink=self.tracker,
+        )
+        self.auth = AuthService(
+            load_auth_policy(),
+            clock,
+            self.repositories.users,
+            self.repositories.credentials,
+            self.repositories.sessions,
+            self.events,
         )
         self.alerting = AlertService(load_alert_policy(), self.events)
 
@@ -202,13 +212,75 @@ class Pipeline:
         self.events.close()
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", ""})
+"""Interfaces reachable only from this machine.
+
+`0.0.0.0` is deliberately absent. It is what people reach for meaning "let me at it from my
+laptop", and it means every interface including whatever the machine is plugged into.
+"""
+
+
+class StartupRefused(RuntimeError):
+    """The requested configuration would expose the system. Raised instead of starting."""
+
+
+def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count: int) -> None:
+    """Refuse to start in a configuration that would put an open console on a network.
+
+    Three refusals, each for a state that is survivable on a laptop and not survivable on a
+    site:
+
+    1. **No authentication, off loopback.** The FM-001 state. Anyone who can route to the port
+       gets the full operator interface and the complete event log.
+    2. **No accounts, off loopback.** Authentication is configured but nobody can log in, and an
+       unusable console is the kind of thing that gets "fixed" at 2am with --no-auth.
+    3. **Off loopback without --behind-proxy.** Session cookies would cross the network in
+       clear. `--behind-proxy` is an explicit assertion by whoever starts the process that TLS
+       is terminated in front of it; it is not inferred from a header, because headers are
+       supplied by whoever is connecting.
+
+    A guard rather than a documented warning, because documentation does not run. This is the
+    one place the deployment posture is enforced instead of described.
+    """
+    if host in LOOPBACK_HOSTS:
+        return
+
+    if not authenticated:
+        raise StartupRefused(
+            f"Refusing to bind {host} with authentication disabled. Anyone who can reach this "
+            "port would have the full operator interface and the complete event log "
+            "(docs/failure_modes.md FM-001). Drop --no-auth, or bind 127.0.0.1."
+        )
+
+    if user_count == 0:
+        raise StartupRefused(
+            f"Refusing to bind {host} with no accounts: nobody could log in. Create one "
+            "first:\n    python -m backend.auth.admin add --username <name> --role admin"
+        )
+
+    if not behind_proxy:
+        raise StartupRefused(
+            f"Refusing to bind {host} without --behind-proxy. Aetos does not terminate TLS, so "
+            "session cookies would cross the network in clear. Put a reverse proxy in front of "
+            "it, terminate TLS there, and pass --behind-proxy to confirm you have. See "
+            "docs/deployment.md."
+        )
+
+
 def build_application(
     site: str = DEFAULT_SITE,
     scenario: str | None = None,
     data_dir: Path | None = None,
     tick_s: float = DEFAULT_TICK_S,
+    authenticated: bool = True,
 ):
-    """Assemble the pipeline and the API around it."""
+    """Assemble the pipeline and the API around it.
+
+    `authenticated` selects the identity provider. True is the default and the only setting safe
+    off loopback; False attributes everything to one local operator with no login at all
+    (ADR 0008, FM-001) and exists for a single-user machine. `guard_bind` refuses to combine it
+    with a network interface.
+    """
     clock = SystemClock()
     geometry = load_site_geometry(site)
     resolved = data_dir or ConfigPaths.default().repo_root / "data"
@@ -226,7 +298,12 @@ def build_application(
         tracks=pipeline.repositories.tracks,
         track_history=pipeline.repositories.track_history,
         projection=pipeline.projection,
-        identity=LocalOperatorIdentityProvider(clock),
+        identity=(
+            SessionIdentityProvider(clock, pipeline.auth)
+            if authenticated
+            else LocalOperatorIdentityProvider(clock)
+        ),
+        auth=pipeline.auth if authenticated else None,
         alerts=pipeline.alerting,
         classification_running=True,
         situation=pipeline.risk,
@@ -319,15 +396,56 @@ def main() -> None:
         "--tick", type=float, default=DEFAULT_TICK_S, help="pipeline cycle interval in seconds"
     )
     parser.add_argument("--data-dir", type=Path, default=None)
+    parser.add_argument(
+        "--behind-proxy",
+        action="store_true",
+        help=(
+            "assert that a reverse proxy in front of this process terminates TLS. Required to "
+            "bind anything but loopback. Also trusts X-Forwarded-* from that proxy."
+        ),
+    )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        help=(
+            "disable authentication entirely; every action is attributed to one local operator "
+            "(FM-001). Loopback only — the process refuses to start otherwise."
+        ),
+    )
     arguments = parser.parse_args()
 
+    authenticated = not arguments.no_auth
     app = build_application(
         site=arguments.site,
         scenario=arguments.scenario,
         data_dir=arguments.data_dir,
         tick_s=arguments.tick,
+        authenticated=authenticated,
     )
-    uvicorn.run(app, host=arguments.host, port=arguments.port, log_level="info")
+
+    # After the application is built, so the account count is a real read of the database rather
+    # than a guess, and before uvicorn binds anything.
+    try:
+        guard_bind(
+            arguments.host,
+            authenticated=authenticated,
+            behind_proxy=arguments.behind_proxy,
+            user_count=app.state.services.auth.user_count() if authenticated else 0,
+        )
+    except StartupRefused as refusal:
+        raise SystemExit(f"\n  {refusal}\n") from refusal
+
+    uvicorn.run(
+        app,
+        host=arguments.host,
+        port=arguments.port,
+        log_level="info",
+        # Only when an operator has asserted a proxy is in front. Trusting X-Forwarded-Proto
+        # unconditionally would let any client claim its plain-http request arrived over TLS,
+        # which is exactly the claim the Secure cookie decision turns on.
+        proxy_headers=arguments.behind_proxy,
+        forwarded_allow_ips="*" if arguments.behind_proxy else None,
+    )
 
 
 if __name__ == "__main__":

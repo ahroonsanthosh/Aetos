@@ -12,22 +12,26 @@ does not exist would be actively misleading during the exact demo it was built f
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.api.deps import OptionalOperatorDep, ServicesDep
 from backend.api.services import ApiServices
 from backend.common.config import RunMode
 
 router = APIRouter()
+"""Deliberately **not** gated at the router.
 
+`GET /system/mode` and `GET /system/health` stay reachable without a session, because a
+monitoring probe, a load balancer, or an operator debugging a login problem has to be able to
+tell a live process from a dead one without holding a credential — and an unreachable health
+check is indistinguishable from an unhealthy service.
 
-def _services(request: Request) -> ApiServices:
-    return request.app.state.services
-
-
-ServicesDep = Annotated[ApiServices, Depends(_services)]
+What they may say without one is narrow. The unauthenticated answer is liveness and the
+access-control posture; the component detail, which names every subsystem and its state,
+requires `viewer` like everything else.
+"""
 
 
 class ComponentState(StrEnum):
@@ -119,13 +123,21 @@ async def get_mode(services: ServicesDep) -> ModeView:
 
 
 @router.get("/system/health", response_model=SystemHealthView, tags=["system"])
-async def get_health(services: ServicesDep) -> SystemHealthView:
+async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> SystemHealthView:
     """Component health, reporting only what is genuinely knowable.
 
     Components with no implementation report NOT_BUILT rather than being omitted, because an
     operator interface that silently drops a subsystem from its dashboard gives no way to
     tell "healthy" from "forgotten".
+
+    **Without a session this answers liveness only.** The component list names every subsystem
+    and says which are unbuilt, which is a map of the software's weak points and not something
+    to hand to an unauthenticated caller. A probe gets enough to know the process is alive; an
+    operator gets the detail.
     """
+    if operator is None:
+        return _liveness_only(services)
+
     components: list[ComponentHealth] = []
 
     latest_seq, event_store = _event_store_health(services)
@@ -277,3 +289,37 @@ Sized to absorb one ordinary catch-up batch. Beyond it, the operator is looking 
 measurably older than what the system knows, which is exactly the condition the spec's
 degraded-mode requirement exists to surface.
 """
+
+
+def _liveness_only(services: ApiServices) -> SystemHealthView:
+    """The unauthenticated answer: the process is up, and whether it checks credentials.
+
+    Deliberately not an empty component list, which would read as "no subsystems" rather than
+    "not telling you". One component, saying exactly why the rest is absent — the same rule that
+    governs every other empty response in this API (ADR 0011).
+
+    The access-control posture is included on purpose and is safe to disclose: it tells an
+    operator diagnosing a login problem whether this deployment has authentication at all, and
+    it tells anyone scanning the port a fact they could establish in one request regardless.
+    Publishing it makes an unauthenticated deployment visible to whoever is auditing it rather
+    than only to whoever finds it.
+    """
+    latest_seq, _ = _event_store_health(services)
+    guarded = services.identity.requires_credential
+
+    return SystemHealthView(
+        components=[
+            ComponentHealth(
+                component="api",
+                state=ComponentState.OK,
+                detail=(
+                    "Serving. Component detail requires a session."
+                    if guarded
+                    else "Serving. This deployment has NO authentication configured (FM-001)."
+                ),
+            )
+        ],
+        latest_event_seq=latest_seq,
+        projection_seq=0,
+        projection_lag=0,
+    )

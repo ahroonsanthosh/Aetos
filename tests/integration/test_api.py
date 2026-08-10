@@ -259,7 +259,7 @@ def test_unknown_track_is_a_404_not_an_empty_object(client: TestClient) -> None:
 
 def test_openapi_schema_builds(client: TestClient) -> None:
     """Catches route/model mismatches that would otherwise only appear at request time."""
-    response = client.get("/openapi.json")
+    response = client.get(f"{API_PREFIX}/openapi.json")
 
     assert response.status_code == 200
     assert response.json()["paths"]
@@ -271,7 +271,7 @@ def test_no_endpoint_acts_on_the_physical_world(client: TestClient) -> None:
     Aetos stops at a recommendation. No route may suggest otherwise, whatever its
     implementation does.
     """
-    paths = " ".join(client.get("/openapi.json").json()["paths"]).lower()
+    paths = " ".join(client.get(f"{API_PREFIX}/openapi.json").json()["paths"]).lower()
 
     for forbidden in ("engage", "fire", "neutralis", "neutraliz", "intercept", "deploy"):
         assert forbidden not in paths, f"API exposes a route containing {forbidden!r}"
