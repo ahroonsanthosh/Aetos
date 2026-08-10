@@ -6,6 +6,11 @@
   inset: 0;
   filter: saturate(0.55) brightness(0.7);
   pointer-events: none;
+
+  /* The bottom of the map's stack, stated rather than assumed. Being first in the DOM is not
+     enough: this is positioned and the SVG was not, so without explicit layers the terrain
+     painted *over* every ring, zone and track. See the note on `.map__canvas`. */
+  z-index: 0;
 }
 
 /* MapLibre injects its own canvas styling; keep it inside the layer. */
