@@ -41,6 +41,8 @@ is harder to read than no scale at all.
 | File | Responsibility |
 |---|---|
 | `OperationalMap.tsx` | Layout, the SVG viewport, pointer navigation, wires selection to history |
+| `BasemapLayer.tsx` / `useBasemap.ts` | The optional geographic layer and its toggle |
+| `basemapCamera.ts` | ENU viewport → Web Mercator camera, so tiles register with the display |
 | `useMapViewport.ts` | Range and centre: zoom anchoring, pan clamping, viewBox and grid extents |
 | `MapControls.tsx` | Zoom buttons, range presets, live range readout |
 | `CompassRose.tsx` | Graduated bearing scale — cardinals, numerals every 30°, ticks every 10° |
@@ -51,6 +53,25 @@ is harder to read than no scale at all.
 | `PredictedPath.tsx` | Straight-line velocity projection, short or extended-with-ticks |
 | `TrackTrail.tsx` | The selected track's recorded route, fading with age |
 | `MapDisplayOptions.tsx` / `useMapDisplayOptions.ts` | The data-block field toggle and its persisted state |
+
+## Optional basemap
+
+A geographic layer can be shown beneath the display (ADR 0014). Off by default, and unmounted
+when off — so the default view keeps the PPI's defining property of having no tile dependency,
+and never even downloads the map library.
+
+Three things to know before changing it:
+
+- **The PPI drives; the basemap follows.** Every MapLibre interaction handler is disabled. A
+  basemap that could be dragged independently would slide out of register with the tracks drawn
+  over it, silently, and an operator would read that as the *tracks* having moved.
+- **The projection is computed, not assumed.** Web Mercator's scale factor is `1 / cos(lat)` —
+  1.41× at 45°. Getting it wrong still renders: tiles load, roads look like roads, and every
+  track sits somewhere it is not. `basemapCamera.ts` is a pure function with exact tests for
+  that reason.
+- **Missing tiles are reported, not painted over.** A grey rectangle under the tracks would say
+  "there is nothing on the ground there", which is a claim about the world rather than about
+  the software. See `docs/basemap.md` for installation.
 
 ## Interface boundary
 

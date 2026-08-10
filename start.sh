@@ -139,12 +139,20 @@ fi
 #
 # `find -newer` rather than a glob, so nested sources count. `dist/` itself is not tracked
 # by git, so a fresh clone has no build output and takes the first branch anyway.
+# `frontend/public` is in the list because Vite copies it into `dist/` at build time and the
+# basemap installer writes there. Leaving it out meant installing or re-cutting tiles after a
+# build changed nothing the browser could see: `dist/` kept whatever copy it was built with.
+# Missing tiles at least make the Terrain button say so. A *stale* extract is worse — re-cut
+# the map for a new site and the display draws the old site's ground under the new one's
+# tracks, confidently and with no complaint.
 interface_is_stale() {
   [[ ! -f frontend/dist/index.html ]] && return 0
 
+  local sources=(frontend/src frontend/index.html frontend/package.json frontend/vite.config.ts)
+  [[ -d frontend/public ]] && sources+=(frontend/public)
+
   local newer
-  newer=$(find frontend/src frontend/index.html frontend/package.json frontend/vite.config.ts \
-    -newer frontend/dist/index.html -print -quit 2>/dev/null || true)
+  newer=$(find "${sources[@]}" -newer frontend/dist/index.html -print -quit 2>/dev/null || true)
   [[ -n "$newer" ]]
 }
 
@@ -152,11 +160,17 @@ if interface_is_stale; then
   say "Building the operator interface (a minute the first time)"
   (
     cd frontend
-    if [[ ! -d node_modules ]]; then
+    # Reinstall whenever package.json is newer than the last install, not merely when
+    # node_modules is absent. The absent-only check meant a pull that added a dependency —
+    # exactly what the map's basemap layer did — left an existing checkout building against
+    # packages it never installed, with a TypeScript error as the only symptom and no
+    # indication that the fix was `npm install` rather than something in the new code. Mirrors
+    # the same staleness fix already applied to the frontend/dist rebuild check below.
+    if [[ ! -d node_modules || package.json -nt node_modules/.package-lock.json ]]; then
       npm ci --silent 2>/dev/null || npm install --silent
     fi
     npm run build --silent
-  ) || fail "The interface failed to build. Run 'cd frontend && npm run build' to see why."
+  ) || fail "The interface failed to build. Run 'cd frontend && npm install && npm run build' to see why."
 fi
 
 # ---------------------------------------------------------------------------------------

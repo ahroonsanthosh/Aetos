@@ -180,7 +180,7 @@ export function anchoredCentre(
  * meaning everywhere: the distance the outer ring represents, not "the outer ring, less
  * whatever each component decided to reserve for itself".
  */
-const VIEW_MARGIN = 1.08
+export const VIEW_MARGIN = 1.08
 
 /**
  * The SVG viewBox for a viewport.

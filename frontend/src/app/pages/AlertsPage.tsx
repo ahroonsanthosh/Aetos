@@ -3,6 +3,14 @@
  *
  * Alert generation is not implemented in the backend, so this feed is empty and says why. An
  * empty feed that looked like "all clear" would be the more dangerous reading (ADR 0011).
+ *
+ * The gap is specifically *promotion*, not assessment: risk scores every track and emits
+ * `RISK_CHANGED`, but nothing turns those into an alert with an identity and a lifecycle.
+ * Say that precisely. An earlier version of this page blamed the missing feed on risk
+ * assessment "not having been built", which stayed on screen after risk was built and told
+ * the operator nothing was evaluating tracks while the Tracks page showed live scores beside
+ * it. A stale disclaimer is worse than no disclaimer: it spends the credibility that makes
+ * the honest ones worth reading.
  */
 
 import { useEffect, useState } from 'react'
@@ -47,8 +55,14 @@ export function AlertsPage() {
               <div className="empty-state__title">No alerts</div>
               <p className="empty-state__body">
                 Alert generation is not implemented in this build. This is not an
-                &ldquo;all clear&rdquo; — nothing is currently evaluating tracks against alert
-                criteria, because the risk assessment module has not been built.
+                &ldquo;all clear&rdquo;.
+              </p>
+              <p className="empty-state__body">
+                Risk assessment <em>is</em> running: every track carries a score, a level and
+                reason codes, shown on the Tracks page and in the assessment panel. What is
+                missing is the step after it — nothing promotes a risk level into an alert
+                that persists, can be acknowledged, and stays put once raised. Judge the
+                current picture from the track list, not from this page.
               </p>
             </div>
           </div>

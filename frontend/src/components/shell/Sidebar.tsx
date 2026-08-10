@@ -37,15 +37,19 @@ const SECTIONS: Section[] = [
     items: [
       { label: 'Track History', path: '/history' },
       { label: 'Sensor Fusion', path: '/fusion', unavailable: 'Fusion module not implemented' },
+      // Both modules are built and running; what these two lack is a dedicated page. Say
+      // that, rather than "not implemented" — the module claim was true when written and
+      // silently became false, leaving the sidebar denying the existence of scores the
+      // Tracks page was displaying at the same moment.
       {
         label: 'Classification',
         path: '/classification',
-        unavailable: 'Classification module not implemented',
+        unavailable: 'No dedicated page yet — classification is shown per track on Live Tracks',
       },
       {
         label: 'Assessments',
         path: '/assessments',
-        unavailable: 'Risk module not implemented',
+        unavailable: 'No dedicated page yet — risk scores and reasons are shown per track on Live Tracks',
       },
     ],
   },

@@ -10,6 +10,7 @@
  * wheel is fiddly, and by button is one click.
  */
 
+import type { BasemapState } from './useBasemap'
 import { MAX_RANGE_M, MIN_RANGE_M } from './useMapViewport'
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
   onSetRange: (rangeM: number) => void
   onZoom: (steps: number) => void
   onReset: () => void
+  basemap: BasemapState
 }
 
 const PRESETS = [1_000, 2_000, 5_000, 10_000, 20_000]
@@ -27,7 +29,15 @@ const PRESETS = [1_000, 2_000, 5_000, 10_000, 20_000]
  *  which makes the row look broken rather than merely unsnapped. */
 const PRESET_MATCH_RATIO = 0.02
 
-export function MapControls({ rangeM, isDefault, onSetRange, onZoom, onReset }: Props) {
+export function MapControls({
+  rangeM,
+  isDefault,
+  onSetRange,
+  onZoom,
+  onReset,
+  basemap,
+}: Props) {
+  const unavailable = basemap.enabled && basemap.status === 'unavailable'
   return (
     <div className="map__controls">
       <div className="map__zoom">
@@ -79,6 +89,25 @@ export function MapControls({ rangeM, isDefault, onSetRange, onZoom, onReset }: 
       <span className="map__range-readout numeric" aria-live="off">
         {formatRange(rangeM)}
       </span>
+
+      {/* Terrain is context, not the display. The button says what it turns on, and when the
+          tiles are not installed it says that too — an operator who toggles something and sees
+          nothing happen is owed the reason rather than left to wonder. */}
+      <button
+        type="button"
+        className={`map__scale-button map__basemap-button ${
+          basemap.enabled && !unavailable ? 'is-active' : ''
+        } ${unavailable ? 'is-unavailable' : ''}`}
+        onClick={basemap.toggle}
+        aria-pressed={basemap.enabled}
+        title={
+          unavailable
+            ? (basemap.detail ?? 'No basemap tiles installed.')
+            : 'Show a geographic basemap beneath the display'
+        }
+      >
+        {unavailable ? 'No terrain' : 'Terrain'}
+      </button>
     </div>
   )
 }

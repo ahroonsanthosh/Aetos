@@ -7,6 +7,11 @@ const BACKEND = process.env.AETOS_BACKEND ?? 'http://127.0.0.1:8000'
 
 export default defineConfig({
   plugins: [react()],
+  // MapLibre's tile worker is an ES module and is asked for by `?worker&url` in
+  // `BasemapLayer`. Without this it would be emitted in the classic-script format, which
+  // cannot carry the worker's own `import` statements — it fails at load, the map never
+  // finishes initialising, and the only symptom is a basemap stuck on "loading".
+  worker: { format: 'es' },
   // The same proxy for `vite dev` and `vite preview`. Keeping them in step means a preview
   // build talks to the backend exactly as the dev server does, so "works in dev" and "works
   // in the built bundle" cannot quietly diverge.
