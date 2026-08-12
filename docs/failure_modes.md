@@ -79,7 +79,7 @@ the adapter's documented obligation.
 ## Sensor and input failures
 
 ### FM-010 — Sensor goes silent
-**Status:** Open — target of build stage 12
+**Status:** Partial — track-side handling covered by chaos test; the watchdog is not built
 
 A sensor stops producing detections. Tracks that depended on it coast, then go STALE, then
 LOST. The hazard is that the system keeps rendering confident-looking tracks on data that no
@@ -90,7 +90,7 @@ health is marked degraded; if sensor count or aggregate confidence drops below t
 threshold, degraded mode activates and is stated visibly in the UI.
 
 ### FM-011 — Malformed detection data
-**Status:** Open — target of build stage 12
+**Status:** Closed — `tests/chaos/test_sensor_input_failures.py`
 
 A sensor emits data violating the canonical schema.
 
@@ -98,7 +98,7 @@ A sensor emits data violating the canonical schema.
 event with the reason, never propagated to tracking. One bad sensor must not stop the others.
 
 ### FM-012 — Clock skew between sensors
-**Status:** Open — target of build stage 12
+**Status:** Partial — a flat bound is enforced and tested; per-sensor skew estimation is not built
 
 Two sensors disagree about the current time. Detections of the same object arrive with
 timestamps that imply impossible motion, corrupting the filter's velocity estimate.
@@ -107,7 +107,7 @@ timestamps that imply impossible motion, corrupting the filter's velocity estima
 with an event beyond those bounds.
 
 ### FM-013 — Duplicate detections
-**Status:** Open — target of build stage 12
+**Status:** Closed — `tests/chaos/test_sensor_input_failures.py`
 
 The same detection arrives more than once. Naively processed, it double-weights the update
 and makes the filter overconfident.
@@ -115,7 +115,7 @@ and makes the filter overconfident.
 **Intended handling:** idempotency on `detection_id` at the ingestion boundary.
 
 ### FM-014 — Saturation / swarm overload
-**Status:** Open — target of build stage 12
+**Status:** Partial — the bound, the shed record and the degradation ordering are tested; quality-ordered shedding and degraded mode are not built
 
 More simultaneous objects than the system can process in real time.
 
@@ -286,10 +286,24 @@ state; track history retained after LOST rather than deleted.
 ## System failures
 
 ### FM-030 — Backend restart
-**Status:** Open — target of build stage 12
+**Status:** Closed · **Severity:** was High — a confident display over dead data
 
-**Intended handling:** in-memory state is a projection of the event log (ADR 0006), so state
-is rebuilt by replaying from the log. Recovery is a chaos test, not an assumption.
+Two defects, both found by writing the chaos test and neither visible to any single-process
+test. Tracks the dead process left live stayed in the projection at their last position and
+confidence, and nothing in the new process could ever retire them. Separately, the track id
+generator restarted at `TRK-00001` while `track_history` still held the previous run's rows
+under those ids, so two physically different objects merged into one unseparable record.
+
+**Handling:** `TrackManager.resume_after_restart` resumes ids above every id ever issued and
+retires whatever was left live, with `reason: backend_restarted` so the log distinguishes "the
+system lost the object" from "the object went away". Tracks are re-acquired rather than
+resurrected — the filter covariance behind a published track is not in the log, and rebuilding
+around an invented one would manufacture exactly the unearned confidence this closes. See
+ADR 0017 and `tests/chaos/test_restart_recovery.py`.
+
+**Still lost on restart:** classification evidence memory and risk loiter history. Both are
+degradations the system reports honestly (a re-acquired track reads `unknown` and rebuilds
+confidence), rather than falsehoods.
 
 ### FM-031 — UI crash silencing alerts
 **Status:** Partial — alerting is backend-side; the chaos test is not written
@@ -301,14 +315,28 @@ the worst possible failure, because nothing indicates anything is wrong.
 are produced and persisted backend-side; the UI is a viewer.
 
 ### FM-032 — Database unavailable
-**Status:** Open — target of build stage 12
+**Status:** Closed · **Severity:** was High — a permanently bricked store, and a silent outage
 
 The event store cannot be written. Since nothing downstream may read an event before it is
 durably appended, this halts the pipeline by design.
 
-**Intended handling:** fail loudly and visibly rather than continuing to track without an
-audit trail. Continuing without durable events would produce confident output that cannot be
-reconstructed or defended afterwards.
+**Handling:** appends raise rather than returning quietly, so nothing downstream acts on an
+observation the log does not contain. Two defects were found closing this:
+
+- **A transient write failure bricked the store permanently.** `append` draws its identifier
+  before the INSERT, so a failed write burns one. The sequence was then restored by *counting
+  rows*, which is short of the high-water mark from that moment on — so the next append after a
+  restart re-issued a stored identifier, and `event_id` is UNIQUE. One momentary disk error
+  became a store that could never be appended to again, surviving the restart meant to clear
+  it. Now restored from `MAX(event_id)`; gaps are preserved, because the sequence is a
+  high-water mark rather than a census.
+- **The outage was invisible while it happened.** The tick loop caught and logged failing
+  cycles, but `_event_store_health` only ever *read* the store — so a write-only outage
+  reported `ok` while the picture was frozen. Everything else keeps serving when the pipeline
+  stops. `backend/system_health/cycles.py` now reports cycle liveness as a `pipeline`
+  component: degraded at one failure, unavailable at five, self-clearing on recovery.
+
+See ADR 0017 §2 and §4, and `tests/chaos/test_event_store_unavailable.py`.
 
 ---
 
