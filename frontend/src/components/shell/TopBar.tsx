@@ -87,9 +87,9 @@ export function TopBar({ streamStatus, trackCount }: Props) {
         <Chip label="Tracks" value={String(trackCount)} tone="info" />
         <Chip
           label="Fusion"
-          value="NOT BUILT"
-          tone="inert"
-          title="Multi-sensor fusion is not implemented in this build."
+          value="ON"
+          tone="nominal"
+          title="Detections from several sensors are reconciled into one measurement per object before tracking (ADR 0018)."
         />
       </div>
 

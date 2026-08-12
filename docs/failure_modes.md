@@ -148,7 +148,7 @@ consuming information the simulator has and real sensors do not.
 stripped must produce identical track states.
 
 ### FM-023 — One object becomes several tracks under multi-sensor observation
-**Status:** Open — target of build stage 10 (fusion) · **Severity:** High for operator trust
+**Status:** Closed, with a stated limit · **Severity:** was High for operator trust
 
 **Observed**, not theorised: running `b_approaching_threat` against the shipped test site,
 one drone produced three concurrent CONFIRMED tracks (TRK-00002, TRK-00009, TRK-00018), all
@@ -164,14 +164,28 @@ object across sensors.
 **Consequence.** An operator sees three contacts where there is one. Under a swarm scenario
 the multiplier is the sensor count, which also brings the saturation ceiling forward.
 
-**Intended handling:** `backend/fusion`, which is not built. Note that the fix belongs there
-and not in association — loosening the association gate to absorb the extra detections would
-merge genuinely distinct objects, which is a far worse failure and is precisely what scenario
-H tests against.
+**Fix.** `backend/fusion` reconciles detections into one measurement per object *before*
+tracking, combining them by inverse-covariance weighting (ADR 0018). Measured on the scenario
+this was observed on: three CONFIRMED tracks became one. `h_track_crossing` improved from six to
+four.
 
-**Interim mitigation:** none. A single-sensor site does not exhibit it. The operator interface
-does not hide or de-duplicate the tracks, because suppressing them in the display would
-conceal a real limitation of the current build.
+The fix is deliberately not in association. Loosening that gate to absorb the extra detections
+would merge genuinely distinct objects — a far worse failure, and precisely what scenario H
+tests against. The asymmetry drives every default in the module: an over-count is visible to the
+operator, an under-count is not.
+
+**The limit, stated rather than discovered later.** Two objects closer than the sensor noise may
+transiently merge. In `h_track_crossing` the contacts pass within ~60 m while the radars report
+sigma of 45-75 m, and two objects separated by less than one standard deviation of the
+measurement noise are not distinguishable *by position alone*. That is an information limit, not
+a tuning problem. What separates crossing contacts is velocity, which is why the tracker holds
+filter state (ADR 0005); fusion sees one cycle of positions. Where the two overlap it declines
+to choose rather than guessing, and otherwise may merge — measured at ~1.6% of multi-sensor
+groups across a full crossing run, and bounded by a test so a regression that makes merging
+routine fails the suite.
+
+`h_track_crossing` also still over-counts (four tracks for two objects). Fusion reduces
+fragmentation; fragmentation across *time* (FM-022) is a separate failure it does not touch.
 
 ### FM-026 — Risk could not see relationships between tracks
 **Status:** Closed, with an interim mechanism · **Severity:** was Medium
@@ -245,7 +259,7 @@ future module that produces a value belonging to a track. Risk scoring must use 
 write-back path, not a copy.
 
 ### FM-024 — Classification sees only one sensor's hint per track
-**Status:** Open — resolved by fusion (build stage 10) · **Severity:** Medium
+**Status:** Closed · **Severity:** was Medium
 
 **Observed** while verifying classification against `d_multiple_simultaneous`: of 189
 classification assessments, only 34 had any sensor-reported evidence at all. The rest were
@@ -264,10 +278,21 @@ hint for the same physical object.
 kinematic envelopes, which overlap heavily between classes and discriminate poorly on their
 own. Confidence is correspondingly low, which is at least honest.
 
-**Intended handling:** `backend/fusion`. Once observations of one object are reconciled across
-sensors, every hint for that object reaches the classifier together, which is also when
-`SensorHintEvidence`'s agreement/disagreement handling starts doing real work — it is
-implemented and tested, but currently sees one report at a time in most cycles.
+**Fix.** `backend/fusion` reconciles observations of one object across sensors, and a fused
+measurement carries `contributing_detection_ids` so every contributing sensor's hint reaches the
+classifier together (`CycleEvidence.from_fused_assignments`).
+
+**The sharper bug this exposed.** A fused measurement carries a synthesised identifier
+(`fused:det-a+det-b`), which is *not* a key in ingestion's hint map — those are keyed by original
+detection ids. Routing hints by the assignment alone would therefore have found nothing for any
+fused track, leaving every multi-sensor object at `unknown` permanently. That is worse than the
+dilution this entry was opened for, and it is what the mapping actually prevents.
+
+**Still true:** the shipped site has only two classifying sensors enabled (the radar profiles
+report no classification at all), and they do not co-observe on the demo scenario, so a live run
+here does not exercise the multi-hint path. It is covered directly at unit level instead —
+`tests/integration/test_fusion_pipeline.py` asserts both the routing and that hints survive
+fusion at all.
 
 **Not a workaround candidate:** routing *unassigned* detections' hints to nearby tracks would
 be association by another name, done worse and outside the module that owns it.

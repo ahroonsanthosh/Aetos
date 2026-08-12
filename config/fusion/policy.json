@@ -1,0 +1,8 @@
+{
+  "notes": "Multi-sensor reconciliation (FM-023). gate_confidence is deliberately matched to the tracker's association gate in backend/tracking/association/gnn.py — see backend/fusion/README.md for why they must not drift apart. max_fusable_uncertainty_m is the bound that stops a sensor reporting an absurd covariance from absorbing a contact it cannot locate; it constrains the measurement rather than the separation, because a flat distance ceiling tight enough to catch bad covariances also splits the legitimate 200-300m spread of this site's own radars.",
+  "enabled": true,
+  "gate_confidence": 0.99,
+  "max_fusable_uncertainty_m": 400.0,
+  "max_pair_separation_m": 750.0,
+  "require_distinct_sensors": true
+}

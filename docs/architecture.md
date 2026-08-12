@@ -105,7 +105,7 @@ makes backend restart recoverable.
 | `backend/ingestion` | Validate, deduplicate, normalise, append to log | Make tracking decisions |
 | `backend/events` | Append-only log, sequence ordering, replay reads | Interpret payload meaning |
 | `backend/tracking` | Where things are: association, filtering, lifecycle, prediction | Decide what things are, or how dangerous |
-| `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
+| `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association, or hold state across cycles |
 | `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
 | `backend/risk` | Score + confidence + reason codes + hysteresis; cycle-level situation findings | Recommend an action, or hold track state |
@@ -151,9 +151,9 @@ Per spec §20. Status updated as stages complete.
 | 7 | Risk scoring with reason codes | **done** — nine factors, grouped combination, hysteresis, reason codes (ADR 0013) |
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
-| 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
+| 10 | Multi-sensor simulation and fusion | **done** — detection-level reconciliation before tracking, inverse-covariance weighted (ADR 0018) |
 | 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
-| 12 | Chaos hardening, degraded-mode UI states | not started |
+| 12 | Chaos hardening, degraded-mode UI states | partial — `tests/chaos/` covers FM-010/011/012/013/014/030/032 and closed two defects (ADR 0017); the sensor watchdog and degraded-mode UI are not built |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
 through ingestion into tracking, classification assesses each track from pooled evidence, risk
@@ -167,6 +167,12 @@ Two of those stages produce values they do not own. Classification and risk each
 result back through the tracker, which holds it and carries it in the snapshot on every track
 event, so the log rebuilds into the same state the live system holds. That inversion exists
 because the alternative silently failed — see FM-025 and `backend/classification/README.md`.
+
+Fusion sits between ingestion and tracking rather than after it: several sensors watching one
+object each produce a detection of it, and reconciling those into one measurement *before* the
+tracker sees them is what makes one object one track (ADR 0018). Doing it afterwards would mean
+merging tracks, which needs three filters' covariances reconciled and one of three identifiers
+chosen — and the operator would watch tracks change id.
 
 Risk is the most recently built and the one worth reading the reasoning for before changing:
 it combines its factors by three different rules depending on what kind of statement each one

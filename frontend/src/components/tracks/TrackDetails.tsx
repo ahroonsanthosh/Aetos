@@ -87,10 +87,14 @@ export function TrackDetails({ track }: Props) {
         ) : (
           <Row label="Sensors" value="—" />
         )}
-        {/* Which sensor is primary and which supporting is a fusion judgement, and fusion is
-            not implemented. Listing them flat is the honest presentation. */}
+        {/* Fusion combines these by inverse-covariance weighting, so a confident sensor
+            genuinely contributes more — but that weighting is applied to the measurement and
+            is not carried onto the track, so there is no per-sensor share to show here.
+            Listing them flat is the honest presentation. */}
         <p className="details__note">
-          Contribution weighting requires the fusion module, which is not implemented.
+          Sensors are listed without a contribution share: fusion weights them by reported
+          uncertainty when combining the measurement, but that weighting is not retained on
+          the track.
         </p>
       </Section>
 

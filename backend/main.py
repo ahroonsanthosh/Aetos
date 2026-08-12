@@ -41,6 +41,8 @@ from backend.database.projection import TrackProjection
 from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
+from backend.fusion.policy import load_fusion_policy
+from backend.fusion.reconcile import DetectionReconciler, to_incoming
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
@@ -85,6 +87,7 @@ class Pipeline:
         )
         self.tracker = TrackManager(clock, self.events, geometry.frame)
         self.ingestion = IngestionPipeline(clock, self.events, geometry)
+        self.fusion = DetectionReconciler(load_fusion_policy())
         self.classification = ClassificationService(
             build_default_classifier(), self.events, sink=self.tracker
         )
@@ -229,12 +232,22 @@ class Pipeline:
         # a track is, and must not reach the filter deciding where it is (ADR 0002).
         ingested = self.ingestion.ingest(detections)
 
-        tracks = self.tracker.process(ingested.for_tracking)
+        # Several sensors watching one object each produce a detection of it, and the tracker
+        # would start a track per detection (FM-023). Reconciling here — before tracking, on
+        # detections rather than on tracks — is what makes one object one track. See ADR 0018
+        # for why this cannot live in association.
+        reconciled = self.fusion.reconcile(ingested.for_tracking)
+        tracks = self.tracker.process([to_incoming(f) for f in reconciled.detections])
 
         classified = self.classification.classify_cycle(
             tracks,
-            CycleEvidence.from_assignments(
-                self.tracker.last_assignments, ingested.hints, ingested.quality
+            # Fused measurements carry their parts, so a track observed by three sensors is
+            # classified on three hints rather than on whichever one survived fusion (FM-024).
+            CycleEvidence.from_fused_assignments(
+                self.tracker.last_assignments,
+                {f.detection_id: f.contributing_detection_ids for f in reconciled.detections},
+                ingested.hints,
+                ingested.quality,
             ),
         )
 
@@ -376,6 +389,7 @@ def build_application(
         auth=pipeline.auth if authenticated else None,
         alerts=pipeline.alerting,
         classification_running=True,
+        fusion_running=pipeline.fusion.policy.enabled,
         situation=pipeline.risk,
         cycles=pipeline.cycles,
         run_mode=RunMode.SIMULATION,

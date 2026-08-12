@@ -200,22 +200,33 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
         absent="Alert generation is not running; the alert feed is empty."))
 
     components.append(_pipeline_health(services))
+    components.append(
+        _module_health(
+            "fusion",
+            services.fusion_running,
+            running=(
+                "Detections from several sensors are reconciled into one measurement per "
+                "object before tracking."
+            ),
+            absent=(
+                "Multi-sensor reconciliation is not running; one object seen by several "
+                "sensors will appear as several tracks (FM-023)."
+            ),
+        )
+    )
 
     # Genuinely absent. Listed explicitly so the dashboard shows the shape of the finished
     # system and where the gaps still are.
-    for component, detail in (
-        ("fusion", "Multi-sensor reconciliation is not implemented."),
-        (
-            "sensor_watchdog",
-            "Sensor-silence detection and the degraded-mode controller are not implemented; "
-            "a sensor that stops transmitting is not reported here (FM-010).",
-        ),
-    ):
-        components.append(
-            ComponentHealth(
-                component=component, state=ComponentState.NOT_BUILT, detail=detail
-            )
+    components.append(
+        ComponentHealth(
+            component="sensor_watchdog",
+            state=ComponentState.NOT_BUILT,
+            detail=(
+                "Sensor-silence detection and the degraded-mode controller are not "
+                "implemented; a sensor that stops transmitting is not reported here (FM-010)."
+            ),
         )
+    )
 
     components.append(
         ComponentHealth(

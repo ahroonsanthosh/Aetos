@@ -117,6 +117,16 @@ class ApiServices:
     never read the same as one that is (FM-032).
     """
 
+    fusion_running: bool = False
+    """Whether multi-sensor reconciliation is attached to the pipeline feeding this API.
+
+    A plain flag rather than a handle, on the same terms as `classification_running`: fusion's
+    output already arrives as the tracks themselves, so there is nothing for the API to read
+    from it. The flag exists so the health endpoint answers from a fact the wiring asserts
+    rather than from a constant — which is how that endpoint came to report modules unbuilt
+    long after they landed.
+    """
+
     run_mode: RunMode = RunMode.SIMULATION
     """Which run mode this deployment is configured for.
 
