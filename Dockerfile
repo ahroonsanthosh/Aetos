@@ -54,10 +54,13 @@ USER aetos
 
 EXPOSE 8000
 
-# 0.0.0.0 so the port is reachable from outside the container. The published port is bound to
-# localhost in compose — there is no authentication (FM-001), and this must not be reachable
-# beyond the machine running it.
+# 0.0.0.0 so the port is reachable from outside the container — container port publishing
+# cannot reach a socket bound to 127.0.0.1 inside the network namespace. --published-loopback-
+# only asserts the other half of that: compose binds the *published* port to localhost, so this
+# never reaches a real network even though the process itself sees a non-loopback interface
+# (docs/adr/0016 Amendment; guard_bind in backend/main.py refuses to start otherwise). Create an
+# account before the first `docker compose up` — see docs/deployment.md.
 ENTRYPOINT ["python", "-m", "backend.main", \
             "--host", "0.0.0.0", "--port", "8000", \
-            "--data-dir", "/app/data"]
+            "--data-dir", "/app/data", "--published-loopback-only"]
 CMD ["--scenario", "b_approaching_threat"]

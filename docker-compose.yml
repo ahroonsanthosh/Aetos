@@ -1,8 +1,11 @@
-# Aetos, in one command:
+# Aetos, in one command — after creating the first account (Aetos refuses to start with none):
 #
+#   docker compose run --rm --entrypoint python aetos -m backend.auth.admin add \
+#       --username alice --role admin
 #   docker compose up
 #
 # Then open http://localhost:8000. Nothing beyond Docker is needed — no Python, no Node.
+# See docs/deployment.md for the other account-management commands and what the flags mean.
 #
 # To run a different scenario:
 #   docker compose run --rm --service-ports aetos --scenario h_track_crossing
@@ -11,10 +14,10 @@ services:
   aetos:
     build: .
     ports:
-      # Bound to localhost deliberately. Aetos has no authentication of any kind
-      # (docs/failure_modes.md FM-001), so anyone who can reach this port has the full
-      # operator interface and the complete event log. Publishing it on 0.0.0.0 would expose
-      # that to the whole network.
+      # Bound to localhost deliberately, so the port never reaches a real network — see
+      # --published-loopback-only in the Dockerfile's ENTRYPOINT and docs/adr/0016's Amendment.
+      # Publishing it on 0.0.0.0 would expose the full authenticated operator interface (and,
+      # to anyone who already had a session, the complete event log) to the whole network.
       - "127.0.0.1:8000:8000"
     volumes:
       # The event log is the source of truth and survives the container.

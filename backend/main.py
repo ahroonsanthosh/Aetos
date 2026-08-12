@@ -225,7 +225,14 @@ class StartupRefused(RuntimeError):
     """The requested configuration would expose the system. Raised instead of starting."""
 
 
-def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count: int) -> None:
+def guard_bind(
+    host: str,
+    *,
+    authenticated: bool,
+    behind_proxy: bool,
+    user_count: int,
+    published_loopback_only: bool = False,
+) -> None:
     """Refuse to start in a configuration that would put an open console on a network.
 
     Three refusals, each for a state that is survivable on a laptop and not survivable on a
@@ -235,10 +242,23 @@ def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count
        gets the full operator interface and the complete event log.
     2. **No accounts, off loopback.** Authentication is configured but nobody can log in, and an
        unusable console is the kind of thing that gets "fixed" at 2am with --no-auth.
-    3. **Off loopback without --behind-proxy.** Session cookies would cross the network in
-       clear. `--behind-proxy` is an explicit assertion by whoever starts the process that TLS
-       is terminated in front of it; it is not inferred from a header, because headers are
-       supplied by whoever is connecting.
+    3. **Off loopback with no explicit assertion about why that's safe.** Two different
+       situations bind a non-loopback interface, and each gets its own flag rather than sharing
+       one:
+
+       - `--behind-proxy`: a real reverse proxy terminates TLS in front of this process. Also
+         enables trusting `X-Forwarded-Proto` from that proxy, which is what marks the session
+         cookie `Secure`.
+       - `--published-loopback-only`: this process is a container. It has to bind `0.0.0.0`
+         because container port publishing cannot reach a socket bound to `127.0.0.1` inside the
+         network namespace — but the *published* port itself is restricted to loopback on the
+         host (see `docker-compose.yml`), so the traffic this process actually serves never
+         reaches a real network. Deliberately does **not** enable trusting `X-Forwarded-Proto`:
+         nothing is proxying, so the cookie correctly stays non-`Secure`, exactly as it would on
+         a literal loopback bind.
+
+       Neither is inferred from a header or from the host string, because both are supplied by
+       whoever configured the process, not by whoever is connecting to it.
 
     A guard rather than a documented warning, because documentation does not run. This is the
     one place the deployment posture is enforced instead of described.
@@ -260,12 +280,13 @@ def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count
             "--role admin"
         )
 
-    if not behind_proxy:
+    if not behind_proxy and not published_loopback_only:
         raise StartupRefused(
-            f"Refusing to bind {host} without --behind-proxy. Aetos does not terminate TLS, so "
-            "session cookies would cross the network in clear. Put a reverse proxy in front of "
-            "it, terminate TLS there, and pass --behind-proxy to confirm you have. See "
-            "docs/deployment.md."
+            f"Refusing to bind {host} without --behind-proxy or --published-loopback-only. "
+            "Aetos does not terminate TLS, so binding a non-loopback interface needs an "
+            "explicit assertion about why that's safe: either a reverse proxy handles TLS "
+            "(--behind-proxy), or this is a container whose published port is restricted to "
+            "loopback on the host (--published-loopback-only). See docs/deployment.md."
         )
 
 
@@ -403,7 +424,19 @@ def main() -> None:
         action="store_true",
         help=(
             "assert that a reverse proxy in front of this process terminates TLS. Required to "
-            "bind anything but loopback. Also trusts X-Forwarded-* from that proxy."
+            "bind anything but loopback (unless --published-loopback-only applies instead). "
+            "Also trusts X-Forwarded-* from that proxy."
+        ),
+    )
+    parser.add_argument(
+        "--published-loopback-only",
+        action="store_true",
+        help=(
+            "assert that this process runs in a container: it must bind 0.0.0.0 for the "
+            "container's port publishing to work, but the published port itself is restricted "
+            "to loopback on the host (see docker-compose.yml). Required to bind anything but "
+            "loopback in place of --behind-proxy. Unlike --behind-proxy, does not trust "
+            "X-Forwarded-* — nothing is actually proxying."
         ),
     )
     parser.add_argument(
@@ -415,6 +448,12 @@ def main() -> None:
         ),
     )
     arguments = parser.parse_args()
+
+    if arguments.behind_proxy and arguments.published_loopback_only:
+        parser.error(
+            "--behind-proxy and --published-loopback-only assert different things and cannot "
+            "both be true: pick the one that actually describes this deployment."
+        )
 
     authenticated = not arguments.no_auth
     app = build_application(
@@ -433,6 +472,7 @@ def main() -> None:
             authenticated=authenticated,
             behind_proxy=arguments.behind_proxy,
             user_count=app.state.services.auth.user_count() if authenticated else 0,
+            published_loopback_only=arguments.published_loopback_only,
         )
     except StartupRefused as refusal:
         raise SystemExit(f"\n  {refusal}\n") from refusal

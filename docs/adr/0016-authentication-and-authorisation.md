@@ -144,3 +144,28 @@ an unauthenticated console being reachable from a network, which is what this re
 **Also unchanged.** Nothing here decides a response or reaches anything that could act. Roles
 govern who may *look* and who may *acknowledge*; the most severe output the system produces
 remains a recommendation to a human.
+
+## Amendment — a second exposure assertion, for containers
+
+Added when `Dockerfile`/`docker-compose.yml` were reconciled with this record after the fact —
+they were written before authentication existed and predate `guard_bind` entirely, so nothing
+had yet checked them against it.
+
+A container has to bind `0.0.0.0`: container port publishing cannot reach a socket bound to
+`127.0.0.1` inside the network namespace, which is a property of how containers are networked,
+not a statement about who can reach the port. `docker-compose.yml` publishes that port to
+`127.0.0.1` on the host, so the actual exposure is loopback, same as running the process
+directly — but `guard_bind` saw only the bind host, which is `0.0.0.0`, and refused to start.
+
+Reusing `--behind-proxy` to satisfy the guard was considered and rejected: it also enables
+trusting `X-Forwarded-Proto`, and nothing is proxying, so that would mark the session cookie
+`Secure` on the strength of a header nobody is actually setting — trading one gap for another
+instead of closing it.
+
+`--published-loopback-only` is a second, distinct exposure assertion for exactly this shape:
+non-loopback bind, loopback-only publish, no proxy. It satisfies the same refusal `--behind-
+proxy` does, and nothing else — it does not touch `X-Forwarded-Proto` trust, so the cookie
+stays non-`Secure` under it, which is correct: nothing terminated TLS. The authentication and
+account-count refusals are unaffected either way; a container still needs a real login and a
+real account, same as anything else off loopback. See `backend/main.py::guard_bind` and
+`docs/deployment.md`.

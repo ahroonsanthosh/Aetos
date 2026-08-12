@@ -1,8 +1,10 @@
 # Deploying Aetos to a site
 
 Aetos does not terminate TLS and holds no private key. A reverse proxy in front of it does
-that, and `--behind-proxy` is how you tell Aetos you have arranged one. Without that flag it
-refuses to bind to anything but loopback (ADR 0016).
+that, and `--behind-proxy` is how you tell Aetos you have arranged one. A container is the one
+other case: it has to bind a non-loopback interface for its own reasons, and
+`--published-loopback-only` is the equivalent assertion for that shape (§4). Without one of the
+two, Aetos refuses to bind to anything but loopback (ADR 0016).
 
 Read `docs/failure_modes.md` before deploying. It is the honest list of what this build does
 not do, and several entries matter more once the system is on a network than they did on a
@@ -111,18 +113,53 @@ server {
 }
 ```
 
-## 4. Check what the guard refuses
+## 4. Or, deploy with Docker
+
+`docker-compose.yml` runs the same guarded process in a container, published to loopback on the
+host (`127.0.0.1:8000:8000`) rather than reached via a reverse proxy. Create the first account
+before the first `docker compose up` — the guard refuses to start with none, and there is no
+default credential here either:
+
+```bash
+docker compose run --rm --entrypoint python aetos -m backend.auth.admin add \
+    --username alice --role admin
+docker compose up
+```
+
+That first command runs the admin CLI inside the image against the same `aetos-data` volume the
+service uses, overriding the image's `ENTRYPOINT` (which is fixed to run the server) for one
+invocation. Other account-management commands from step 1 work the same way, with `passwd`,
+`role`, `disable`, or `unlock` in place of `add`.
+
+The container binds `0.0.0.0` internally — Docker's port publishing cannot reach a socket bound
+to `127.0.0.1` inside the network namespace — and asserts `--published-loopback-only` rather
+than `--behind-proxy` to satisfy the guard. That flag says the *published* port is loopback-only
+(true here, by the `127.0.0.1:` prefix above), not that a proxy is terminating TLS (there isn't
+one), so unlike `--behind-proxy` it does not enable trusting `X-Forwarded-Proto` — the session
+cookie correctly stays non-`Secure` under it. See ADR 0016's Amendment for why this needed a
+distinct flag rather than reusing `--behind-proxy`.
+
+This path is loopback-only by construction, the same as step 2 below: reaching it from anywhere
+but the host machine still needs a reverse proxy in front, in which case run the image with
+`--behind-proxy` instead and publish the port however that proxy expects.
+
+## 5. Check what the guard refuses
 
 Worth doing once, so the failure modes are familiar before they happen at an awkward moment.
 Each of these refuses to start and says why:
 
 ```bash
 $PY -m backend.main --host 0.0.0.0 --no-auth        # unauthenticated on a network
-$PY -m backend.main --host 0.0.0.0                  # no --behind-proxy: cookies in clear
+$PY -m backend.main --host 0.0.0.0                  # no exposure assertion: cookies in clear
 $PY -m backend.main --host 0.0.0.0 --behind-proxy   # before any account exists
 ```
 
-## 5. Verify after deploying
+`--published-loopback-only` is refused by the same first two checks as `--behind-proxy` — it
+only changes what satisfies the third. Passing both together is refused too, immediately, by the
+argument parser rather than by the guard: they assert different and incompatible things about
+the same process.
+
+## 6. Verify after deploying
 
 ```bash
 # Unauthenticated: liveness only, and no data.

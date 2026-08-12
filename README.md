@@ -93,9 +93,17 @@ Windows, the same way the Docker path below is flagged.
 
 ### Or with Docker, if you would rather not install either
 
+Aetos refuses to start with no accounts (see "Before you put this anywhere" below), so create
+one first:
+
 ```bash
+docker compose run --rm --entrypoint python aetos -m backend.auth.admin add \
+    --username alice --role admin
 docker compose up      # then http://localhost:8000
 ```
+
+See `docs/deployment.md` for the rest of the account-management commands and what the container
+asserts about its own network exposure.
 
 ### Tests
 
@@ -111,9 +119,10 @@ Session cookies, three roles (`viewer` / `operator` / `admin`), scrypt password 
 an audit trail that records who logged in, who acknowledged what, and when.
 
 It does **not** terminate TLS. It binds loopback by default and refuses to bind anything else
-without `--behind-proxy`, which is your assertion that a reverse proxy in front of it is
-handling TLS. It also refuses to start unauthenticated off loopback, or with no accounts at
-all. Create the first account before deploying:
+without `--behind-proxy` (your assertion that a reverse proxy in front of it is handling TLS)
+or `--published-loopback-only` (the container's equivalent — see the Docker instructions
+above). It also refuses to start unauthenticated off loopback, or with no accounts at all.
+Create the first account before deploying:
 
 ```bash
 # Use the interpreter inside .venv, not the bare `python` on PATH — the dependencies live

@@ -349,17 +349,35 @@ the display is exactly as it would otherwise be.
 ---
 
 ### FM-040 — Docker image is unverified
-**Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
+**Status:** Partial · **Severity:** Low — affects setup only, not runtime behaviour
 
-`Dockerfile` and `docker-compose.yml` were written but **never built or run**: the environment
-they were authored in had no Docker daemon. `start.sh` and the single-process serving it
-relies on are verified end to end in a browser; the container path is not.
+`Dockerfile` and `docker-compose.yml` were originally written in an environment with no Docker
+daemon, and **never built or run**. `start.sh` and the single-process serving it relies on are
+verified end to end in a browser; the container path historically was not.
 
-One issue was caught by inspection rather than by testing and is already fixed: a regular
-`pip install .` places `backend/` in site-packages, and `ConfigPaths.default()` derives the
-repository root from its own `__file__` — so configuration loading would have looked beside
-site-packages and failed. The image installs editable for that reason. Other issues of the
-same kind may remain.
+Two real issues were since found by inspection and fixed:
+
+- A regular `pip install .` places `backend/` in site-packages, and `ConfigPaths.default()`
+  derives the repository root from its own `__file__` — so configuration loading would have
+  looked beside site-packages and failed. The image installs editable for that reason.
+- The files lived in `frontend/` while `docker-compose.yml`'s `build: .` and the Dockerfile's
+  `COPY frontend/...`/`COPY backend/...` paths assumed a repo-root build context — so
+  `docker compose up`, run from the repo root as `README.md` instructs, could not find a compose
+  file at all. Moved to the repo root, where the paths already pointed. Separately, authentication
+  (ADR 0016) landed after these files were authored: the container's forced `--host 0.0.0.0`
+  bind (container port publishing cannot reach a socket bound to `127.0.0.1` inside the network
+  namespace) tripped `guard_bind`'s refusal to bind a non-loopback interface without an explicit
+  exposure assertion, so the image would build and then refuse to start. `--published-loopback-
+  only` (ADR 0016 Amendment) is the fix — see `docs/deployment.md` §4.
+
+**Still genuinely unverified:** an actual `docker compose build && docker compose up` round
+trip. Attempted directly while fixing the above — the sandbox this was done in reached Docker
+Hub's anonymous pull rate limit on both base images (`429 Too Many Requests` via the shared
+egress proxy) before a build could complete, which is an environment limitation rather than a
+finding about the Dockerfile itself. Both stages' commands and the `ENTRYPOINT`/`guard_bind`
+interaction were reasoned through and unit-tested (`tests/unit/test_startup_guard.py`), but
+nobody has watched the image actually build and serve a browser yet.
 
 **Mitigation:** `./start.sh` is the verified path. Anyone using the container should expect to
-debug the first build.
+debug the first build, and should treat a successful `docker compose up` reaching the sign-in
+screen as the actual verification this record is still waiting on.
