@@ -304,9 +304,13 @@ def test_health_reports_unbuilt_modules_as_unbuilt(client: TestClient) -> None:
     body = client.get(f"{API_PREFIX}/system/health").json()
     components = {c["component"]: c for c in body["components"]}
 
-    for absent in ("fusion", "classification", "risk", "alerts", "system_health"):
+    for absent in ("fusion", "classification", "risk", "alerts", "sensor_watchdog"):
         assert components[absent]["state"] == "not_built"
         assert components[absent]["detail"]
+
+    # No loop drives this fixture, so the pipeline is absent rather than healthy. A pipeline
+    # that is not running must never read the same as one that is (FM-032).
+    assert components["pipeline"]["state"] == "not_built"
 
 
 def test_health_reports_attached_modules_as_running(
@@ -347,7 +351,7 @@ def test_health_reports_attached_modules_as_running(
 
     # Still absent, and must not have been swept along by the same change.
     assert components["fusion"]["state"] == "not_built"
-    assert components["system_health"]["state"] == "not_built"
+    assert components["sensor_watchdog"]["state"] == "not_built"
 
 
 class _SituationStub:

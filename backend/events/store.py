@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.common.clock import Clock
-from backend.common.identifiers import event_id_generator
+from backend.common.identifiers import event_id_generator, event_id_sequence
 from backend.events.types import Event, EventType
 
 Subscriber = Callable[[Event], None]
@@ -309,11 +309,24 @@ class SqliteEventStore(EventStore):
             raise EventStoreError(f"could not read events: {exc}") from exc
 
     def _restore_id_sequence(self) -> None:
-        count = self.count()
-        if count:
-            self._ids = event_id_generator()
-            for _ in range(count):
-                self._ids.next()
+        """Resume the identifier sequence above the highest one the log actually holds.
+
+        From `MAX(event_id)`, not from the row count. The two agree only while every append has
+        succeeded: an append that fails after drawing its identifier — a full disk, a read-only
+        file, any of FM-032 — burns that identifier without writing a row, and from then on the
+        count is permanently short of the high-water mark. Restarting from the count would
+        re-issue an identifier the log already stores, and `event_id` is UNIQUE, so the next
+        append would be refused. A transient write failure would become a permanent one,
+        surviving the restart meant to clear it.
+
+        Lexicographic MAX is numeric MAX here because the counter is zero-padded to a fixed
+        width. `event_id_sequence` returns None for anything that does not parse, which leaves
+        the sequence at 1 — correct for an empty log, and safe for one written by a format this
+        build does not recognise, since it cannot then claim to know the high-water mark.
+        """
+        row = self._conn.execute("SELECT MAX(event_id) AS highest FROM events").fetchone()
+        highest = event_id_sequence(row["highest"]) if row and row["highest"] else None
+        self._ids = event_id_generator(start=(highest or 0) + 1)
 
 
 def _row_to_event(row: sqlite3.Row) -> Event:

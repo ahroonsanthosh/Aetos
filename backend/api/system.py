@@ -199,11 +199,17 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
         running="Risk levels are being promoted to alerts against the alerting policy.",
         absent="Alert generation is not running; the alert feed is empty."))
 
+    components.append(_pipeline_health(services))
+
     # Genuinely absent. Listed explicitly so the dashboard shows the shape of the finished
     # system and where the gaps still are.
     for component, detail in (
         ("fusion", "Multi-sensor reconciliation is not implemented."),
-        ("system_health", "The watchdog and degraded-mode controller are not implemented."),
+        (
+            "sensor_watchdog",
+            "Sensor-silence detection and the degraded-mode controller are not implemented; "
+            "a sensor that stops transmitting is not reported here (FM-010).",
+        ),
     ):
         components.append(
             ComponentHealth(
@@ -245,6 +251,32 @@ def _module_health(
         state=ComponentState.OK if is_running else ComponentState.NOT_BUILT,
         detail=running if is_running else absent,
     )
+
+
+def _pipeline_health(services: ApiServices) -> ComponentHealth:
+    """Whether cycles are completing — the component that makes a frozen pipeline visible.
+
+    Everything else in this listing reports on a *module being present*. This one reports on
+    the system still doing anything at all, which is a different question and the one an
+    operator most needs answered: the API, the stream and the projection all keep serving a
+    stale picture perfectly well when the pipeline has stopped (FM-032).
+    """
+    cycles = services.cycles
+    if cycles is None:
+        return ComponentHealth(
+            component="pipeline",
+            state=ComponentState.NOT_BUILT,
+            detail="No pipeline is attached to this API; nothing is producing tracks.",
+        )
+
+    if cycles.is_outage:
+        state = ComponentState.UNAVAILABLE
+    elif not cycles.is_healthy:
+        state = ComponentState.DEGRADED
+    else:
+        state = ComponentState.OK
+
+    return ComponentHealth(component="pipeline", state=state, detail=cycles.describe())
 
 
 def _event_store_health(services: ApiServices) -> tuple[int, ComponentHealth]:

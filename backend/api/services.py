@@ -33,6 +33,7 @@ from backend.database.repositories import (
 )
 from backend.events.store import EventStore
 from backend.risk.correlation import SituationAssessment
+from backend.system_health.cycles import CycleHealth
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,15 @@ class ApiServices:
     exists only so `GET /system/health` can answer from a fact the wiring asserts instead of
     from a constant, which is how that endpoint came to report classification unbuilt for as
     long as it did after the module landed.
+    """
+
+    cycles: CycleHealth | None = None
+    """How the pipeline loop driving this API is faring, or None when nothing drives it.
+
+    Optional on the same terms as `alerts` and `situation`: an API built over a bare projection
+    in a test has no loop behind it. None is reported as *no pipeline attached* rather than as a
+    healthy one — the whole point of this field is that a pipeline which is not running must
+    never read the same as one that is (FM-032).
     """
 
     run_mode: RunMode = RunMode.SIMULATION

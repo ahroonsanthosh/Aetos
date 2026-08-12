@@ -19,8 +19,9 @@ _TRACK_PREFIX = "TRK"
 _EVENT_PREFIX = "evt"
 _ALERT_PREFIX = "ALT"
 
-_TRACK_ID_PATTERN = re.compile(r"^TRK-\d{5,}$")
+_TRACK_ID_PATTERN = re.compile(r"^TRK-(\d{5,})$")
 _ALERT_ID_PATTERN = re.compile(r"^ALT-(\d{5,})$")
+_EVENT_ID_PATTERN = re.compile(r"^evt-(\d{8,})$")
 
 
 class IdGenerator:
@@ -57,19 +58,35 @@ def detection_id_generator(sensor_id: str) -> IdGenerator:
     return IdGenerator(_DETECTION_PREFIX, width=6, scope=_sanitise_scope(sensor_id))
 
 
-def track_id_generator() -> IdGenerator:
-    """Track IDs. Global to a tracking session — a track is not owned by any one sensor."""
-    return IdGenerator(_TRACK_PREFIX, width=5)
+def track_id_generator(start: int = 1) -> IdGenerator:
+    """Track IDs. Global to a tracking session — a track is not owned by any one sensor.
+
+    `start` exists for the same reason as `alert_id_generator`'s: track identifiers must not be
+    reused across a restart. Tracks are retained forever in `track_history`, keyed by
+    `(track_id, seq)`, so a second TRK-00001 does not overwrite the first — it *appends to it*,
+    and the history of two physically different objects becomes one indistinguishable record.
+    That is a corrupted audit trail rather than a merely incomplete one, which is why the
+    resume point comes from the store rather than from a counter. See `track_id_sequence`.
+    """
+    return IdGenerator(_TRACK_PREFIX, width=5, start=start)
 
 
-def event_id_generator() -> IdGenerator:
+def event_id_generator(start: int = 1) -> IdGenerator:
     """Event IDs.
 
     Note that the event log's ordering authority is its monotonic `seq`, assigned by the
     single writer, not this identifier. The event ID is a stable human-readable handle; `seq`
     is the total order. See docs/adr/0006.
+
+    `start` resumes the sequence after a restart. It must be derived from the highest
+    identifier the log actually contains, never from how many rows it has: an append that fails
+    after the identifier is drawn but before the row lands leaves a permanent gap, after which
+    the row count is one short of the high-water mark for every subsequent append. Counting
+    would then re-issue an identifier that is already stored, and `event_id` is UNIQUE — so the
+    log would refuse the write, turning one transient failure into a permanently broken store.
+    See `event_id_sequence`.
     """
-    return IdGenerator(_EVENT_PREFIX, width=8)
+    return IdGenerator(_EVENT_PREFIX, width=8, start=start)
 
 
 def alert_id_generator(start: int = 1) -> IdGenerator:
@@ -92,6 +109,23 @@ def alert_id_sequence(value: str) -> int | None:
     to guard every entry.
     """
     match = _ALERT_ID_PATTERN.match(value)
+    return int(match.group(1)) if match else None
+
+
+def track_id_sequence(value: str) -> int | None:
+    """The counter inside a track identifier, or None if it is not one.
+
+    The counterpart to `alert_id_sequence`, used to resume the track generator above whatever
+    the store already holds. None for anything unrecognised, so a store containing identifiers
+    from an older format is skipped rather than crashing the resume.
+    """
+    match = _TRACK_ID_PATTERN.match(value)
+    return int(match.group(1)) if match else None
+
+
+def event_id_sequence(value: str) -> int | None:
+    """The counter inside an event identifier, or None if it is not one."""
+    match = _EVENT_ID_PATTERN.match(value)
     return int(match.group(1)) if match else None
 
 

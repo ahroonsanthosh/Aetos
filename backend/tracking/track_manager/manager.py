@@ -13,6 +13,7 @@ and its history is retained (spec §5).
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -20,7 +21,7 @@ import numpy as np
 
 from backend.common.clock import Clock
 from backend.common.geodesy import EnuPoint, LocalFrame
-from backend.common.identifiers import track_id_generator
+from backend.common.identifiers import track_id_generator, track_id_sequence
 from backend.events.store import EventStore
 from backend.events.types import EventType
 from backend.tracking.association.gnn import (
@@ -183,6 +184,64 @@ class TrackManager:
     @property
     def config(self) -> TrackManagerConfig:
         return self._config
+
+    def resume_after_restart(
+        self, known_track_ids: Collection[str], live_track_ids: Collection[str]
+    ) -> int:
+        """Close out tracks a previous process left open, and resume ids above them.
+
+        Called once at startup, before the first cycle. Two separate problems, both of which
+        only appear after a restart, and neither of which any single cycle can detect.
+
+        **Identifiers must not be reused.** `track_history` is keyed by `(track_id, seq)` and is
+        never pruned, so a second TRK-00001 does not replace the first — its rows interleave
+        with them under one identifier, and the recorded history of two physically different
+        objects becomes one account that cannot be separated again. The generator therefore
+        resumes above the highest identifier the store has ever issued, including tracks long
+        since LOST, because a LOST track keeps its identifier in the history forever.
+
+        **Tracks left live must be closed.** A track this process has no memory of cannot be
+        updated, coasted or retired by it, so without this it would sit in the projection in
+        CONFIRMED or STALE — with the position and the confidence it had at the instant the
+        process died — and `GET /tracks` would serve it to an operator indefinitely. That is
+        the FM-030 hazard in its worst form: not a missing track, but a *confident* one, drawn
+        on the display over a piece of sky nothing is watching any more.
+
+        They are closed rather than resurrected, deliberately. The log carries a full `Track`
+        snapshot on every lifecycle event, so the published state could be restored — but not
+        the filter covariance behind it, which is the estimate's uncertainty and the thing the
+        association gate is computed from. Rebuilding a track around an invented covariance
+        would produce exactly the confident-looking output the previous paragraph is about.
+        Aetos re-acquires instead: the sky is still there, and a real object is re-detected
+        within a cycle or two. What matters is that the gap is stated rather than papered over,
+        so `TRACK_LOST` is emitted with a reason naming the restart.
+
+        Returns how many tracks were closed.
+        """
+        sequences = (track_id_sequence(track_id) for track_id in known_track_ids)
+        highest = max((sequence for sequence in sequences if sequence is not None), default=0)
+        self._ids = track_id_generator(start=highest + 1)
+
+        for track_id in sorted(live_track_ids):
+            # No snapshot. The projection derives LOST from the event type alone for exactly
+            # this case, and a snapshot assembled here would be this process's guess at state
+            # it never held — the previous process's last word is already in the log.
+            self._events.append(
+                EventType.TRACK_LOST,
+                SOURCE,
+                payload={
+                    "state": str(TrackState.LOST),
+                    "reason": "backend_restarted",
+                    "detail": (
+                        "The process maintaining this track stopped. Track continuity does not "
+                        "survive a restart; a still-present object is re-acquired under a new "
+                        "identifier."
+                    ),
+                },
+                track_id=track_id,
+            )
+
+        return len(live_track_ids)
 
     def process(self, detections: list[IncomingDetection]) -> list[Track]:
         """Run one tracking cycle and return the resulting displayable tracks.

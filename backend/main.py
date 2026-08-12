@@ -44,6 +44,7 @@ from backend.events.store import SqliteEventStore
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
+from backend.system_health.cycles import CycleHealth
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
@@ -104,10 +105,19 @@ class Pipeline:
         )
         self.alerting = AlertService(load_alert_policy(), self.events)
 
+        self.cycles = CycleHealth()
+        """How this process's cycles are going, read by the health endpoint (FM-032).
+
+        Owned here rather than inside `step`, because the thing worth reporting is whether the
+        cycle *returned* — which only the caller driving it can know.
+        """
+
         # Alerts outlive the process that raised them. Rebuilding from the log before the
         # first cycle is what makes that true — without it a restart discharges every open
         # alert, and an operator cannot tell an empty feed from a quiet sky.
         self.alerting.rebuild()
+
+        self._recover_tracks_from_previous_run()
 
         self._adapters: list[SimulatedSensorAdapter] = []
 
@@ -115,6 +125,43 @@ class Pipeline:
         # once at startup rather than being loaded independently by every request.
         self.repositories.sites.upsert(geometry.site)
         self._persist_sensors()
+
+    def _recover_tracks_from_previous_run(self) -> None:
+        """Close out tracks the previous process left open, and resume identifiers above them.
+
+        FM-030. The projection is caught up first: it is the record of what the last process
+        got as far as writing, and reconciling against a stale view would leave exactly the
+        tracks this exists to close. The tracker is then told every identifier ever issued (so
+        it cannot mint a colliding one) and which tracks are still live (so it can retire
+        them), and the projection is advanced again to apply the retirements it emitted.
+
+        Ordering against `alerting.rebuild()` above matters and is deliberate: alerts are
+        restored first, then their tracks are retired, so the first cycle clears each restored
+        alert with `track_lost` rather than leaving it pointing at a track nothing maintains.
+        An alert that was acknowledged before the restart therefore re-raises unacknowledged if
+        the object is still there. That is the intended reading — an acknowledgement attests
+        that a human saw a particular track, and after a discontinuity in which the system lost
+        every track, asking them to look again is the safe direction to be wrong in.
+        """
+        self.projection.catch_up()
+
+        known = [projected.track for projected in self.repositories.tracks.list_all()]
+        if not known:
+            return
+
+        closed = self.tracker.resume_after_restart(
+            known_track_ids=[track.track_id for track in known],
+            live_track_ids=[track.track_id for track in known if track.state.is_active],
+        )
+        self.projection.catch_up()
+
+        if closed:
+            _LOG.warning(
+                "Closed %d track(s) left open by a previous run. Track continuity does not "
+                "survive a restart (FM-030); present objects are re-acquired under new "
+                "identifiers.",
+                closed,
+            )
 
     def _persist_sensors(self) -> None:
         """Write the site's sensor placements so `GET /sensors` can read them back.
@@ -330,6 +377,7 @@ def build_application(
         alerts=pipeline.alerting,
         classification_running=True,
         situation=pipeline.risk,
+        cycles=pipeline.cycles,
         run_mode=RunMode.SIMULATION,
     )
 
@@ -363,8 +411,6 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
             if scenario:
 
                 async def run() -> None:
-                    consecutive_failures = 0
-
                     while True:
                         try:
                             # The tracker and the store are synchronous and are the only
@@ -373,8 +419,8 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
                             # true by construction rather than by agreement between two
                             # threads.
                             pipeline.step()
-                            consecutive_failures = 0
-                        except Exception:
+                            pipeline.cycles.record_success(pipeline.clock.now())
+                        except Exception as exc:
                             # An unhandled exception here used to kill this task outright.
                             # The server went on serving, the interface went on reporting a
                             # live stream, and nothing was being tracked — a confident
@@ -382,11 +428,16 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
                             # is built to avoid. It is now logged loudly and the loop
                             # continues, so a transient fault costs one cycle rather than
                             # the run.
-                            consecutive_failures += 1
+                            # Recorded as well as logged. A log line is only loud to
+                            # someone already reading logs; the health endpoint is what a
+                            # monitoring probe and the interface actually consult, and until
+                            # this was written there they both reported a frozen pipeline as
+                            # healthy (FM-032).
+                            pipeline.cycles.record_failure(pipeline.clock.now(), exc)
                             _LOG.exception(
                                 "Pipeline cycle failed (%d consecutive). The operator "
                                 "picture is not advancing.",
-                                consecutive_failures,
+                                pipeline.cycles.consecutive_failures,
                             )
 
                         await asyncio.sleep(tick_s)
