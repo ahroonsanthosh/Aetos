@@ -574,11 +574,14 @@ def _validate(model: type, document: str, what: str) -> Any:
 __all__ = [
     "SCHEMA",
     "DatabaseError",
+    "SqliteCredentialRepository",
     "SqliteProjectionStateRepository",
     "SqliteRepositories",
     "SqliteScenarioRepository",
     "SqliteSensorRepository",
+    "SqliteSessionRepository",
     "SqliteSiteRepository",
     "SqliteTrackHistoryRepository",
     "SqliteTrackRepository",
+    "SqliteUserRepository",
 ]
