@@ -184,6 +184,10 @@ def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
         # frame source to wrap it for on-the-wire diagnostics; it is not collected by pytest
         # and is run by hand against real hardware, same rationale as the two tests above.
         SENSORS / "tests" / "manual_camera_test.py",
+        # Drives a real cv2.VideoCapture on purpose: the frame-freshness behaviour it guards
+        # cannot be tested through a mock, since a mock only ever confirms the behaviour it
+        # was written to expect — which is exactly how the original lag bug survived review.
+        SENSORS / "tests" / "test_video_capture_frame_source.py",
     }
 
     violations: list[str] = []

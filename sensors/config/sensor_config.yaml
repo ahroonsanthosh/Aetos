@@ -90,14 +90,29 @@ camera:
   assumed_range_uncertainty_m: 120.0
 
   motion:
-    # Minimum contiguous moving area, in pixels, before a region counts as motion. Below this
-    # is sensor noise, foliage and compression artefacts.
+    # Minimum contiguous moving area, in pixels, before a region counts as motion. Measured as
+    # the component's true pixel count (see regions_from_mask), not its bounding box.
     #
-    # Raised from 400 after a bench run against the real phone stream (~1920x1080) showed
-    # dozens of scattered false regions per frame, most in the 2,000-14,000 px range — MJPEG
-    # block noise and auto-exposure jitter, not motion. 400 px is under 0.02% of that frame
-    # and was never going to hold at this resolution.
-    min_area_px: 3000
+    # SIZED TO THE TARGET, NOT TO THE NOISE. The bench target is a 335 x 253 x 95 mm airframe
+    # and the stated requirement is detection at 10 m. At 1920 px over 66 deg (29.1 px/deg):
+    #
+    #     range   top aspect      side aspect     silhouette (top / side)
+    #      5 m    112 x 84 px     112 x 32 px     ~3800 / ~1800 px2
+    #     10 m     56 x 42 px      56 x 16 px      ~940 /  ~440 px2   <- requirement
+    #     20 m     28 x 21 px      28 x  8 px      ~235 /  ~110 px2
+    #     30 m     19 x 14 px      19 x  5 px      ~105 /   ~50 px2
+    #
+    # 150 px2 clears the 10 m requirement in either aspect with roughly 3x margin on the worst
+    # case (side-on, ~440 px2) and reaches usefully past it — nominally to ~25 m top-aspect.
+    #
+    # An earlier value of 3000 was tuned against false regions of 2,000-14,000 px2 observed on
+    # this stream. That was sized to the noise population, and the arithmetic above shows why
+    # it could never work: at 3000 the target is undetectable beyond about 7 m, inside the
+    # stated minimum. The noise is LARGER than the signal here, so an area gate cannot separate
+    # them and must not be asked to. Expect false positives at this value; they are the
+    # accepted cost of the target being visible at all, and discriminating them is a job for
+    # temporal consistency downstream, not for this threshold.
+    min_area_px: 150
 
     # Per-pixel intensity delta counted as changed, 0-255. Lower is more sensitive.
     #

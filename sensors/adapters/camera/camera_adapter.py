@@ -34,6 +34,7 @@ three: a read that fails puts it OFFLINE, a stream that keeps returning the same
 from __future__ import annotations
 
 import math
+import threading
 from datetime import datetime
 from typing import Protocol
 
@@ -68,6 +69,17 @@ MIN_ANGULAR_SIGMA_DEG = 0.25
 implies an implausibly precise bearing; lens distortion, mount flex and the fact that the
 region's centroid is not the object's centre all put a floor under it."""
 
+_READ_RETRY_BACKOFF_S = 0.05
+"""Pause after a failed read, so a down stream is not retried in a hot loop."""
+
+_FAILURES_BEFORE_RECONNECT = 20
+"""Consecutive failed reads before the reader reopens the stream. At the retry backoff above
+that is about a second of solid failure — long enough not to react to a single dropped packet,
+short enough that a genuine disconnect costs one second of observation rather than the run."""
+
+_RECONNECT_BACKOFF_S = 0.5
+"""Pause before reopening, so a handset that is off the network is not hammered."""
+
 VERTICAL_SIGMA_M = 200.0
 """Uncertainty on the up-axis. The camera measures no elevation usable as height without a
 range, so the reported altitude is the mounting height and this says how little that means."""
@@ -92,39 +104,197 @@ class FrameSource(Protocol):
 
 
 class VideoCaptureFrameSource:
-    """A frame source backed by a network video stream.
+    """A frame source backed by a network video stream, always reporting the newest frame.
 
     The only place in the codebase that knows how the stream is transported. The URL is a
     configuration value and this class does not care what serves it.
+
+    ## Why there is a thread in here
+
+    A video stream is a queue, and a sensor is not. The stream delivers frames at its own rate
+    — 30/s is typical — while the pipeline polls the adapter on its own cadence, which is far
+    slower. Reading one queued frame per poll consumes the stream at the *polling* rate, so the
+    reader falls further behind real time with every poll and ends up watching the past in slow
+    motion. On a bench run at a 1.5s poll against a 30fps stream that is ~44 frames of lag
+    added per poll: within a minute the adapter is reporting motion that happened long ago, and
+    motion happening now never surfaces at all.
+
+    `CAP_PROP_BUFFERSIZE` looks like the fix and is not. It is honoured by the DShow and V4L2
+    backends and ignored by FFMPEG, which is the backend serving `http://` streams — so on
+    exactly the transport where the lag matters, setting it does nothing.
+
+    So a reader thread consumes the stream continuously and keeps only the most recent frame.
+    Frames nobody polled for are dropped, which is the correct behaviour for a sensor: a frame
+    that arrived while the pipeline was busy is stale data, not a backlog to work through. What
+    `read()` returns is always the freshest view of the world available.
+
+    ## Consuming it
+
+    `read()` returns None when no *new* frame has arrived since the last call, rather than
+    handing back the previous one again. That keeps a stalled stream distinguishable from a
+    still scene: `CameraAdapter` ages its last successful read and reports DEGRADED once
+    `frame_timeout_s` passes, which only works if silence stays silent.
     """
 
-    __slots__ = ("_url", "_capture")
+    __slots__ = (
+        "_url",
+        "_capture",
+        "_latest",
+        "_lock",
+        "_stop",
+        "_thread",
+        "_frames_received",
+        "_frames_dropped",
+        "_read_failures",
+        "_consecutive_failures",
+        "_reconnects",
+    )
 
     def __init__(self, url: str) -> None:
         self._url = url
         self._capture: cv2.VideoCapture | None = None
+        self._latest: np.ndarray | None = None
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._frames_received = 0
+        self._frames_dropped = 0
+        self._read_failures = 0
+        self._consecutive_failures = 0
+        self._reconnects = 0
+
+    @property
+    def frames_received(self) -> int:
+        """Frames pulled off the stream since `open()`, whether or not anybody polled them."""
+        return self._frames_received
+
+    @property
+    def frames_dropped(self) -> int:
+        """Frames superseded before the pipeline polled for them.
+
+        Expected to be large and rising — it is the stream's frame rate minus the poll rate,
+        not a fault. A count near zero means the stream is delivering no faster than the
+        pipeline consumes, which for a live camera usually means the stream is struggling.
+        """
+        return self._frames_dropped
+
+    @property
+    def read_failures(self) -> int:
+        """Failed reads since `open()`. A steadily rising count is a failing stream."""
+        return self._read_failures
+
+    @property
+    def reconnects(self) -> int:
+        """Times the reader has reopened the stream after sustained failure."""
+        return self._reconnects
 
     def open(self) -> bool:
         capture = cv2.VideoCapture(self._url)
-        # Keep the decoder queue at one frame. A buffered stream hands back frames that are
-        # seconds old, and a stale frame timestamped now is worse than no frame at all.
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not capture.isOpened():
             capture.release()
             return False
+
         self._capture = capture
+        self._frames_received = 0
+        self._frames_dropped = 0
+        self._read_failures = 0
+        self._consecutive_failures = 0
+        self._reconnects = 0
+        self._stop.clear()
+        # Daemon: a reader thread must never be the reason the process refuses to exit.
+        self._thread = threading.Thread(
+            target=self._pump, name=f"frame-reader-{self._url}", daemon=True
+        )
+        self._thread.start()
         return True
 
+    def _pump(self) -> None:
+        """Consume the stream as fast as it arrives, keeping only the newest frame.
+
+        Survives a failing stream rather than exiting on it. A decode error over a phone
+        hotspot is routine — a dropped packet, a moment of congestion — and a reader that
+        returned on the first one would leave the adapter permanently silent with no way back,
+        since `open()` is only called from `start()`. Silence that looks like an empty sky is
+        the failure this whole class of code exists to avoid (FM-010).
+        """
+        while not self._stop.is_set():
+            capture = self._capture
+            if capture is None:
+                return
+            try:
+                ok, frame = capture.read()
+            except cv2.error:
+                # Distinguish the shutdown race from a stream fault: during close() the
+                # capture is released underneath a blocked read, and stopping is then correct.
+                if self._stop.is_set() or self._capture is None:
+                    return
+                ok, frame = False, None
+
+            if not ok:
+                self._read_failures += 1
+                if self._reconnect_due():
+                    self._reconnect()
+                    continue
+                # Back off rather than spinning hot on a stream that is down or has ended.
+                self._stop.wait(_READ_RETRY_BACKOFF_S)
+                continue
+
+            self._consecutive_failures = 0
+            with self._lock:
+                if self._latest is not None:
+                    self._frames_dropped += 1
+                self._latest = frame
+                self._frames_received += 1
+
+    def _reconnect_due(self) -> bool:
+        """Whether enough consecutive failures have accrued to justify reopening the stream."""
+        self._consecutive_failures += 1
+        return self._consecutive_failures >= _FAILURES_BEFORE_RECONNECT
+
+    def _reconnect(self) -> None:
+        """Reopen the capture in place, from inside the reader thread.
+
+        A stream that has genuinely dropped does not recover by being read at harder — the
+        socket is gone and every subsequent read fails identically. Reopening is the only
+        route back, and doing it here rather than in `start()` is what lets a run survive the
+        handset changing networks or the app being restarted mid-flight.
+        """
+        self._consecutive_failures = 0
+        self._reconnects += 1
+
+        previous, self._capture = self._capture, None
+        if previous is not None:
+            previous.release()
+        if self._stop.wait(_RECONNECT_BACKOFF_S):
+            return
+
+        capture = cv2.VideoCapture(self._url)
+        if capture.isOpened():
+            self._capture = capture
+        else:
+            capture.release()
+            # Leave _capture None and let the loop exit; health reports the stream as down
+            # rather than pretending a dead source is merely quiet.
+
     def read(self) -> np.ndarray | None:
-        if self._capture is None:
-            return None
-        ok, frame = self._capture.read()
-        return frame if ok else None
+        """The newest frame since the last call, or None if no new frame has arrived."""
+        with self._lock:
+            frame = self._latest
+            self._latest = None
+        return frame
 
     def close(self) -> None:
+        self._stop.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            # Bounded: a read blocked on a dead network must not hang shutdown. The thread is
+            # a daemon, so the worst case is it is still unwinding as the process exits.
+            thread.join(timeout=2.0)
         if self._capture is not None:
             self._capture.release()
             self._capture = None
+        with self._lock:
+            self._latest = None
 
 
 class CameraAdapter(SensorAdapter):

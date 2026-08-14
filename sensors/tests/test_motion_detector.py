@@ -13,7 +13,9 @@ import pytest
 from sensors.adapters.camera.motion_detector import (
     BackgroundSubtractor,
     MotionRegion,
+    _clean,
     frame_difference,
+    regions_from_mask,
     to_grayscale,
 )
 
@@ -163,3 +165,126 @@ class TestBackgroundSubtractor:
         centre_x, centre_y = regions[0].centre
         assert centre_x == pytest.approx(400, abs=10)
         assert centre_y == pytest.approx(200, abs=10)
+
+
+class TestSmallAirborneTarget:
+    """The mission target, at the sizes it actually presents.
+
+    Every case here failed before the shadow, morphology and area-measure fixes, and each
+    failed *silently* — an erased mask looks exactly like an empty sky. These are the
+    regression tests for that, sized from the real airframe rather than from a convenient
+    synthetic blob: 335 x 253 x 95 mm at 1920 px over 66 deg is ~56 x 42 px top-aspect and
+    ~56 x 16 px side-aspect at 10 m, the stated minimum detection range.
+    """
+
+    # The stream's real resolution. The pixel sizes below are derived from it and from the
+    # configured 66 deg field of view, so they only mean anything at this frame size.
+    SKY_WIDTH = 1920
+    SKY_HEIGHT = 1080
+
+    TOP_ASPECT_10M = (56, 42)
+    SIDE_ASPECT_10M = (56, 16)
+    TOP_ASPECT_20M = (28, 21)
+
+    @classmethod
+    def _bright_sky(cls, *, noise_seed: int = 0) -> np.ndarray:
+        """An overexposed sky, which is what a camera pointed upward actually sees."""
+        rng = np.random.default_rng(noise_seed)
+        frame = np.full((cls.SKY_HEIGHT, cls.SKY_WIDTH, 3), 205.0, dtype=np.float32)
+        frame += rng.normal(0.0, 3.0, frame.shape)
+        return np.clip(frame, 0, 255).astype(np.uint8)
+
+    @classmethod
+    def _airframe(
+        cls, frame: np.ndarray, *, centre_x: int, size: tuple[int, int], tone: int
+    ) -> np.ndarray:
+        out = frame.copy()
+        width, height = size
+        x0 = centre_x - width // 2
+        y0 = cls.SKY_HEIGHT // 2 - height // 2
+        out[y0 : y0 + height, x0 : x0 + width] = tone
+        return out
+
+    def _traverse(self, *, size: tuple[int, int], tone: int, min_area_px: int = 150) -> int:
+        """Polls in which the target was detected as it crosses the frame."""
+        subtractor = BackgroundSubtractor(
+            history=40, var_threshold=50.0, min_area_px=min_area_px, warmup_frames=15
+        )
+        for seed in range(25):
+            subtractor.apply(self._bright_sky(noise_seed=seed))
+
+        return sum(
+            1
+            for step, centre_x in enumerate(range(700, 1300, 100))
+            if subtractor.apply(
+                self._airframe(
+                    self._bright_sky(noise_seed=200 + step),
+                    centre_x=centre_x,
+                    size=size,
+                    tone=tone,
+                )
+            )
+        )
+
+    @pytest.mark.parametrize("tone", [40, 90, 150, 180])
+    def test_detected_at_ten_metres_whatever_its_tone(self, tone: int) -> None:
+        """The shadow regression, and the one that mattered most.
+
+        MOG2's shadow test is "this pixel is the background scaled down in brightness", which
+        describes any airframe paler than silhouette-black against bright sky. With shadow
+        detection on and shadow pixels discarded, tones 110 and above were erased entirely —
+        every pixel, before any threshold was consulted. A pale foam airframe is exactly that
+        case, so the target the system exists to see was the one it could not see.
+        """
+        assert self._traverse(size=self.TOP_ASPECT_10M, tone=tone) == 6
+
+    def test_detected_side_on_at_ten_metres(self) -> None:
+        """Edge-on aspect collapses the height to ~16 px, which the 5x5 opening used to eat."""
+        assert self._traverse(size=self.SIDE_ASPECT_10M, tone=150) == 6
+
+    def test_still_detected_beyond_the_required_range(self) -> None:
+        """20 m top-aspect is ~28 x 21 px. Margin beyond the requirement, not a target itself."""
+        assert self._traverse(size=self.TOP_ASPECT_20M, tone=150) == 6
+
+    def test_the_configured_threshold_would_have_missed_it(self) -> None:
+        """Guards the sizing rule: the area gate must stay below what the target presents.
+
+        3000 px was the value tuned against observed false-positive regions, and it put the
+        target out of reach at every range past ~7 m. This asserts the trap rather than
+        trusting a comment: whatever min_area_px becomes, it must not drift back above what a
+        10 m contact actually produces.
+        """
+        assert self._traverse(size=self.TOP_ASPECT_10M, tone=150, min_area_px=3000) == 0
+
+
+def test_a_thin_component_survives_cleaning() -> None:
+    """Opening must not impose a minimum thickness on real targets.
+
+    Erosion keeps only pixels where the kernel fits entirely inside the component, and the
+    dilation that follows cannot restore what it removed. A 5x5 kernel therefore erased any
+    component under 5 px in either axis — measured, a 100 x 4 blob survived with zero pixels.
+    A 335 mm airframe seen edge-on is under 5 px tall beyond ~30 m.
+    """
+    mask = np.zeros((1080, 1920), dtype=np.uint8)
+    mask[500:504, 800:900] = 255  # 100 x 4, the case that vanished
+
+    regions = regions_from_mask(_clean(mask), min_area_px=150)
+
+    assert len(regions) == 1
+    assert regions[0].area_px >= 150
+
+
+def test_region_area_is_the_true_pixel_count() -> None:
+    """Area must not understate the footprint it is compared against.
+
+    `cv2.contourArea` measures the area inside the approximated polygon, undercounting a small
+    component by roughly its perimeter/2 — a 17 x 6 blob reports 74 against a true 94. Applied
+    against min_area_px that rejected targets on area the measurement had itself shrunk.
+    """
+    mask = np.zeros((1080, 1920), dtype=np.uint8)
+    mask[500:530, 800:850] = 255  # exactly 50 x 30 = 1500 px
+
+    regions = regions_from_mask(mask, min_area_px=100)
+
+    assert len(regions) == 1
+    assert regions[0].area_px == 1500

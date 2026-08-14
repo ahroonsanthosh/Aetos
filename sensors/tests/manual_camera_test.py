@@ -32,16 +32,14 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-import threading
 import time
 from dataclasses import dataclass, field
 
-import cv2
 import numpy as np
 
 from backend.common.clock import SystemClock
 from backend.common.geodesy import GeodeticPoint, LocalFrame
-from sensors.adapters.camera.camera_adapter import CameraAdapter
+from sensors.adapters.camera.camera_adapter import CameraAdapter, VideoCaptureFrameSource
 from sensors.adapters.camera.motion_detector import BackgroundSubtractor, MotionRegion
 from sensors.adapters.interface import SensorState
 from sensors.config.loader import SensorConfig, SensorConfigError, load_sensor_config
@@ -51,102 +49,49 @@ DEFAULT_DURATION_S = 60.0
 DEFAULT_INTERVAL_S = 1.5
 
 
-class LatestFrameSource:
-    """A frame source that always hands back the *newest* frame, not the next queued one.
+class DiagnosticFrameSource:
+    """Wraps the real stream source and reports what actually came off the wire.
 
-    ## Why this exists
+    `get_detections()` returns `[]` both when no frame was available and when a frame decoded
+    fine but nothing moved in it — indistinguishable from the adapter's side on purpose, but on
+    the bench they are different problems with different fixes, so this tells them apart.
 
-    `VideoCaptureFrameSource` sets `CAP_PROP_BUFFERSIZE` to 1 intending to keep only the
-    latest frame. That property is honoured by the DShow and V4L2 backends and **ignored by
-    the FFMPEG backend**, which is what serves `http://` MJPEG. So on a network stream the
-    setting does nothing and `read()` returns the next frame in sequence.
-
-    The stream produces frames at ~30fps. The adapter consumes one per poll — one every 1.5s
-    by default. It therefore falls roughly 44 frames further behind on every poll, and what
-    the motion detector sees drifts further from the present with each one: the adapter ends
-    up watching the stream in extreme slow motion.
-
-    That is not a tuning problem, and no threshold value fixes it. It makes a bench run
-    meaningless in a specific and misleading way — motion is detected long after it happened,
-    real motion during the run may never surface before the run ends, and the background model
-    is learning a scene minutes in the past.
-
-    ## What this does instead
-
-    Runs a reader thread that pulls frames as fast as the stream delivers them and keeps only
-    the most recent one. `read()` returns that. Frames the poll loop never asked for are
-    discarded, which is the correct behaviour for a sensor: a frame nobody consumed in time is
-    stale data, not a backlog to work through.
-
-    ## Where the real fix belongs
-
-    In `VideoCaptureFrameSource` itself, not here. This class proves the diagnosis and makes
-    the bench usable; the adapter is what actually needs draining behaviour so the live
-    pipeline does not inherit the same lag. Left as a bench-only workaround for now because
-    the adapter is out of scope for this pass.
+    Thin by design: the frame-freshness logic it used to carry now lives in
+    `VideoCaptureFrameSource`, where the live pipeline benefits from it too. All that is left
+    here is counting.
     """
 
-    def __init__(self, url: str) -> None:
-        self._url = url
-        self._capture: cv2.VideoCapture | None = None
-        self._latest: np.ndarray | None = None
-        self._lock = threading.Lock()
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-
-        self.frames_read = 0
-        self.frames_failed = 0
-        self.frames_discarded = 0
+    def __init__(self, inner: VideoCaptureFrameSource) -> None:
+        self._inner = inner
+        self.polls_with_frame = 0
+        self.polls_without_frame = 0
         self.last_shape: tuple[int, ...] | None = None
         self.last_mean_brightness: float | None = None
 
-    def open(self) -> bool:
-        capture = cv2.VideoCapture(self._url)
-        if not capture.isOpened():
-            capture.release()
-            return False
-        self._capture = capture
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._pump, daemon=True)
-        self._thread.start()
-        return True
+    @property
+    def frames_dropped(self) -> int:
+        """Stream frames superseded before the poll loop asked for them."""
+        return self._inner.frames_dropped
 
-    def _pump(self) -> None:
-        """Consume the stream continuously, keeping only the newest frame."""
-        while not self._stop.is_set():
-            capture = self._capture
-            if capture is None:
-                return
-            ok, frame = capture.read()
-            if not ok:
-                self.frames_failed += 1
-                # A failed read on a live stream is usually transient; don't spin hot on it.
-                self._stop.wait(0.05)
-                continue
-            with self._lock:
-                if self._latest is not None:
-                    self.frames_discarded += 1
-                self._latest = frame
+    @property
+    def read_failures(self) -> int:
+        return self._inner.read_failures
+
+    def open(self) -> bool:
+        return self._inner.open()
 
     def read(self) -> np.ndarray | None:
-        with self._lock:
-            frame = self._latest
-            self._latest = None
+        frame = self._inner.read()
         if frame is None:
+            self.polls_without_frame += 1
             return None
-        self.frames_read += 1
+        self.polls_with_frame += 1
         self.last_shape = frame.shape
         self.last_mean_brightness = float(frame.mean())
         return frame
 
     def close(self) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
-        if self._capture is not None:
-            self._capture.release()
-            self._capture = None
+        self._inner.close()
 
 
 class RegionRecordingDetector(BackgroundSubtractor):
@@ -256,7 +201,7 @@ def run(duration_s: float, interval_s: float) -> int:
         var_threshold=config.camera.motion.background_var_threshold,
         min_area_px=config.camera.motion.min_area_px,
     )
-    source = LatestFrameSource(config.camera.stream_url)
+    source = DiagnosticFrameSource(VideoCaptureFrameSource(config.camera.stream_url))
     adapter = CameraAdapter(
         clock=clock,
         config=config.camera,
@@ -327,7 +272,8 @@ def run(duration_s: float, interval_s: float) -> int:
                     frame_info = "no frame decoded yet"
                 print(
                     f"[{stamp}] poll {summary.polls:3d}  no motion  "
-                    f"({state}, reads={source.frames_read} fails={source.frames_failed}, "
+                    f"({state}, frames={source.polls_with_frame} "
+                    f"none={source.polls_without_frame}, "
                     f"{frame_info})"
                 )
             else:
@@ -362,13 +308,14 @@ def run(duration_s: float, interval_s: float) -> int:
     for error in summary.errors:
         print(f"      {error}")
     print(f"  adapter final state    : {final_health.state.value} — {final_health.reason}")
-    print(f"  frames decoded         : {source.frames_read}")
-    print(f"  frame reads failed     : {source.frames_failed}")
-    print(f"  frames discarded       : {source.frames_discarded}  (stale, never polled)")
+    print(f"  polls that got a frame : {source.polls_with_frame}")
+    print(f"  polls with no new frame: {source.polls_without_frame}")
+    print(f"  stream frames dropped  : {source.frames_dropped}  (superseded before polling)")
+    print(f"  stream read failures   : {source.read_failures}")
 
     if summary.detections == 0:
         print()
-        if source.frames_read == 0:
+        if source.polls_with_frame == 0:
             print("  No frame was ever decoded — every read() call failed. This is a stream")
             print("  problem, not a motion-detection problem: the background model never saw")
             print("  real pixels, so it could not have detected anything regardless of what")
