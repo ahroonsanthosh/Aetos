@@ -19,7 +19,7 @@ What that means in practice:
 
 - The *framing logic* in this module is correct independently of those values. It is tested by
   synthesising frames from the same `WireFormat` it parses with, so the tests prove the
-  algorithm — resync, partial frames, checksum rejection, header-in-payload — and say nothing
+  algorithm — resync, partial frames, malformed payloads, header-in-payload — and say nothing
   about whether the constants match the device.
 - The *constants* must be confirmed against a real capture before any detection this produces
   is believed. `docs/radar_bringup.md` is the procedure.
@@ -141,13 +141,18 @@ class FrameStats:
     Mutable by design: it is a running tally owned by one decoder and incremented as bytes
     arrive. Everything else in this module is frozen, because everything else is a value.
 
-    Counted rather than logged because the interesting signal is a *rate*: an occasional bad
-    checksum is a normal serial line, a rising proportion is a cable or grounding fault, and
-    only a count over time can tell those apart.
+    Counted rather than logged because the interesting signal is a *rate*: an occasional
+    rejected frame is a normal serial line, a rising proportion is a cable or grounding fault,
+    and only a count over time can tell those apart.
+
+    There is deliberately no `checksum_failures` here. This decoder validates framing — header,
+    declared length, footer — and computes no checksum, because whether the device appends one
+    and over which bytes is unverified. A counter that was declared and never incremented would
+    make `health()` look like it was watching for corruption while watching for nothing.
+    Confirming the checksum is a bring-up step; see `docs/radar_bringup.md`.
     """
 
     frames_decoded: int = 0
-    checksum_failures: int = 0
     malformed_frames: int = 0
     resync_events: int = 0
     bytes_discarded: int = 0
@@ -188,17 +193,25 @@ class FrameDecoder:
         than dropped.
         """
         self._buffer.extend(chunk)
-        self._bound_buffer()
 
         completed: list[list[RawTarget]] = []
         while True:
             frame = self._take_frame()
             if frame is None:
-                return completed
+                break
             targets = self._decode(frame)
             if targets is not None:
                 self.stats.frames_decoded += 1
                 completed.append(targets)
+
+        # Bounded *after* draining, never before. Trimming on the way in discards whatever is
+        # at the front of the buffer, and at the front of the buffer is the oldest complete
+        # frame — so a read larger than the ceiling destroyed valid data before anything looked
+        # at it. At 115200 baud a 0.2s read returns ~2300 bytes against a 2048-byte ceiling, so
+        # that was not an edge case; it fired on every full read. What remains here is by
+        # definition an incomplete frame, which is the only thing safe to drop.
+        self._bound_buffer()
+        return completed
 
     def _bound_buffer(self) -> None:
         """Keep the buffer from growing without limit when no valid frame ever arrives.
@@ -206,6 +219,9 @@ class FrameDecoder:
         A device sending continuous garbage, or a mis-set baud rate, produces bytes that never
         contain a header. Without a bound the buffer grows until the process dies, which on an
         unattended system is a far worse failure than dropping bytes.
+
+        Called only after `feed` has extracted every complete frame, so the residue is a
+        partial frame at most. Calling it earlier would discard complete frames instead.
         """
         ceiling = self.wire.max_payload_bytes * 4
         if len(self._buffer) > ceiling:
@@ -321,7 +337,9 @@ def build_frame(targets: list[RawTarget], *, wire: WireFormat = WIRE_FORMAT) -> 
     for target in targets:
         speed_raw = round(abs(target.radial_velocity_mps) / wire.speed_scale_mps)
         direction = wire.approaching_flag if target.radial_velocity_mps < 0 else 0x00
-        angle_raw = int(target.angle_deg) + wire.angle_offset
+        # round(), not int(): truncation goes toward zero, so it biases in opposite directions
+        # either side of boresight and makes the round trip asymmetric about the axis.
+        angle_raw = round(target.angle_deg) + wire.angle_offset
 
         # Named rather than left to `bytes()` raising "byte must be in range(0, 256)", which
         # says nothing about which field overflowed or what the limit means. The limits are a
@@ -331,6 +349,7 @@ def build_frame(targets: list[RawTarget], *, wire: WireFormat = WIRE_FORMAT) -> 
             ("angle_deg", angle_raw, wire.representable_angle_deg()),
             ("distance_m", int(target.distance_m), wire.representable_range_m()),
             ("radial_velocity_mps", speed_raw, wire.representable_speed_mps()),
+            ("signal_strength", target.signal_strength, (0, 255)),
         ):
             if not 0 <= raw <= 255:
                 raise ProtocolError(
@@ -341,7 +360,7 @@ def build_frame(targets: list[RawTarget], *, wire: WireFormat = WIRE_FORMAT) -> 
         body.extend(
             (
                 angle_raw,
-                int(target.distance_m),
+                round(target.distance_m),
                 direction,
                 speed_raw,
                 target.signal_strength,

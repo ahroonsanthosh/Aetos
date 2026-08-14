@@ -276,6 +276,26 @@ class TestMalformedInput:
         assert len(decoder._buffer) <= WIRE_FORMAT.max_payload_bytes * 4  # noqa: SLF001
         assert decoder.stats.bytes_discarded > 0
 
+    def test_a_read_larger_than_the_buffer_ceiling_loses_nothing(self) -> None:
+        """The bound must never cost a complete frame.
+
+        Trimming on the way in discards the front of the buffer, and the front of the buffer is
+        the oldest *complete* frame. At 115200 baud a 0.2s read returns roughly 2300 bytes
+        against a 2048-byte ceiling, so this was not an edge case — it fired on every full read
+        and silently deleted several frames each time.
+        """
+        decoder = FrameDecoder()
+        count = 500
+        stream = b"".join(
+            build_frame([_target(distance_m=float(index % 250))]) for index in range(count)
+        )
+        assert len(stream) > WIRE_FORMAT.max_payload_bytes * 4, "stream must exceed the ceiling"
+
+        frames = decoder.feed(stream)
+
+        assert len(frames) == count
+        assert decoder.stats.bytes_discarded == 0
+
     def test_recovery_after_sustained_garbage(self) -> None:
         """Having survived the garbage, the reader must still work."""
         decoder = FrameDecoder()

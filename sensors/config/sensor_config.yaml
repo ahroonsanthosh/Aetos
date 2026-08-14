@@ -46,11 +46,22 @@ radar:
     min_interval_s: 0.25
 
     bearing_deg: {min: 0.0, max: 360.0}
-    range_m: {min: 5.0, max: 500.0}
+
+    # Kept inside coverage.max_range_m below. A stub emitting returns the physical unit could
+    # not have made would exercise the pipeline against contacts that cannot exist, and would
+    # quietly mask an adapter that failed to enforce its own envelope.
+    range_m: {min: 5.0, max: 95.0}
     # Spans both signs on purpose. Canonical convention is negative toward the sensor, so a
     # range starting at zero would emit only receding targets and never exercise the closing
     # case — which is both the operationally interesting one and the one a real adapter is
     # most likely to get backwards.
+    #
+    # Known fidelity gap, stated rather than hidden: this is a single uniform interval, so it
+    # straddles the coverage.min_speed_mps Doppler floor and a few per cent of stub returns sit
+    # at a speed the real unit could not see at all. Excluding that band would need a range
+    # with a hole in it, and losing sign coverage to gain it would be a bad trade — exercising
+    # the closing case matters more, because an inverted sign is the error a real adapter is
+    # most likely to make and the least likely to notice.
     velocity_mps: {min: -25.0, max: 25.0}
     confidence: {min: 0.4, max: 0.95}
 

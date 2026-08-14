@@ -53,8 +53,22 @@ Per-target payload
       bearing, then place the target at that bearing and distance in the site's local ENU
       frame and convert to WGS-84, exactly as `StubRadarAdapter._fabricate` does.
     - Elevation. The unit measures none. Do not invent one: use the mounting height from
-      config as the target's up-coordinate and inflate the vertical term of the uncertainty
-      to say plainly that the height is an assumption rather than a measurement.
+      config as the target's up-coordinate and set `uncertainty.vertical_sigma_m` (100 m by
+      default, of the same order as the maximum range) to say plainly that the height is an
+      assumption rather than a measurement.
+
+      **This has a downstream consequence that must be closed in the same piece of work.**
+      `KinematicProfile.membership` takes a geometric mean across speed, altitude and vertical
+      rate, where a zero in any dimension is decisive. A constant assumed altitude is therefore
+      not neutral — it silently and permanently rules out every label whose altitude band
+      excludes it. On a unit sited a few metres up at a site tens of metres above the
+      ellipsoid, the label it rules out is `vehicle`, which for a radar of this class is among
+      the likeliest true labels for its clutter population.
+
+      `TrackEvidence.altitude_measured` and `.vertical_rate_measured` exist to make an
+      unmeasured dimension abstain instead of veto, and **nothing sets them yet**: a `Track`
+      does not carry which of its sensors measured height. Wiring that through is part of
+      making this adapter's output trustworthy, not a separate nicety.
     - Uncertainty. Radar error is strongly anisotropic — precise in range, imprecise in
       cross-range — so populate `position_covariance_enu`, not just the isotropic scalar.
       Collapsing it into one number makes the downstream filter confident in a direction the

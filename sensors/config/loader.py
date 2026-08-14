@@ -168,7 +168,9 @@ class RadarSignal(_Strict):
     """
 
     strength_min: int = Field(ge=0, le=255)
-    """Reported strength mapping to the lowest confidence. Below it, targets are discarded."""
+    """Reported strength mapping to `confidence_min`. Weaker returns clamp to it rather than
+    being discarded — deciding a return is too weak to report is a judgement the adapter makes
+    against `coverage`, not something this mapping does silently."""
 
     strength_max: int = Field(ge=0, le=255)
     confidence_min: float = Field(ge=0.0, le=1.0)

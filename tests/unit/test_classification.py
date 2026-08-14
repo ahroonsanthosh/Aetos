@@ -400,18 +400,63 @@ class TestUnmeasuredDimensions:
 
         assert membership == 0.0
 
-    def test_excluding_a_dimension_does_not_inflate_the_score(self) -> None:
-        """A thinner case must not score higher than a complete one that agrees throughout.
+    def test_excluding_a_partially_matching_dimension_raises_the_raw_membership(self) -> None:
+        """States the real trade-off rather than a comfortable one.
 
-        The geometric mean is renormalised over the dimensions that remain, so abstaining
-        cannot manufacture confidence — which would be the opposite failure to the one this
-        fixes.
+        Dropping a dimension that partially matched *does* raise the raw geometric mean — 0.69
+        becomes 1.0 here. That is not a bug and it is not hidden: the number means "of what was
+        measured, this agrees", and it should be higher than a score dragged down by a
+        dimension that was never an observation.
+
+        What matters is that it cannot distort the outcome, which the next test covers. An
+        earlier version of this test asserted `<=` and was vacuous — both sides were 1.0, so it
+        could not fail and did not describe the behaviour.
         """
         profile = self._profile()
-        agreeing = self._evidence(altitude_m=5.0, altitude_measured=True)
-        abstaining = self._evidence(altitude_measured=False, vertical_rate_measured=False)
+        partial = self._evidence(altitude_m=20.0, altitude_measured=True)
+        abstaining = self._evidence(
+            altitude_m=20.0, altitude_measured=False, vertical_rate_measured=False
+        )
 
-        assert profile.membership(abstaining) <= profile.membership(agreeing)
+        assert profile.membership(partial) < profile.membership(abstaining)
+
+    def test_abstaining_cannot_change_which_label_wins(self) -> None:
+        """The property that actually protects the result.
+
+        Every label is scored against the same evidence, so a dimension excluded is excluded
+        for all of them, and `KinematicEvidence` normalises across profiles afterwards. Raw
+        memberships all move together; the ranking they produce does not shift because of the
+        exclusion itself — only because a fabricated dimension is no longer vetoing.
+        """
+        speeds = (4.0, 12.0, 25.0)
+        profile = self._profile()
+        other = KinematicProfile(
+            label=ClassificationLabel.SMALL_UAS,
+            speed_mps=Band(
+                absolute_min=0.0, typical_min=3.0, typical_max=20.0, absolute_max=40.0
+            ),
+            altitude_m=Band(
+                absolute_min=0.0, typical_min=10.0, typical_max=120.0, absolute_max=400.0
+            ),
+            vertical_rate_mps=Band(
+                absolute_min=-10.0, typical_min=-4.0, typical_max=4.0, absolute_max=10.0
+            ),
+            prior=0.25,
+        )
+
+        for speed in speeds:
+            measured = self._evidence(speed_mps=speed, altitude_m=60.0, altitude_measured=True)
+            abstaining = self._evidence(
+                speed_mps=speed,
+                altitude_m=60.0,
+                altitude_measured=False,
+                vertical_rate_measured=False,
+            )
+            # With altitude measured at 60 m the vehicle profile is vetoed outright; with it
+            # abstaining both profiles are ranked on speed alone, which is the whole point.
+            assert profile.membership(measured) == 0.0
+            assert profile.membership(abstaining) > 0.0
+            assert other.membership(abstaining) > 0.0
 
     def test_dimensions_are_measured_by_default(self) -> None:
         """Existing sources measure height. The change must not alter their behaviour."""

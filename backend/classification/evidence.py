@@ -68,6 +68,17 @@ class TrackEvidence:
     measured is exactly the kind of confident wrongness the provenance rules exist to prevent
     (ADR 0002).
 
+    **Not yet set by anything.** `ClassificationService` builds `TrackEvidence` from a `Track`,
+    and a `Track` does not carry which of its contributing sensors measured height — the
+    detection covariance that would say so is consumed by the filter and not republished. So
+    the mechanism is here and the veto is still live in production.
+
+    Closing that needs a track to carry its altitude provenance, which is a schema change with
+    its own consequences. Recorded here rather than half-wired, because a flag that looks
+    connected and is not is worse than one that plainly is not: see
+    `sensors/adapters/radar/ld2451_radar_adapter.py`, whose implementation notes name this as a
+    required step.
+
     Defaults True so that existing sources, which do measure height, are unaffected."""
 
     vertical_rate_measured: bool = True
@@ -227,8 +238,14 @@ class KinematicProfile(BaseModel):
         That decisiveness is only correct for a dimension somebody measured. An unmeasured one
         is *excluded* rather than scored: including it would let a sensor's mounting height
         veto a label, which is a confident conclusion drawn from an absence of data. Excluding
-        it narrows the evidence rather than corrupting it, and the classifier's own weighting
-        already discounts a thin case (ADR 0002).
+        it narrows the evidence rather than corrupting it (ADR 0002).
+
+        Note what this does **not** do. `KinematicEvidence` carries a fixed weight whatever the
+        dimension count, so an opinion formed from one dimension counts for exactly as much as
+        one formed from three. Excluding a dimension is therefore honest about *direction* and
+        silent about *strength*. Weighting by how much was actually measured is a real
+        improvement and is deliberately not smuggled in here, because it changes the confidence
+        of every existing classification and belongs in its own decision record.
 
         With every dimension unmeasured there is nothing to say, and the profile abstains at
         zero rather than returning a number it cannot support.
@@ -280,8 +297,7 @@ class KinematicEvidence(EvidenceSource):
         if total <= 0.0:
             return _abstain(
                 self.name,
-                f"Motion ({evidence.speed_mps:.0f} m/s at {evidence.altitude_m:.0f} m) "
-                "matches no configured profile.",
+                f"Motion ({_describe_motion(evidence)}) matches no configured profile.",
             )
 
         distribution = {label: value / total for label, value in scored.items() if value > 0.0}
@@ -291,10 +307,24 @@ class KinematicEvidence(EvidenceSource):
             weight=self._weight,
             distribution=distribution,
             detail=(
-                f"Speed {evidence.speed_mps:.0f} m/s at {evidence.altitude_m:.0f} m "
-                f"is consistent with {_readable(max(distribution, key=lambda k: distribution[k]))}."
+                f"{_describe_motion(evidence).capitalize()} is consistent with "
+                f"{_readable(max(distribution, key=lambda k: distribution[k]))}."
             ),
         )
+
+
+def _describe_motion(evidence: TrackEvidence) -> str:
+    """The track's motion in words, mentioning only what was actually measured.
+
+    An operator reading "12 m/s at 62 m" reasonably assumes both numbers were observed. On a
+    track from a sensor with no elevation channel the second is the sensor's own mounting
+    height, and printing it states an observation nobody made — the failure this module's own
+    rule about reporting what was observed exists to prevent.
+    """
+    speed = f"speed {evidence.speed_mps:.0f} m/s"
+    if not evidence.altitude_measured:
+        return f"{speed}, altitude not measured"
+    return f"{speed} at {evidence.altitude_m:.0f} m"
 
 
 def _abstain(source: str, detail: str) -> EvidenceContribution:
