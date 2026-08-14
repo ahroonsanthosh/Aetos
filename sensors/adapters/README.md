@@ -41,11 +41,17 @@ guarantee") and restated on the `SensorAdapter` docstring. In brief:
 
 ## Adding a real adapter
 
-`RadarAdapter`, `EOIRAdapter`, `RFSensorAdapter` and `AcousticAdapter` are additions to this
-directory and nothing else. None of tracking, fusion, classification or risk names a sensor
-kind or reads anything but a `Detection`, so a new source changes no module downstream. The
-reserved `radar` / `eo_ir` / `rf` / `acoustic` values in `SensorType` are a schema
-reservation, not a capability claim: no real sensor integration exists.
+A real adapter is an addition to this directory and nothing else. None of tracking, fusion,
+classification or risk names a sensor kind or reads anything but a `Detection`, so a new source
+changes no module downstream.
+
+`hardware_radar/` is the first of them. It drives the testbed radar described in
+`docs/radar_testbed.md` through the `RadarSensor` contract in `sensors/radar/`, which is a
+second, inner boundary: that unit is explicitly a placeholder, and replacing it must touch only
+its own driver (ADR 0017). The adapter holds a `RadarSensor`, never a specific driver.
+
+The `eo_ir` / `rf` / `acoustic` values in `SensorType` remain schema reservations, not
+capability claims: no implementation exists for any of them.
 
 ## Health
 
@@ -61,3 +67,4 @@ radio-frequency one, so the adapter does not pretend to know it (FM-010).
 |---|---|
 | `interface.py` | The contract |
 | `simulated/` | The simulated adapter, its sensor model, and the registry loader |
+| `hardware_radar/` | A physical radar unit, via the `RadarSensor` contract in `sensors/radar/` |

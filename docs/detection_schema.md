@@ -160,18 +160,26 @@ is not.
 
 ## Sensor types
 
-Deliberately generic. No manufacturer, model or product name appears in this enum or anywhere
-else in the codebase, and a test asserts it.
+Deliberately generic. No manufacturer, model or product name appears in this enum, and a test
+asserts it. The one place a model designation may appear at all is inside the two driver modules
+of the hardware it drives — a driver has to name its device — and a second test fails the build if
+it appears anywhere else (ADR 0017).
 
-| Simulated | Reserved for future real adapters |
+| Simulated | Real |
 |---|---|
-| `simulated_radar` | `radar` |
-| `simulated_eo_ir` | `eo_ir` |
-| `simulated_rf` | `rf` |
-| `simulated_acoustic` | `acoustic` |
+| `simulated_radar` | `radar` — implemented, testbed hardware only |
+| `simulated_eo_ir` | `eo_ir` — reserved |
+| `simulated_rf` | `rf` — reserved |
+| `simulated_acoustic` | `acoustic` — reserved |
 
-The right-hand column is a **schema reservation, not a capability claim**. No real sensor
-integration exists.
+`radar` is produced by `sensors/adapters/hardware_radar`, which drives the testbed unit described
+in `docs/radar_testbed.md`. That unit is a placeholder for the eventual production radar, has not
+been characterised against small airframes, and reports a configured rather than a measured
+confidence — so the type existing is not a claim that radar detection is trustworthy yet. Nothing
+in the run loop constructs one (ADR 0017).
+
+The remaining three are a **schema reservation, not a capability claim**: no implementation
+exists for any of them.
 
 ## Classification labels
 

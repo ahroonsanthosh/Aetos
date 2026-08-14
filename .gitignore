@@ -47,6 +47,10 @@ config/**/local_*.json
 *.sqlite3
 recordings/
 
+# Raw radar frame logs. Generated during bench sessions, sometimes large, and specific to one
+# unit on one day — evidence for a test campaign, not source.
+/var/
+
 # Editors / OS
 .vscode/
 .idea/

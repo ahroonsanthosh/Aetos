@@ -52,11 +52,11 @@ a single combined pipeline function.
 | `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, simulated adapter, real-sensor stubs |
+| `sensors/` | `SensorAdapter` contract, simulated adapter, hardware radar driver and adapter |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
-| `config/` | Sites, sensor registry, environment configuration |
+| `config/` | Sites, sensor registry, radar hardware, environment configuration |
 | `tests/` | Unit, integration, scenario replay, chaos |
 
 ## Running it

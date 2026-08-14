@@ -108,10 +108,10 @@ class ModeView(BaseModel):
 async def get_mode(services: ServicesDep) -> ModeView:
     """The run mode, as a fact rather than a frontend constant.
 
-    No real sensor adapter integration exists in this build, so `real_adapters_connected` is
-    structurally zero and `simulated` is structurally true. Both are computed rather than
-    hardcoded, so they will start telling the truth on their own the day an adapter registry
-    is wired in.
+    A real adapter now exists — the hardware radar in `sensors/adapters/hardware_radar` — but
+    nothing wires it into the run loop, so `real_adapters_connected` is still structurally zero
+    and `simulated` structurally true. Both are computed rather than hardcoded, so they will
+    start telling the truth on their own the day an adapter registry is wired in.
     """
     real_adapters = services.real_adapter_count()
 

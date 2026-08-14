@@ -118,10 +118,11 @@ class ApiServices:
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
-        Structurally zero: no real sensor adapter integration exists in this build, and there
-        is no adapter registry for the API to consult. Written as a method returning a
-        computed zero rather than a literal so that wiring in a registry later changes one
-        implementation instead of every caller that assumed the answer.
+        Structurally zero. A real adapter exists — the hardware radar in
+        `sensors/adapters/hardware_radar` (ADR 0017) — but nothing constructs or polls one in
+        this build, and there is no adapter registry for the API to consult. Written as a method
+        returning a computed zero rather than a literal so that wiring in a registry later
+        changes one implementation instead of every caller that assumed the answer.
         """
         return 0
 

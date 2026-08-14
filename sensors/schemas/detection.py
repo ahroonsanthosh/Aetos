@@ -33,8 +33,11 @@ class SensorType(StrEnum):
     SIMULATED_RF = "simulated_rf"
     SIMULATED_ACOUSTIC = "simulated_acoustic"
 
-    # Reserved for future real adapters. No implementation exists for any of these, and
-    # their presence here is a schema reservation, not a capability claim.
+    # Real sensor sources. `RADAR` is now produced by `sensors/adapters/hardware_radar`,
+    # driving the testbed unit described in docs/radar_testbed.md — a placeholder for the
+    # eventual production radar, uncharacterised against small airframes, and not yet a basis
+    # for trusted detection. The remaining three are schema reservations, not capability
+    # claims: no implementation exists for any of them.
     RADAR = "radar"
     EO_IR = "eo_ir"
     RF = "rf"

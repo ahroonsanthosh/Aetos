@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+hardware = [
+    # Needed only to talk to a physical sensor over a serial port. Deliberately optional: the
+    # test suite and every simulation deployment run the radar package without it, and the
+    # driver imports it inside `open()` so that importing the package never requires it.
+    "pyserial>=3.5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

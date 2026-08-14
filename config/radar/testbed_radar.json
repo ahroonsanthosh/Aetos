@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "sensor_id": "testbed_radar",
+  "model": "LD2451",
+  "description": "24GHz FMCW testbed radar on the bench. Placeholder hardware, not the production unit. Vehicle-tuned firmware; performance against a small airframe is unmeasured. Every uncertainty value below is a conservative placeholder awaiting the test matrix in docs/radar_testbed.md.",
+  "link": {
+    "port": "/dev/ttyUSB0",
+    "baud_rate": 115200,
+    "probe_baud_rates": [115200, 256000],
+    "probe_on_connect": true,
+    "read_timeout_s": 0.1,
+    "max_read_bytes": 4096,
+    "reconnect_initial_delay_s": 1.0,
+    "reconnect_max_delay_s": 30.0,
+    "max_reconnect_attempts": null
+  },
+  "tuning": {
+    "max_distance_m": 100,
+    "min_speed_kmh": 0,
+    "sensitivity": 4,
+    "min_confirm_frames": 1,
+    "no_target_delay_s": 1
+  },
+  "mount": {
+    "boresight_deg": 0.0,
+    "tilt_deg": 0.0,
+    "height_m": 1.5,
+    "azimuth_extent_deg": 40.0,
+    "elevation_extent_deg": 30.0
+  },
+  "uncertainty": {
+    "range_sigma_m": 1.0,
+    "azimuth_sigma_deg": 5.0,
+    "velocity_sigma_mps": 0.5,
+    "reported_confidence": 0.4
+  },
+  "raw_log": {
+    "enabled": true,
+    "path": "var/radar/testbed_radar_raw.log",
+    "include_discarded": true
+  },
+  "min_range_m": 1.0,
+  "max_range_m": 100.0
+}

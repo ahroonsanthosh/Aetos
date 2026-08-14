@@ -30,7 +30,7 @@ The third is the one that actually holds the line. The first two are conventions
 
 ```
   ┌─────────────────────────────────────────────────────┐
-  │  SOURCE   simulated adapter  │  (future) real adapter │
+  │  SOURCE   simulated adapter  │ hardware radar adapter │
   └────────────────────┬────────────────────────────────┘
                        │  canonical Detection (WGS-84, UTC)
                        ▼
@@ -125,8 +125,10 @@ touching the others.
 Three modes are designed for; only the first is built.
 
 - **SIMULATION** — all detections synthetic. Current state.
-- **LIVE** — all detections from real sensor adapters. Not built. No real sensor integration
-  exists or is claimed.
+- **LIVE** — all detections from real sensor adapters. Not built. One real adapter now exists
+  (`sensors/adapters/hardware_radar`, driving the testbed unit in `docs/radar_testbed.md`), but
+  nothing constructs or polls it: there is no adapter registry, and the run loop builds simulated
+  adapters only. No live deployment exists or is claimed.
 - **HYBRID** — real and simulated detections coexisting, for controlled testing against a
   live baseline.
 
@@ -200,3 +202,4 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0014](adr/0014-optional-basemap.md) | An optional self-hosted basemap beneath the PPI |
 | [0015](adr/0015-alerting-as-promotion.md) | Alerting promotes risk levels; it does not assess |
 | [0016](adr/0016-authentication-and-authorisation.md) | Session authentication, three roles, and a startup guard |
+| [0017](adr/0017-hardware-radar-testbed-integration.md) | A testbed radar behind a second, inner interface |

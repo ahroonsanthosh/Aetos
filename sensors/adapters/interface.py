@@ -6,9 +6,10 @@ shape, so that nothing downstream of ingestion can tell which kind of source it 
 
 The interface is deliberately small. Everything a sensor is peculiar about — protocol,
 polling versus streaming, coordinate frame, altitude datum, units, clock discipline — is the
-adapter's problem and stops here. That is what makes `RadarAdapter`, `EOIRAdapter`,
-`RFSensorAdapter` and `AcousticAdapter` additions rather than changes: none of tracking,
-fusion, classification or risk names a sensor kind or reads anything but a `Detection`.
+adapter's problem and stops here. That is what makes a new source an addition rather than a
+change: none of tracking, fusion, classification or risk names a sensor kind or reads anything
+but a `Detection`. The hardware radar adapter added in ADR 0017 is the first demonstration of
+that — it changed no module downstream of ingestion.
 
 See docs/architecture.md, docs/detection_schema.md and docs/adr/0002.
 """

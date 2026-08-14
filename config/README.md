@@ -9,7 +9,8 @@ they live here, are validated against Pydantic models at load, and fail loudly w
 |---|---|---|
 | `sites/` | Protected geography: reference point, zones, sensor placements | `backend/zones/site.py` |
 | `environments/` | Run mode, which site, event store path, queue and risk tuning | `backend/common/config.py` |
-| `sensor_registry/` | Detection characteristics per sensor model | owned by the sensor layer |
+| `sensor_registry/` | Detection characteristics per simulated sensor model | owned by the sensor layer |
+| `radar/` | Serial link, tuning, mount and uncertainty for a physical radar unit | `sensors/radar/config.py` |
 
 Each directory documents its own format in its own README.
 
