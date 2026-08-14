@@ -38,3 +38,11 @@ def frame(config: SensorConfig) -> LocalFrame:
             config.site_origin.altitude_m,
         )
     )
+
+
+collect_ignore = ["manual_camera_test.py"]
+"""`manual_camera_test.py` matches pytest's `*_test.py` pattern but is not a test.
+
+It needs a handset on the network and a human in front of the lens, so it is run by hand and
+must never be collected into a suite that has to pass in CI.
+"""

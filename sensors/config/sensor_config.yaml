@@ -62,8 +62,10 @@ camera:
   sensor_id: "camera-bench-01"
 
   # Stream the adapter opens on connect(). An MJPEG/HTTP video endpoint served by a phone
-  # camera app on the local network. Replace <phone-ip> with the handset's address.
-  stream_url: "http://192.168.1.50:8080/video"
+  # camera app on the local network. The address is the handset's, on whatever network it and
+  # this machine share — it changes whenever the hotspot or the DHCP lease does, and this line
+  # is the only place in the system that needs editing when it does.
+  stream_url: "http://10.92.250.46:8080/video"
 
   # Seconds a decoded frame may age before the adapter treats the stream as stalled and
   # reports itself DEGRADED. A stalled stream that keeps handing back the last good frame is
