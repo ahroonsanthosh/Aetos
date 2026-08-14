@@ -64,6 +64,11 @@ radio-frequency one, so the adapter does not pretend to know it (FM-010).
 | `radar/` | The stub radar in use today, and the empty shell for the physical unit |
 | `camera/` | The camera adapter, its motion detection and its classifier |
 
+The set of physical sensors a deployment runs is assembled in `sensors/live.py`, one level up.
+That is the only file that names a concrete adapter class, which is what makes replacing a
+sensor a one-file change; `tests/unit/test_module_boundaries.py` asserts it rather than
+trusting it.
+
 `radar/` and `camera/` are the only directories permitted to know anything about a particular
 piece of hardware — a model number, a transport, an imaging or inference library. Both
 confinements are asserted in `tests/unit/test_module_boundaries.py` rather than left to

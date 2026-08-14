@@ -35,9 +35,21 @@ framing and resynchronisation, the per-target conversions, the anisotropic covar
 sign convention on radial velocity, and what has to be checked against a surveyed reference
 before the output is trusted.
 
-Then, at the composition point in `backend/main.py`, construct `Ld2451RadarAdapter` instead of
-`StubRadarAdapter` and delete the stub. The polling loop in `step()` is typed to
-`SensorAdapter` and does not change.
+Then, in `sensors/live.py` — the composition point, and the only file in the repository that
+names a concrete adapter class — change the marked line:
+
+```python
+adapter=StubRadarAdapter(   ->   adapter=Ld2451RadarAdapter(
+```
+
+and its import. Delete `stub_radar_adapter.py`. Nothing else changes: `backend/main.py` builds
+whatever that file returns, and its polling loop is typed to `SensorAdapter`.
+
+This is verified rather than asserted. `tests/unit/test_module_boundaries.py` fails the build
+if any module other than `sensors/live.py` names a concrete adapter, and
+`tests/integration/test_live_pipeline.py` drives the whole path — adapters through ingestion
+and tracking to a track — without naming a camera or a radar anywhere, so it keeps passing
+across the swap and fails immediately if the swap breaks the path.
 
 ## Configuration
 

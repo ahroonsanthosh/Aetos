@@ -188,6 +188,11 @@ def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
         # cannot be tested through a mock, since a mock only ever confirms the behaviour it
         # was written to expect — which is exactly how the original lag bug survived review.
         SENSORS / "tests" / "test_video_capture_frame_source.py",
+        # The composition point. It constructs the concrete adapters and documents the swap,
+        # so it necessarily names them; that is its entire purpose and the reason the rest of
+        # the codebase does not have to. See test_only_the_composition_point_names_a_concrete
+        # _adapter, which asserts the other half of this: that nothing else does.
+        SENSORS / "live.py",
     }
 
     violations: list[str] = []
@@ -212,19 +217,68 @@ def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
 def test_nothing_outside_its_package_imports_the_stub_radar() -> None:
     """The stub is the one file deleted when the physical radar arrives.
 
-    Everything downstream reads `SensorAdapter`, so the only place that may name the stub
-    class is the composition point that decides which adapter to construct. Anywhere else,
-    the import would have to be found and changed during the swap.
+    Everything downstream reads `SensorAdapter`, so the only place that may name the stub is
+    `sensors/live.py`, the composition point that decides which adapter to construct. Anywhere
+    else, the import would have to be found and changed during the swap — which is precisely
+    the cost this arrangement exists to avoid.
     """
     violations = [
         str(source.relative_to(REPO_ROOT))
         for source in _python_sources(BACKEND, SENSORS)
         if RADAR_ADAPTERS not in source.parents
-        and source not in {SENSORS / "tests" / "test_stub_radar_adapter.py"}
+        and source
+        not in {
+            SENSORS / "live.py",
+            SENSORS / "tests" / "test_stub_radar_adapter.py",
+        }
         and "stub_radar_adapter" in source.read_text()
     ]
 
     assert not violations, (
         "the stub radar must be importable from the composition point only; "
         f"these modules name it directly: {violations}"
+    )
+
+
+def test_only_the_composition_point_names_a_concrete_adapter() -> None:
+    """ADR: the sensor set is assembled in exactly one place.
+
+    `sensors/live.py` is the file edited when a sensor is added, removed or replaced. If any
+    other module — `backend/main.py` above all — names a concrete adapter class, then swapping
+    a sensor stops being a one-file change and nobody discovers that until the hardware is on
+    the bench and the migration is larger than planned.
+
+    The simulated adapter is exempt: it is driven by a scenario rather than by sensor
+    configuration, so it is assembled on its own path.
+    """
+    concrete_adapters = ("CameraAdapter", "StubRadarAdapter", "Ld2451RadarAdapter")
+    composition_point = SENSORS / "live.py"
+
+    allowed = {
+        composition_point,
+        REPO_ROOT / "tests" / "unit" / "test_module_boundaries.py",
+        # Its own package exports and its own tests.
+        SENSORS / "adapters" / "camera" / "__init__.py",
+        SENSORS / "adapters" / "camera" / "camera_adapter.py",
+        SENSORS / "adapters" / "radar" / "__init__.py",
+        SENSORS / "adapters" / "radar" / "stub_radar_adapter.py",
+        SENSORS / "adapters" / "radar" / "ld2451_radar_adapter.py",
+        SENSORS / "tests" / "test_camera_adapter.py",
+        SENSORS / "tests" / "test_stub_radar_adapter.py",
+        SENSORS / "tests" / "manual_camera_test.py",
+        SENSORS / "tests" / "test_video_capture_frame_source.py",
+    }
+
+    violations: list[str] = []
+    for source in _python_sources(BACKEND, SENSORS):
+        if source in allowed:
+            continue
+        text = source.read_text()
+        for name in concrete_adapters:
+            if name in text:
+                violations.append(f"{source.relative_to(REPO_ROOT)} names {name}")
+
+    assert not violations, (
+        "concrete sensor adapters must be named only in sensors/live.py, so that replacing a "
+        "sensor is a change to that one file:\n  " + "\n  ".join(violations)
     )

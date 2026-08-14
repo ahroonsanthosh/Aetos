@@ -25,3 +25,16 @@ to set.
 
 `schema_version` is checked against the version the build reads, so a configuration written
 for a different shape of the document is rejected instead of half-applied.
+
+## Who reads this
+
+Two callers, and they resolve the site differently:
+
+- **`sensors/live.py`**, when the backend runs with `--live`. It is handed the backend's own
+  ENU frame, anchored at the site reference point in `config/sites/`, and `site_origin` below
+  is ignored. The site file is the single authority on where the site is.
+- **`sensors/tests/manual_camera_test.py`**, the standalone bench script, which runs without a
+  site loaded and so falls back to `site_origin` here.
+
+`position_enu` is a sensor's offset within whichever frame applies, which is the same number
+either way.

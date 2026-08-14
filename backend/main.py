@@ -6,6 +6,7 @@ repository usable rather than merely correct.
 
     python -m backend.main                          serve the API against an empty log
     python -m backend.main --scenario a_benign_transit   serve, and drive that scenario
+    python -m backend.main --live                   serve, driven by the physical sensors
 
 The scenario runner here is a **development and demonstration driver**, not the scenario
 control API. `POST /scenarios/{id}/start` still reports itself unimplemented, because it is:
@@ -51,6 +52,8 @@ from scenarios.world import ScenarioWorld
 from sensors.adapters.interface import SensorAdapter
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
+from sensors.config.loader import SensorConfig, SensorConfigError, load_sensor_config
+from sensors.live import LiveSensor, build_live_sensors
 from sensors.schemas.detection import Detection
 
 _LOG = logging.getLogger("aetos.pipeline")
@@ -144,6 +147,93 @@ class Pipeline:
             ],
         )
 
+    def attach_live_sensors(self, config: SensorConfig | None = None) -> list[str]:
+        """Build the physical sensors from configuration and start them. Returns their ids.
+
+        The counterpart to `attach_scenario`, and deliberately the same shape: both populate
+        `self._adapters` and start what they built, and `step()` cannot tell which one ran.
+        That is the property the whole architecture is for — a live run and a simulated run
+        differ in this one call and nowhere else.
+
+        Which sensors exist is `sensors.live`'s business, not this module's. Nothing here
+        names a camera or a radar, so replacing one is a change to that file alone.
+
+        Adapters that fail to come up are kept rather than dropped. A camera whose stream is
+        down reports OFFLINE through `health()` and the watchdog says so; silently omitting it
+        would leave the operator interface showing a sensor list that does not mention the
+        sensor that is broken.
+        """
+        sensors = build_live_sensors(
+            clock=self.clock,
+            # The backend's frame, from the site file — not the bench script's fallback origin.
+            frame=self.geometry.frame,
+            config=config if config is not None else load_sensor_config(),
+        )
+
+        self._replace_adapters([sensor.adapter for sensor in sensors])
+        self._persist_live_sensors(sensors)
+
+        for sensor in sensors:
+            sensor.adapter.start()
+            health = sensor.adapter.health()
+            _LOG.info(
+                "Live sensor %s (%s) started: %s — %s",
+                sensor.sensor_id,
+                sensor.adapter.sensor_type.value,
+                health.state.value,
+                health.reason,
+            )
+
+        return [sensor.sensor_id for sensor in sensors]
+
+    def _replace_adapters(self, adapters: list[SensorAdapter]) -> None:
+        """Swap the adapter set, stopping whatever was running first.
+
+        Reassigning the list without stopping the old adapters strands whatever they hold — a
+        camera's reader thread and its open socket outlive the adapter nobody can reach any
+        more, and the stream stays consumed by a source that no longer feeds the pipeline.
+        Attaching twice is not something the CLI does today, but the API and the tests both
+        construct pipelines repeatedly, and a leak that only shows under repetition is one
+        found late.
+        """
+        for adapter in self._adapters:
+            adapter.stop()
+        self._adapters = adapters
+
+    def _persist_live_sensors(self, sensors: list[LiveSensor]) -> None:
+        """Replace the site's persisted sensor list with the physical sensors that are running.
+
+        Replacing rather than appending: in a live run the site file's simulated placements
+        describe sensors that do not exist on this bench, and leaving them in the list would
+        put four sensors on the operator map when two are real. A map showing sensors that are
+        not there is worse than a sparse one.
+
+        Positions are converted from each sensor's ENU offset through the site's own frame, so
+        a live sensor lands where the site says it is rather than where a second, independent
+        origin might put it.
+        """
+        site_id = self.geometry.site.site_id
+        reference_altitude = self.geometry.site.reference.altitude_m
+
+        records = []
+        for sensor in sensors:
+            geodetic = self.geometry.frame.to_geodetic(sensor.position_enu)
+            records.append(
+                SensorRecord(
+                    sensor_id=sensor.sensor_id,
+                    site_id=site_id,
+                    registry_key=sensor.registry_key,
+                    sensor_type=sensor.adapter.sensor_type,
+                    latitude=geodetic.latitude_deg,
+                    longitude=geodetic.longitude_deg,
+                    height_m=geodetic.altitude_m - reference_altitude,
+                    boresight_deg=sensor.boresight_deg,
+                    enabled=True,
+                )
+            )
+
+        self.repositories.sensors.replace_for_site(site_id, records)
+
     def attach_scenario(self, scenario_id: str) -> None:
         """Point the simulated sensors at a scenario's world."""
         scenario = load_all()[scenario_id]
@@ -151,7 +241,7 @@ class Pipeline:
         world = ScenarioWorld(scenario, self.clock.now())
         positions = self.geometry.site.sensor_positions_enu()
 
-        self._adapters = [
+        self._replace_adapters([
             SimulatedSensorAdapter(
                 clock=self.clock,
                 sensor_id=placement.sensor_id,
@@ -164,7 +254,7 @@ class Pipeline:
             )
             for placement in self.geometry.site.sensors
             if placement.enabled
-        ]
+        ])
         for adapter in self._adapters:
             adapter.start()
 
@@ -279,6 +369,7 @@ def build_application(
     data_dir: Path | None = None,
     tick_s: float = DEFAULT_TICK_S,
     authenticated: bool = True,
+    live: bool = False,
 ):
     """Assemble the pipeline and the API around it.
 
@@ -286,13 +377,28 @@ def build_application(
     off loopback; False attributes everything to one local operator with no login at all
     (ADR 0008, FM-001) and exists for a single-user machine. `guard_bind` refuses to combine it
     with a network interface.
+
+    `live` drives the pipeline from the physical sensors in `sensor_config.yaml` instead of
+    from a scenario. The two are mutually exclusive: a scenario supplies ground truth that
+    simulated sensors degrade, and a physical sensor observes the actual world, so a run that
+    tried to be both would be showing an operator two incompatible pictures at once. HYBRID is
+    a named run mode for a future that reconciles them and is not this.
     """
+    if live and scenario:
+        raise ValueError(
+            "a run is driven by a scenario or by physical sensors, not both: "
+            "a scenario is fabricated truth and a live sensor observes the real world, and "
+            "showing an operator both at once would make neither trustworthy"
+        )
+
     clock = SystemClock()
     geometry = load_site_geometry(site)
     resolved = data_dir or ConfigPaths.default().repo_root / "data"
 
     pipeline = Pipeline(clock, geometry, resolved)
-    if scenario:
+    if live:
+        pipeline.attach_live_sensors()
+    elif scenario:
         pipeline.attach_scenario(scenario)
 
     services = ApiServices(
@@ -313,11 +419,11 @@ def build_application(
         alerts=pipeline.alerting,
         classification_running=True,
         situation=pipeline.risk,
-        run_mode=RunMode.SIMULATION,
+        run_mode=RunMode.LIVE if live else RunMode.SIMULATION,
     )
 
     app = create_app(services)
-    _attach_pipeline_task(app, pipeline, scenario, tick_s)
+    _attach_pipeline_task(app, pipeline, stepping=bool(scenario or live), tick_s=tick_s)
 
     # After the routers, so the interface's catch-all can only ever match paths the API did
     # not claim.
@@ -325,8 +431,12 @@ def build_application(
     return app
 
 
-def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s: float) -> None:
+def _attach_pipeline_task(app, pipeline: Pipeline, *, stepping: bool, tick_s: float) -> None:
     """Run the pipeline on the event loop for as long as the server is up.
+
+    `stepping` rather than a scenario name: the loop is identical whether the detections come
+    from a scenario or from physical sensors, and taking the name here would have made this
+    function know which it was — the one thing the adapter boundary exists to prevent.
 
     Composed into the application's existing lifespan rather than registered with
     `@app.on_event`. FastAPI **silently ignores** startup and shutdown handlers when a
@@ -343,7 +453,7 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
         async with existing_lifespan(scope_app):
             handle: asyncio.Task | None = None
 
-            if scenario:
+            if stepping:
 
                 async def run() -> None:
                     consecutive_failures = 0
@@ -396,6 +506,14 @@ def main() -> None:
         default=None,
         help="scenario to drive the simulator with; omit to serve an idle system",
     )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "drive the pipeline from the physical sensors in sensors/config/sensor_config.yaml "
+            "instead of from a scenario. Mutually exclusive with --scenario."
+        ),
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
@@ -421,13 +539,22 @@ def main() -> None:
     arguments = parser.parse_args()
 
     authenticated = not arguments.no_auth
-    app = build_application(
-        site=arguments.site,
-        scenario=arguments.scenario,
-        data_dir=arguments.data_dir,
-        tick_s=arguments.tick,
-        authenticated=authenticated,
-    )
+    try:
+        app = build_application(
+            site=arguments.site,
+            scenario=arguments.scenario,
+            data_dir=arguments.data_dir,
+            tick_s=arguments.tick,
+            authenticated=authenticated,
+            live=arguments.live,
+        )
+    except SensorConfigError as bad_config:
+        # A misconfigured sensor is an operator error with a fixable cause, so it gets the
+        # cause rather than a traceback. Starting anyway with the sensor omitted would be
+        # worse: the system would run, look healthy, and be watching nothing.
+        raise SystemExit(f"\n  {bad_config}\n") from bad_config
+    except ValueError as conflict:
+        raise SystemExit(f"\n  {conflict}\n") from conflict
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.
