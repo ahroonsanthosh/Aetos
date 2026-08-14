@@ -14,6 +14,7 @@ lines and two apps can coexist in one process without discovering each other.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -33,6 +34,7 @@ from backend.database.repositories import (
 )
 from backend.events.store import EventStore
 from backend.risk.correlation import SituationAssessment
+from sensors.adapters.interface import SensorAdapter
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,13 @@ class ApiServices:
     """
 
     run_mode: RunMode = RunMode.SIMULATION
+
+    sensor_adapters: Callable[[], Sequence[SensorAdapter]] | None = None
+    """The adapters currently feeding the pipeline, read live.
+
+    A callable rather than the list itself: the adapter set is replaced when a scenario or a
+    live sensor set is attached, and a captured list would go on describing the previous run.
+    None for an API assembled without a pipeline, as most tests do."""
     """Which run mode this deployment is configured for.
 
     Carried here so `GET /system/mode` reports a fact the backend asserts rather than a
@@ -118,12 +127,20 @@ class ApiServices:
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
-        Structurally zero: no real sensor adapter integration exists in this build, and there
-        is no adapter registry for the API to consult. Written as a method returning a
-        computed zero rather than a literal so that wiring in a registry later changes one
-        implementation instead of every caller that assumed the answer.
+        Counted from the adapters actually attached, via `SensorType.is_simulated`, so the
+        answer is a fact about what is running rather than a claim about what was configured.
+        A source that fabricates its returns reports a simulated `sensor_type` and is not
+        counted here however it was launched — which is what stops a bench stub being
+        presented to an operator as a real sensor.
+
+        Zero when nothing has been attached, which is also the honest answer for an idle
+        system.
         """
-        return 0
+        if self.sensor_adapters is None:
+            return 0
+        return sum(
+            1 for adapter in self.sensor_adapters() if not adapter.sensor_type.is_simulated
+        )
 
 
 class AlertSource(Protocol):

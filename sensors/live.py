@@ -36,7 +36,6 @@ from dataclasses import dataclass
 
 from backend.common.clock import Clock
 from backend.common.geodesy import EnuPoint, LocalFrame
-from sensors.adapters.camera.camera_adapter import CameraAdapter
 from sensors.adapters.interface import SensorAdapter
 from sensors.adapters.radar.stub_radar_adapter import StubRadarAdapter
 from sensors.config.loader import PositionEnu, SensorConfig
@@ -84,7 +83,14 @@ def build_live_sensors(
     stream or a port. That matters here: building the full sensor set must not fail halfway
     through because one sensor happens to be unplugged, or a deployment could not start at all
     without every sensor present.
+
+    The camera adapter is imported here rather than at module scope because importing it pulls
+    in OpenCV. `backend/main.py` imports this module unconditionally, so a module-scope import
+    would make a heavy optional dependency a hard requirement of every entry point — including
+    a scenario run that never touches a camera.
     """
+    from sensors.adapters.camera.camera_adapter import CameraAdapter
+
     return [
         LiveSensor(
             adapter=CameraAdapter(

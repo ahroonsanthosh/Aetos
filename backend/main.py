@@ -22,6 +22,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import uvicorn
@@ -57,6 +58,15 @@ from sensors.live import LiveSensor, build_live_sensors
 from sensors.schemas.detection import Detection
 
 _LOG = logging.getLogger("aetos.pipeline")
+
+
+class RunModeConflict(ValueError):
+    """A run was asked to be both simulated and live.
+
+    Its own type rather than a bare ValueError: `main()` turns this into a clean message, and
+    catching ValueError there would also swallow every pydantic ValidationError raised while
+    assembling the pipeline — reporting a malformed site file as if it were a mode conflict.
+    """
 
 DEFAULT_SITE = "fictional_test_range"
 DEFAULT_TICK_S = 0.5
@@ -170,12 +180,37 @@ class Pipeline:
             config=config if config is not None else load_sensor_config(),
         )
 
+        self.start_live_sensors(sensors)
+        return [sensor.sensor_id for sensor in sensors]
+
+    def start_live_sensors(self, sensors: list[LiveSensor]) -> None:
+        """Adopt a built sensor set: persist it, then start each sensor under its own guard.
+
+        Split from `attach_live_sensors` so that a caller holding sensors it built itself —
+        a test substituting a scripted frame source for a handset — goes through exactly this
+        path rather than reimplementing it. A test that starts adapters its own way stops
+        testing how they are actually started, which is how a swap passes its tests and then
+        fails on the bench.
+        """
         self._replace_adapters([sensor.adapter for sensor in sensors])
         self._persist_live_sensors(sensors)
 
         for sensor in sensors:
-            sensor.adapter.start()
-            health = sensor.adapter.health()
+            try:
+                sensor.adapter.start()
+                health = sensor.adapter.health()
+            except Exception:
+                # One unimplemented or broken adapter must not prevent the others from
+                # observing. It is logged at exception level and left in the set, where its
+                # health record — or its absence — is the honest report. Dropping it would
+                # remove the sensor from the operator's list precisely when it is the one
+                # thing wrong.
+                _LOG.exception(
+                    "Live sensor %s failed to start; it will report no detections.",
+                    sensor.sensor_id,
+                )
+                continue
+
             _LOG.info(
                 "Live sensor %s (%s) started: %s — %s",
                 sensor.sensor_id,
@@ -184,7 +219,10 @@ class Pipeline:
                 health.reason,
             )
 
-        return [sensor.sensor_id for sensor in sensors]
+    @property
+    def adapters(self) -> Sequence[SensorAdapter]:
+        """The adapters currently feeding the pipeline. Read by the API's mode banner."""
+        return tuple(self._adapters)
 
     def _replace_adapters(self, adapters: list[SensorAdapter]) -> None:
         """Swap the adapter set, stopping whatever was running first.
@@ -269,7 +307,19 @@ class Pipeline:
         """
         detections: list[Detection] = []
         for adapter in self._adapters:
-            detections.extend(adapter.get_detections())
+            try:
+                detections.extend(adapter.get_detections())
+            except Exception:
+                # One sensor's fault must not blind the others. Without this, an adapter that
+                # raises — a serial port yanked out, a driver not yet implemented, a decode
+                # error — takes down the whole cycle, so a four-sensor site observes nothing
+                # because one sensor broke. The failure is logged loudly rather than
+                # swallowed, and that sensor contributes nothing this cycle while the rest of
+                # the site goes on seeing (FM-010).
+                _LOG.exception(
+                    "Sensor %s failed during collection; it contributes nothing this cycle.",
+                    adapter.sensor_id,
+                )
 
         # Validates, deduplicates, records DETECTION_RECEIVED, and reduces to the tracker's
         # input. The classification hints come back separately — they are evidence about what
@@ -302,7 +352,12 @@ class Pipeline:
 
     def close(self) -> None:
         for adapter in self._adapters:
-            adapter.stop()
+            try:
+                adapter.stop()
+            except Exception:
+                # Shutdown continues regardless. One sensor refusing to stop must not leave
+                # the database and the event log unclosed behind it.
+                _LOG.exception("Sensor %s failed to stop cleanly.", adapter.sensor_id)
         self.repositories.close()
         self.events.close()
 
@@ -385,7 +440,7 @@ def build_application(
     a named run mode for a future that reconciles them and is not this.
     """
     if live and scenario:
-        raise ValueError(
+        raise RunModeConflict(
             "a run is driven by a scenario or by physical sensors, not both: "
             "a scenario is fabricated truth and a live sensor observes the real world, and "
             "showing an operator both at once would make neither trustworthy"
@@ -396,10 +451,17 @@ def build_application(
     resolved = data_dir or ConfigPaths.default().repo_root / "data"
 
     pipeline = Pipeline(clock, geometry, resolved)
-    if live:
-        pipeline.attach_live_sensors()
-    elif scenario:
-        pipeline.attach_scenario(scenario)
+    try:
+        if live:
+            pipeline.attach_live_sensors()
+        elif scenario:
+            pipeline.attach_scenario(scenario)
+    except Exception:
+        # Attaching opens streams and ports. If anything after that fails, the process may
+        # still exit — `guard_bind` refuses some deployments outright — and a half-built
+        # application must not leave a camera's reader thread and socket owned by nobody.
+        pipeline.close()
+        raise
 
     services = ApiServices(
         clock=clock,
@@ -420,6 +482,10 @@ def build_application(
         classification_running=True,
         situation=pipeline.risk,
         run_mode=RunMode.LIVE if live else RunMode.SIMULATION,
+        # Read live, so the interface's simulated-versus-real banner reflects what is actually
+        # attached rather than what the launch flag claimed. A run started with --live but
+        # carrying only fabricating sources must not be shown to an operator as real data.
+        sensor_adapters=lambda: pipeline.adapters,
     )
 
     app = create_app(services)
@@ -553,7 +619,7 @@ def main() -> None:
         # cause rather than a traceback. Starting anyway with the sensor omitted would be
         # worse: the system would run, look healthy, and be watching nothing.
         raise SystemExit(f"\n  {bad_config}\n") from bad_config
-    except ValueError as conflict:
+    except RunModeConflict as conflict:
         raise SystemExit(f"\n  {conflict}\n") from conflict
 
     # After the application is built, so the account count is a real read of the database rather

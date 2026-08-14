@@ -88,15 +88,19 @@ def _attach_with_stubbed_camera(pipeline: Pipeline, clock: SimClock) -> _Scripte
     sensors = build_live_sensors(clock=clock, frame=pipeline.geometry.frame, config=config)
 
     frames = _ScriptedFrames()
+    stubbed = 0
     for sensor in sensors:
-        source = getattr(sensor.adapter, "_source", None)
-        if source is not None:
+        if hasattr(sensor.adapter, "_source"):
             sensor.adapter._source = frames  # noqa: SLF001 - stubbing the hardware boundary
+            stubbed += 1
+    assert stubbed, (
+        "no adapter exposed a frame source to stub. A sensor added to build_live_sensors that "
+        "names its hardware boundary differently would otherwise open real hardware here, and "
+        "the suite would quietly start depending on a handset being on the network."
+    )
 
-    pipeline._adapters = [sensor.adapter for sensor in sensors]  # noqa: SLF001
-    pipeline._persist_live_sensors(sensors)  # noqa: SLF001
-    for sensor in sensors:
-        sensor.adapter.start()
+    # The production start path, guards and all — not a reimplementation of it.
+    pipeline.start_live_sensors(sensors)
     return frames
 
 
