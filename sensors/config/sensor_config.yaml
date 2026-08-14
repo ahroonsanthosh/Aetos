@@ -92,15 +92,30 @@ camera:
   motion:
     # Minimum contiguous moving area, in pixels, before a region counts as motion. Below this
     # is sensor noise, foliage and compression artefacts.
-    min_area_px: 400
+    #
+    # Raised from 400 after a bench run against the real phone stream (~1920x1080) showed
+    # dozens of scattered false regions per frame, most in the 2,000-14,000 px range — MJPEG
+    # block noise and auto-exposure jitter, not motion. 400 px is under 0.02% of that frame
+    # and was never going to hold at this resolution.
+    min_area_px: 3000
 
     # Per-pixel intensity delta counted as changed, 0-255. Lower is more sensitive.
+    #
+    # Not read by the live camera path: `CameraAdapter` builds its `BackgroundSubtractor` from
+    # `background_history` and `background_var_threshold` only. This field feeds
+    # `frame_difference()`, the alternative frame-to-frame detector in `motion_detector.py`
+    # that nothing currently calls. Left as-is; noted here so it isn't mistaken for a live knob.
     sensitivity_threshold: 25
 
     # Frames of history the background model retains, and how readily it treats a change as
     # part of the background.
+    #
+    # var_threshold raised from 32.0 for the same bench run: MOG2 was calling ordinary
+    # per-pixel compression and exposure noise "foreground" well before anything moved. This
+    # is the knob that actually suppresses that — min_area_px alone could not, since several
+    # of the false regions observed were themselves comfortably above the old area floor.
     background_history: 300
-    background_var_threshold: 32.0
+    background_var_threshold: 75.0
 
   classifier:
     # Model weights. Resolved by the inference library; a filename means a bundled model.
