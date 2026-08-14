@@ -180,6 +180,10 @@ def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
         REPO_ROOT / "tests" / "unit" / "test_module_boundaries.py",
         SENSORS / "tests" / "test_camera_adapter.py",
         SENSORS / "tests" / "test_motion_detector.py",
+        # A manual bench script for the camera adapter necessarily names its concrete
+        # frame source to wrap it for on-the-wire diagnostics; it is not collected by pytest
+        # and is run by hand against real hardware, same rationale as the two tests above.
+        SENSORS / "tests" / "manual_camera_test.py",
     }
 
     violations: list[str] = []

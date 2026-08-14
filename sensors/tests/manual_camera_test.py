@@ -39,7 +39,11 @@ import numpy as np
 
 from backend.common.clock import SystemClock
 from backend.common.geodesy import GeodeticPoint, LocalFrame
-from sensors.adapters.camera.camera_adapter import CameraAdapter
+from sensors.adapters.camera.camera_adapter import (
+    CameraAdapter,
+    FrameSource,
+    VideoCaptureFrameSource,
+)
 from sensors.adapters.camera.motion_detector import BackgroundSubtractor, MotionRegion
 from sensors.adapters.interface import SensorState
 from sensors.config.loader import SensorConfig, SensorConfigError, load_sensor_config
@@ -47,6 +51,39 @@ from sensors.schemas.detection import Detection
 
 DEFAULT_DURATION_S = 60.0
 DEFAULT_INTERVAL_S = 1.5
+
+
+class DiagnosticFrameSource:
+    """Wraps the real stream source and remembers what actually came off the wire.
+
+    `get_detections()` returns `[]` both when a frame failed to decode and when a frame
+    decoded fine but nothing moved in it — from the adapter's side those are indistinguishable
+    on purpose, but on the bench they are two completely different problems with two
+    completely different fixes, so this exists to tell them apart.
+    """
+
+    def __init__(self, inner: FrameSource) -> None:
+        self._inner = inner
+        self.frames_read = 0
+        self.frames_failed = 0
+        self.last_shape: tuple[int, ...] | None = None
+        self.last_mean_brightness: float | None = None
+
+    def open(self) -> bool:
+        return self._inner.open()
+
+    def read(self) -> np.ndarray | None:
+        frame = self._inner.read()
+        if frame is None:
+            self.frames_failed += 1
+            return None
+        self.frames_read += 1
+        self.last_shape = frame.shape
+        self.last_mean_brightness = float(frame.mean())
+        return frame
+
+    def close(self) -> None:
+        self._inner.close()
 
 
 class RegionRecordingDetector(BackgroundSubtractor):
@@ -156,10 +193,12 @@ def run(duration_s: float, interval_s: float) -> int:
         var_threshold=config.camera.motion.background_var_threshold,
         min_area_px=config.camera.motion.min_area_px,
     )
+    source = DiagnosticFrameSource(VideoCaptureFrameSource(config.camera.stream_url))
     adapter = CameraAdapter(
         clock=clock,
         config=config.camera,
         frame=frame,
+        frame_source=source,
         motion_detector=detector,
     )
 
@@ -211,7 +250,18 @@ def run(duration_s: float, interval_s: float) -> int:
 
             if not detections:
                 state = adapter.health().state.value
-                print(f"[{stamp}] poll {summary.polls:3d}  no motion            ({state})")
+                if source.last_shape is not None:
+                    frame_info = (
+                        f"frame {source.last_shape[1]}x{source.last_shape[0]}, "
+                        f"brightness={source.last_mean_brightness:.0f}"
+                    )
+                else:
+                    frame_info = "no frame decoded yet"
+                print(
+                    f"[{stamp}] poll {summary.polls:3d}  no motion  "
+                    f"({state}, reads={source.frames_read} fails={source.frames_failed}, "
+                    f"{frame_info})"
+                )
             else:
                 summary.polls_with_detections += 1
                 summary.detections += len(detections)
@@ -244,13 +294,22 @@ def run(duration_s: float, interval_s: float) -> int:
     for error in summary.errors:
         print(f"      {error}")
     print(f"  adapter final state    : {final_health.state.value} — {final_health.reason}")
+    print(f"  frames decoded         : {source.frames_read}")
+    print(f"  frame reads failed     : {source.frames_failed}")
 
     if summary.detections == 0:
         print()
-        print("  No motion at all. Before suspecting the adapter: the background model needs")
-        print("  ~15 frames to settle, the moving thing has to cover more than")
-        print(f"  {config.camera.motion.min_area_px} px in the frame, and a scene that was")
-        print("  already moving when the run started gets learned as background.")
+        if source.frames_read == 0:
+            print("  No frame was ever decoded — every read() call failed. This is a stream")
+            print("  problem, not a motion-detection problem: the background model never saw")
+            print("  real pixels, so it could not have detected anything regardless of what")
+            print("  was in front of the camera. Check the stream URL in a browser or VLC.")
+        else:
+            print("  No motion at all, but frames were decoding. Before suspecting the")
+            print("  adapter: the background model needs ~15 frames to settle, the moving")
+            print(f"  thing has to cover more than {config.camera.motion.min_area_px} px in")
+            print("  the frame, and a scene that was already moving when the run started")
+            print("  gets learned as background.")
 
     return 0
 
