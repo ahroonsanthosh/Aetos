@@ -83,11 +83,125 @@ class StubRadarConfig(_Strict):
         return self
 
 
+class SerialConfig(_Strict):
+    """How to reach a serial device. The one thing that changes per host."""
+
+    port: str = Field(min_length=1)
+    """Device path or name. `/dev/ttyUSB0` on Linux, `COM3` on Windows."""
+
+    baud: int = Field(gt=0)
+    read_timeout_s: float = Field(gt=0.0)
+    """How long a read blocks before returning what it has. Bounds how long shutdown waits."""
+
+    reconnect_backoff_s: float = Field(default=1.0, gt=0.0)
+
+
+class RadarCoverage(_Strict):
+    """What the unit can physically observe. Used to reject returns it could not have made.
+
+    A radar reporting a target beyond its own maximum range is reporting a decode error or a
+    multipath artefact, not a target. Bounding it here means the adapter discards it rather
+    than the pipeline tracking a contact that cannot exist.
+    """
+
+    min_range_m: float = Field(ge=0.0)
+    max_range_m: float = Field(gt=0.0)
+    horizontal_fov_deg: float = Field(gt=0.0, le=360.0)
+
+    min_speed_mps: float = Field(default=0.0, ge=0.0)
+    """Doppler floor. A target slower than this is invisible to the sensor however close it is.
+
+    Not a filter but a statement of capability: it is why a hovering target produces nothing,
+    and recording it is what stops that silence being read as an empty sky (FM-010)."""
+
+    max_speed_mps: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> RadarCoverage:
+        if self.max_range_m <= self.min_range_m:
+            raise ValueError("max_range_m must exceed min_range_m")
+        if self.max_speed_mps <= self.min_speed_mps:
+            raise ValueError("max_speed_mps must exceed min_speed_mps")
+        return self
+
+
+class RadarUncertainty(_Strict):
+    """How wrong the unit's measurements are, per axis, in its own frame.
+
+    Separate axes because a radar's error is strongly anisotropic — precise in range, coarse in
+    cross-range — and collapsing that into one number makes the downstream filter confident in
+    a direction the sensor is not. Mirrors the simulated sensor model's `Uncertainty` so the
+    two describe a sensor the same way.
+    """
+
+    range_sigma_m: float = Field(gt=0.0)
+    """One-sigma along the line of sight. A radar's strongest axis."""
+
+    cross_range_sigma_m: float = Field(gt=0.0)
+    """Floor on cross-range error, independent of range."""
+
+    cross_range_sigma_mrad: float = Field(gt=0.0)
+    """Angular component, which grows the cross-range error with range. Combined with the floor
+    above rather than replacing it: a constant would be wrong at both ends of the envelope."""
+
+    vertical_sigma_m: float = Field(gt=0.0)
+    """One-sigma on height.
+
+    For a unit with no elevation channel this is not a measurement error, it is the depth of
+    the system's ignorance: the target is somewhere within the sensor's vertical beam and
+    nothing narrows it further. It should be of the same order as the maximum range, and
+    stating it honestly is what stops the filter inventing an altitude."""
+
+    def cross_range_sigma_at(self, range_m: float) -> float:
+        """Cross-range one-sigma at a given range, floor and angular term combined."""
+        return max(self.cross_range_sigma_m, range_m * self.cross_range_sigma_mrad / 1000.0)
+
+
+class RadarSignal(_Strict):
+    """Mapping the device's native signal-strength figure onto a confidence.
+
+    The device reports an integer on a scale of its own. It is not decibels and must not be
+    reported as `snr_db`; this block is what turns it into the 0-1 confidence the schema
+    defines, on a scale somebody has actually checked.
+    """
+
+    strength_min: int = Field(ge=0, le=255)
+    """Reported strength mapping to the lowest confidence. Below it, targets are discarded."""
+
+    strength_max: int = Field(ge=0, le=255)
+    confidence_min: float = Field(ge=0.0, le=1.0)
+    confidence_max: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> RadarSignal:
+        if self.strength_max <= self.strength_min:
+            raise ValueError("strength_max must exceed strength_min")
+        if self.confidence_max <= self.confidence_min:
+            raise ValueError("confidence_max must exceed confidence_min")
+        return self
+
+    def confidence_for(self, strength: int) -> float:
+        """Linear interpolation, clamped. Never 1.0 unless configured so — a radar return is
+        evidence of an object, not proof of one."""
+        span = self.strength_max - self.strength_min
+        fraction = (strength - self.strength_min) / span
+        fraction = min(1.0, max(0.0, fraction))
+        return self.confidence_min + fraction * (self.confidence_max - self.confidence_min)
+
+
 class RadarConfig(_Strict):
     sensor_id: str = Field(min_length=1, max_length=64)
     position_enu: PositionEnu = PositionEnu()
     boresight_deg: float = Field(default=0.0, ge=0.0, lt=360.0)
     stub: StubRadarConfig
+
+    serial: SerialConfig | None = None
+    """Absent while the stub is in use. Required by any adapter that talks to real hardware,
+    which raises rather than inventing a port if it is missing."""
+
+    coverage: RadarCoverage | None = None
+    uncertainty: RadarUncertainty | None = None
+    signal: RadarSignal | None = None
 
 
 class MotionConfig(_Strict):

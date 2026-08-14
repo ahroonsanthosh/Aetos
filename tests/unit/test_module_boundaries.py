@@ -188,6 +188,9 @@ def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
         # cannot be tested through a mock, since a mock only ever confirms the behaviour it
         # was written to expect — which is exactly how the original lag bug survived review.
         SENSORS / "tests" / "test_video_capture_frame_source.py",
+        # Tests the radar's wire format, which cannot be discussed without naming it. Lives
+        # outside adapters/radar only because every sensor test lives in sensors/tests.
+        SENSORS / "tests" / "test_ld2451_protocol.py",
         # The composition point. It constructs the concrete adapters and documents the swap,
         # so it necessarily names them; that is its entire purpose and the reason the rest of
         # the codebase does not have to. See test_only_the_composition_point_names_a_concrete
@@ -195,13 +198,26 @@ def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
         SENSORS / "live.py",
     }
 
+    # Narrow, per-term exemptions. A whole-file exemption would let a model name follow a
+    # generic one into the same file, which is exactly the leak this rule exists to catch.
+    generic_vocabulary = {
+        # The config schema names what a deployment configures, and a serial device's baud
+        # rate is a deployment fact that has to be nameable. Generic transport vocabulary
+        # rather than model-specific knowledge: any serial sensor needs it, so it does not
+        # make a swap larger. A model name in this file would still fail.
+        SENSORS / "config" / "loader.py": {"baud"},
+    }
+
     violations: list[str] = []
     for owner, terms in confined.items():
         for source in _python_sources(BACKEND, SENSORS):
             if owner in source.parents or source in allowed_elsewhere:
                 continue
+            permitted = generic_vocabulary.get(source, frozenset())
             lowered = source.read_text().lower()
             for term in terms:
+                if term in permitted:
+                    continue
                 if term in lowered:
                     violations.append(
                         f"{source.relative_to(REPO_ROOT)} contains {term!r}, "

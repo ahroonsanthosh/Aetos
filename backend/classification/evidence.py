@@ -52,6 +52,29 @@ class TrackEvidence:
     hint_quality: tuple[float, ...] = ()
     """Per-hint detection quality confidence, positionally matched to `hints`."""
 
+    altitude_measured: bool = True
+    """Whether any sensor contributing to this track actually measured height.
+
+    False for a track built only from sources with no elevation channel — a bearing-only
+    camera, or a radar that reports azimuth and range and nothing else. For those the track's
+    altitude is the sensor's own mounting height propagated through the filter: a constant
+    nobody observed.
+
+    It matters because `KinematicProfile.membership` takes a geometric mean, where a zero in
+    any dimension is decisive. A constant assumed altitude is therefore not neutral — it is a
+    silent, permanent veto of every label whose altitude band excludes it. On a radar sited a
+    few metres up, that veto lands on `vehicle`, which for a ground-looking radar is among the
+    likeliest true labels for its clutter. Ruling it out on the basis of a number nobody
+    measured is exactly the kind of confident wrongness the provenance rules exist to prevent
+    (ADR 0002).
+
+    Defaults True so that existing sources, which do measure height, are unaffected."""
+
+    vertical_rate_measured: bool = True
+    """As `altitude_measured`, for rate of climb. A sensor that cannot measure height cannot
+    measure its derivative either, and a filter fed a constant altitude reports a vertical rate
+    that is noise about zero."""
+
 
 class EvidenceSource(ABC):
     """One way of forming an opinion about what a track is."""
@@ -194,18 +217,28 @@ class KinematicProfile(BaseModel):
     marginal envelope match alone."""
 
     def membership(self, evidence: TrackEvidence) -> float:
-        """Geometric mean across dimensions, so a single hard disagreement is decisive.
+        """Geometric mean across the dimensions that were actually measured.
 
         An arithmetic mean would let a class survive an impossible altitude on the strength of
         a plausible speed — a ground vehicle at 400 m would still score respectably. The
         geometric mean sends any zero to zero, which is the correct behaviour for a dimension
         that genuinely rules a class out.
+
+        That decisiveness is only correct for a dimension somebody measured. An unmeasured one
+        is *excluded* rather than scored: including it would let a sensor's mounting height
+        veto a label, which is a confident conclusion drawn from an absence of data. Excluding
+        it narrows the evidence rather than corrupting it, and the classifier's own weighting
+        already discounts a thin case (ADR 0002).
+
+        With every dimension unmeasured there is nothing to say, and the profile abstains at
+        zero rather than returning a number it cannot support.
         """
-        memberships = (
-            self.speed_mps.membership(evidence.speed_mps),
-            self.altitude_m.membership(evidence.altitude_m),
-            self.vertical_rate_mps.membership(evidence.vertical_rate_mps),
-        )
+        memberships = [self.speed_mps.membership(evidence.speed_mps)]
+        if evidence.altitude_measured:
+            memberships.append(self.altitude_m.membership(evidence.altitude_m))
+        if evidence.vertical_rate_measured:
+            memberships.append(self.vertical_rate_mps.membership(evidence.vertical_rate_mps))
+
         if any(m <= 0.0 for m in memberships):
             return 0.0
         return math.exp(sum(math.log(m) for m in memberships) / len(memberships))

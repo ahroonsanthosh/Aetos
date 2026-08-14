@@ -58,6 +58,57 @@ radar:
     # Fixed seed makes a bench run reproducible. Null draws from OS entropy.
     seed: 20250814
 
+  # --- Physical unit. Ignored by the stub; required by the real adapter. ---
+  #
+  # Every value below is a starting point, not a measurement. The bring-up procedure in
+  # docs/radar_bringup.md is what turns them into figures worth trusting, and until it has been
+  # run the adapter's output is plausible rather than correct.
+  serial:
+    # Device path. /dev/ttyUSB0 on Linux with a USB-serial bridge, COM3 or similar on Windows.
+    port: "/dev/ttyUSB0"
+    baud: 115200
+
+    # How long a read blocks before returning what it has. Also bounds how long shutdown waits
+    # on the reader, so it is kept short.
+    read_timeout_s: 0.2
+    reconnect_backoff_s: 1.0
+
+  coverage:
+    # What the unit can physically observe. A return outside these bounds is a decode error or
+    # a multipath artefact, not a target, and the adapter discards it rather than letting the
+    # pipeline track a contact that cannot exist.
+    min_range_m: 1.0
+    max_range_m: 100.0
+    horizontal_fov_deg: 120.0
+
+    # Doppler floor: a target slower than this is invisible however close it is. This is the
+    # single most important honesty parameter for this sensor — it is why a hovering target
+    # produces nothing, and why that silence must not be read as an empty sky (FM-010).
+    min_speed_mps: 1.0
+    max_speed_mps: 60.0
+
+  uncertainty:
+    # Anisotropic by nature: a radar is precise in range and coarse across it. Reported as a
+    # full covariance so the filter cannot become confident in a direction the sensor is not.
+    range_sigma_m: 1.5
+    cross_range_sigma_m: 2.0
+    cross_range_sigma_mrad: 130.0
+
+    # Not a measurement error — the depth of the system's ignorance. This unit has no elevation
+    # channel at all, so a target is somewhere within its vertical beam and nothing narrows it
+    # further. Of the same order as max_range_m on purpose: understating it would let the
+    # filter invent an altitude nobody measured.
+    vertical_sigma_m: 100.0
+
+  signal:
+    # The device's native strength figure is not decibels and is never reported as snr_db.
+    # This maps it onto the 0-1 confidence the schema defines. Deliberately short of 1.0: a
+    # radar return is evidence of an object, not proof of one.
+    strength_min: 20
+    strength_max: 200
+    confidence_min: 0.35
+    confidence_max: 0.9
+
 camera:
   sensor_id: "camera-bench-01"
 

@@ -326,3 +326,96 @@ def test_configured_profiles_load_and_cover_the_expected_labels() -> None:
 
     labels = {profile.label for profile in kinematic._profiles}
     assert {SMALL, BIRD, VEHICLE} <= labels
+
+
+class TestUnmeasuredDimensions:
+    """A dimension nobody measured must abstain, not veto.
+
+    This is the failure mode a radar introduces. A unit with no elevation channel reports a
+    track at the sensor's own mounting height — a constant, not an observation — and the
+    geometric mean in `KinematicProfile.membership` turns any zero into a decisive zero. So an
+    assumed altitude silently and permanently rules out every label whose band excludes it,
+    which for a ground-sited radar is `vehicle`: among the likeliest true labels for its
+    clutter, excluded on the basis of a number nobody measured.
+    """
+
+    @staticmethod
+    def _profile() -> KinematicProfile:
+        return KinematicProfile(
+            label=ClassificationLabel.VEHICLE,
+            speed_mps=Band(absolute_min=0.0, typical_min=2.0, typical_max=30.0, absolute_max=55.0),
+            altitude_m=Band(
+                absolute_min=-30.0, typical_min=-5.0, typical_max=15.0, absolute_max=40.0
+            ),
+            vertical_rate_mps=Band(
+                absolute_min=-3.0, typical_min=-0.5, typical_max=0.5, absolute_max=3.0
+            ),
+            prior=0.25,
+        )
+
+    @staticmethod
+    def _evidence(**overrides) -> TrackEvidence:
+        base = {
+            "track_id": "TRK-00001",
+            "speed_mps": 12.0,
+            "altitude_m": 62.0,  # a site reference altitude, not a measurement
+            "vertical_rate_mps": 0.0,
+            "detection_count": 6,
+            "coasting": False,
+        }
+        base.update(overrides)
+        return TrackEvidence(**base)
+
+    def test_an_assumed_altitude_vetoes_the_label_when_treated_as_measured(self) -> None:
+        """The trap, stated as a test so it cannot be reintroduced silently."""
+        membership = self._profile().membership(self._evidence(altitude_measured=True))
+
+        assert membership == 0.0
+
+    def test_the_same_track_is_scored_on_speed_alone_when_altitude_is_unmeasured(self) -> None:
+        """The fix: exclude the dimension rather than let it decide."""
+        membership = self._profile().membership(
+            self._evidence(altitude_measured=False, vertical_rate_measured=False)
+        )
+
+        assert membership > 0.0
+
+    def test_a_measured_altitude_still_rules_a_label_out(self) -> None:
+        """The abstention must not cost the classifier its ability to exclude.
+
+        Ruling out a ground vehicle at 400 m is the main thing kinematic evidence is for, and
+        that must keep working wherever a sensor genuinely measured the height.
+        """
+        membership = self._profile().membership(
+            self._evidence(altitude_m=400.0, altitude_measured=True)
+        )
+
+        assert membership == 0.0
+
+    def test_speed_still_rules_a_label_out_when_altitude_abstains(self) -> None:
+        """Excluding a dimension narrows the evidence; it does not disable the rest of it."""
+        membership = self._profile().membership(
+            self._evidence(speed_mps=90.0, altitude_measured=False, vertical_rate_measured=False)
+        )
+
+        assert membership == 0.0
+
+    def test_excluding_a_dimension_does_not_inflate_the_score(self) -> None:
+        """A thinner case must not score higher than a complete one that agrees throughout.
+
+        The geometric mean is renormalised over the dimensions that remain, so abstaining
+        cannot manufacture confidence — which would be the opposite failure to the one this
+        fixes.
+        """
+        profile = self._profile()
+        agreeing = self._evidence(altitude_m=5.0, altitude_measured=True)
+        abstaining = self._evidence(altitude_measured=False, vertical_rate_measured=False)
+
+        assert profile.membership(abstaining) <= profile.membership(agreeing)
+
+    def test_dimensions_are_measured_by_default(self) -> None:
+        """Existing sources measure height. The change must not alter their behaviour."""
+        evidence = self._evidence()
+
+        assert evidence.altitude_measured is True
+        assert evidence.vertical_rate_measured is True
