@@ -75,9 +75,8 @@ class TrackEvidence:
 
     Closing that needs a track to carry its altitude provenance, which is a schema change with
     its own consequences. Recorded here rather than half-wired, because a flag that looks
-    connected and is not is worse than one that plainly is not: see
-    `sensors/adapters/radar/ld2451_radar_adapter.py`, whose implementation notes name this as a
-    required step.
+    connected and is not is worse than one that plainly is not. The adapter for any sensor
+    without an elevation channel carries the same note in its implementation requirements.
 
     Defaults True so that existing sources, which do measure height, are unaffected."""
 
