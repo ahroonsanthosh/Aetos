@@ -282,3 +282,23 @@ def test_only_the_composition_point_names_a_concrete_adapter() -> None:
         "concrete sensor adapters must be named only in sensors/live.py, so that replacing a "
         "sensor is a change to that one file:\n  " + "\n  ".join(violations)
     )
+
+
+def test_every_site_file_loads() -> None:
+    """A site nobody loads is a site that has quietly rotted.
+
+    Site files are strict-validated at startup, so a malformed one fails the run rather than
+    degrading it. That is the right behaviour and it means a broken site is only discovered
+    when somebody tries to use it — on the bench, typically. This loads all of them.
+    """
+    from backend.zones.geometry import load_site_geometry
+
+    sites = sorted((REPO_ROOT / "config" / "sites").glob("*.json"))
+    assert sites, "no site configurations found"
+
+    for path in sites:
+        geometry = load_site_geometry(path.stem)
+        assert geometry.site.site_id == path.stem, (
+            f"{path.name} declares site_id {geometry.site.site_id!r}; the filename is what "
+            "--site takes, so a mismatch means the file a reviewer reads is not the one loaded"
+        )

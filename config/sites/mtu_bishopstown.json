@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0.0",
+  "site_id": "mtu_bishopstown",
+  "name": "MTU Bishopstown (bench)",
+  "reference": {
+    "latitude": 51.8845,
+    "longitude": -8.533,
+    "altitude_m": 60.0
+  },
+  "protected_radius_m": 60.0,
+  "zones": [
+    {
+      "zone_id": "bench_core",
+      "name": "Bench protected core",
+      "kind": "protected",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 51.8845,
+          "longitude": -8.533
+        },
+        "radius_m": 60.0
+      }
+    },
+    {
+      "zone_id": "bench_inner",
+      "name": "Inner restricted ring",
+      "kind": "restricted",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 51.8845,
+          "longitude": -8.533
+        },
+        "radius_m": 150.0
+      }
+    },
+    {
+      "zone_id": "bench_outer",
+      "name": "Outer monitored ring",
+      "kind": "monitored",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 51.8845,
+          "longitude": -8.533
+        },
+        "radius_m": 400.0
+      }
+    }
+  ],
+  "sensors": []
+}

@@ -123,3 +123,40 @@ Five sensor placements referencing three registry keys, one of them disabled so 
 Vertex coordinates were generated from intended ENU offsets and rounded to seven decimal places,
 which places them within a few millimetres of the round metre figures above. Tests assert
 against those figures with tolerance rather than exactly, because the rounding is in the data.
+
+## Changing where the system thinks it is
+
+A site is one JSON file here, selected at startup:
+
+```bash
+python -m backend.main --live --site mtu_bishopstown
+```
+
+Everything geographic follows from `reference`: it anchors the local ENU frame, and every
+detection's position is computed relative to it. Sensor offsets in
+`sensors/config/sensor_config.yaml` are `position_enu` values *within* that frame, so moving
+the site moves the sensors with it and no sensor configuration changes.
+
+### `mtu_bishopstown.json`
+
+A bench site for live runs on campus. Two things about it differ from the simulated site and
+are deliberate:
+
+- **The coordinates are approximate.** They were not surveyed. Before trusting any bearing or
+  range the system reports, replace `reference` with a GPS reading taken at the actual sensor
+  position — an error here shifts the entire picture by the same amount, silently, because
+  nothing downstream can tell a wrong origin from a correct one. `altitude_m` is metres above
+  the WGS-84 ellipsoid, not above ground and not above sea level (FM-004).
+- **Zone radii are small** (60 m / 150 m / 400 m) and `sensors` is empty. A 335 mm airframe is
+  detectable to roughly 20-30 m, so the simulated site's 800 m protected core would put every
+  contact inside the innermost zone and make zone behaviour untestable at bench scale. The
+  sensor list is empty because a live run takes its sensors from `sensor_config.yaml` and
+  replaces whatever the site file lists; leaving simulated placements here would draw sensors
+  on the operator map that are not on the bench.
+
+### Adding another site
+
+Copy an existing file, change `site_id` to match the new filename, and set `reference` and the
+zone geometry. The loader is strict — an unknown key is an error rather than an ignored line,
+so a typo fails at startup instead of silently leaving a zone unconfigured. Comments are not
+permitted in the JSON for the same reason; notes about a site belong here.
