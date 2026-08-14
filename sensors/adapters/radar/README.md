@@ -15,6 +15,23 @@ Enforced by `tests/unit/test_module_boundaries.py`, not by convention.
 |---|---|
 | `stub_radar_adapter.py` | **Active.** Fabricated returns, no sensor, no truth source. |
 | `ld2451_radar_adapter.py` | **Empty shell.** Every method raises `NotImplementedError`. |
+| `ld2451_protocol.py` | **Done and tested.** Byte stream in, target reports out. |
+
+## What is already finished
+
+`ld2451_protocol.py` is the wire format, built and tested before the hardware exists. Framing a
+byte stream is where serial drivers actually fail — not in the arithmetic but in
+resynchronising after a partial read, a dropped byte, or a payload that happens to spell the
+header — and all of that is testable against synthesised bytes. 23 tests cover resync after
+garbage, frames arriving one byte at a time, a header sequence inside a payload, a corrupt
+length field that would otherwise stall the reader forever, and a bounded buffer so a wrong
+baud rate cannot exhaust memory.
+
+What those tests do **not** cover is whether the byte-level constants match the device. They
+synthesise frames with the same `WireFormat` they parse with, so they prove the algorithm and
+say nothing about the values. Every constant is unverified; `docs/radar_bringup.md` is the
+procedure that settles them, and `WireFormat` is a value rather than scattered literals so that
+correcting one is a data change with every test still applying.
 
 ## The stub is not the simulator
 

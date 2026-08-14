@@ -47,7 +47,11 @@ radar:
 
     bearing_deg: {min: 0.0, max: 360.0}
     range_m: {min: 5.0, max: 500.0}
-    velocity_mps: {min: 0.0, max: 25.0}
+    # Spans both signs on purpose. Canonical convention is negative toward the sensor, so a
+    # range starting at zero would emit only receding targets and never exercise the closing
+    # case — which is both the operationally interesting one and the one a real adapter is
+    # most likely to get backwards.
+    velocity_mps: {min: -25.0, max: 25.0}
     confidence: {min: 0.4, max: 0.95}
 
     # One-sigma positional uncertainty attached to every stub return. Deliberately generous:

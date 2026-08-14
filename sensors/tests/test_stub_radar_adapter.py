@@ -204,3 +204,25 @@ def test_health_counts_what_it_emitted(config, clock, frame) -> None:
     assert health.detections_emitted == len(detections)
     assert health.last_detection_time == detections[-1].timestamp
     assert health.sensor_id == config.radar.sensor_id
+
+
+def test_the_stub_emits_targets_moving_in_both_directions(config, clock, frame) -> None:
+    """Closing and receding must both occur, or the sign path is never exercised.
+
+    Radial velocity is signed negative toward the sensor. A stub configured to emit only
+    positive values would leave that convention untested end to end — and inverting it is the
+    single most consequential mistake a real radar adapter can make, because the result is
+    entirely plausible: tracks that open when they are closing.
+    """
+    adapter = _build(config, clock, frame)
+    adapter.start()
+
+    velocities = [
+        d.kinematics.radial_velocity_mps
+        for d in _poll(adapter, clock, n=600)
+        if d.kinematics is not None and d.kinematics.radial_velocity_mps is not None
+    ]
+
+    assert velocities, "no radial velocities emitted"
+    assert any(v < 0 for v in velocities), "no closing target in 600 polls"
+    assert any(v > 0 for v in velocities), "no receding target in 600 polls"

@@ -76,8 +76,10 @@ class StubRadarConfig(_Strict):
             raise ValueError("confidence range must lie within [0, 1]")
         if self.range_m.min < 0.0:
             raise ValueError("range_m must be non-negative")
-        if self.velocity_mps.min < 0.0:
-            raise ValueError("velocity_mps must be non-negative")
+        # Negative is permitted and expected: the canonical convention signs radial velocity
+        # negative toward the sensor, and a stub that only ever emitted receding targets would
+        # leave the sign path — the thing a real adapter is most likely to invert — exercised
+        # by nothing at all.
         if self.bearing_deg.min < 0.0 or self.bearing_deg.max > 360.0:
             raise ValueError("bearing_deg range must lie within [0, 360]")
         return self
