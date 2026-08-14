@@ -110,12 +110,18 @@ camera:
     # Frames of history the background model retains, and how readily it treats a change as
     # part of the background.
     #
-    # var_threshold raised from 32.0 for the same bench run: MOG2 was calling ordinary
-    # per-pixel compression and exposure noise "foreground" well before anything moved. This
-    # is the knob that actually suppresses that — min_area_px alone could not, since several
-    # of the false regions observed were themselves comfortably above the old area floor.
+    # var_threshold raised from 32.0, then from 75.0, across two bench runs against the real
+    # phone stream. 75.0 cut false regions per run from 443 to 33, but a run with the hand
+    # kept fully out of frame the whole time still produced all 33 — confirmed false, not
+    # under-sensitive detection. The remaining pattern (several large regions appearing at
+    # once, scattered across the frame) is auto-exposure/white-balance hunting on the phone,
+    # not per-pixel sensor noise, which is why this alone may not fully clear it: a wide
+    # enough exposure swing shifts pixels by as much as real motion does. If detections with
+    # nothing in frame persist after this, the fix is on the phone (lock auto-exposure /
+    # white balance in the camera app) rather than a further increase here — pushing this
+    # value past what real motion needs starts risking missed genuine detections instead.
     background_history: 300
-    background_var_threshold: 75.0
+    background_var_threshold: 120.0
 
   classifier:
     # Model weights. Resolved by the inference library; a filename means a bundled model.
