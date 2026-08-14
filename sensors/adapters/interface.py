@@ -168,3 +168,35 @@ class SensorAdapter(ABC):
     @abstractmethod
     def health(self) -> SensorHealth:
         """Current self-report. Cheap to call — the watchdog polls it on every cycle."""
+
+    # ------------------------------------------------------------------
+    # Connection-oriented vocabulary
+    #
+    # `start`/`stop`/`health` above are the contract; the three below are the same lifecycle
+    # named the way an adapter holding an open link to a device tends to be described. They
+    # are concrete and delegate, so there is exactly one implementation of each lifecycle step
+    # per adapter and no way for the two spellings to disagree.
+    # ------------------------------------------------------------------
+
+    def connect(self) -> bool:
+        """`start()`, reporting whether the adapter came up able to observe.
+
+        Returns False rather than raising when a source is merely unreachable: a phone that
+        is not on the network yet is an operational condition, not a wiring error, and the
+        caller decides whether to retry. Genuine misconfiguration still raises.
+        """
+        self.start()
+        return self.health_check()
+
+    def disconnect(self) -> None:
+        """`stop()`. Idempotent."""
+        self.stop()
+
+    def health_check(self) -> bool:
+        """Whether this source is currently observing at full capability.
+
+        A coarse boolean for callers that only need to know whether to keep polling. Anything
+        making a judgement about a sensor — the watchdog especially — reads `health()`
+        instead, because DEGRADED and OFFLINE are different problems and this collapses them.
+        """
+        return self.health().state is SensorState.OK

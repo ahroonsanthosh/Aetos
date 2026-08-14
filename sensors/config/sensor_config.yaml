@@ -1,0 +1,113 @@
+# Physical sensor ingestion configuration.
+#
+# Everything a bench sensor needs that is *deployment* rather than *design*: where the
+# streams are, what the thresholds are, what the sensors are called. Sensor physics belongs
+# in config/sensor_registry/ and simulation belongs in the scenario; neither is set here.
+#
+# Read by sensors/config/loader.py, which validates it strictly — a typo in a key is an
+# error, not a silently ignored line.
+
+schema_version: "1.0.0"
+
+# Where the site's local ENU frame is anchored. Sensors are placed relative to this, and
+# every emitted position is converted back to WGS-84 against it.
+#
+# Altitude is metres above the WGS-84 *ellipsoid* — not above ground, not above mean sea
+# level, not barometric. Getting this wrong is a silent error of tens of metres (FM-004).
+site_origin:
+  latitude: 51.5000
+  longitude: -0.1200
+  altitude_m: 40.0
+
+radar:
+  # Identifier this source reports on every detection. Stable across restarts: the watchdog
+  # and the event log key on it.
+  sensor_id: "radar-bench-01"
+
+  # Where the unit sits relative to the site origin, in local ENU metres.
+  position_enu:
+    east_m: 0.0
+    north_m: 0.0
+    up_m: 2.0
+
+  # Bearing of the unit's boresight, degrees clockwise from true north. Applied to the
+  # emitted bearing so that a sensor mounted facing east reports true bearings, not
+  # sensor-relative ones.
+  boresight_deg: 0.0
+
+  # --- Stub source only. Ignored by any real radar adapter. ---
+  stub:
+    # Probability that one get_detections() call emits a return. Weighted well below 1 so a
+    # bench run looks like a quiet sky with occasional contacts, not a firehose.
+    emission_probability: 0.15
+
+    # Minimum wall-clock spacing between emissions, from the injected clock. Without this the
+    # emission probability is per-poll, and a fast poll loop turns 0.15 into a firehose again.
+    min_interval_s: 0.25
+
+    bearing_deg: {min: 0.0, max: 360.0}
+    range_m: {min: 5.0, max: 500.0}
+    velocity_mps: {min: 0.0, max: 25.0}
+    confidence: {min: 0.4, max: 0.95}
+
+    # One-sigma positional uncertainty attached to every stub return. Deliberately generous:
+    # a stub that understates uncertainty makes the downstream filter overconfident on data
+    # that is not measurement at all.
+    position_uncertainty_m: 25.0
+
+    # Fixed seed makes a bench run reproducible. Null draws from OS entropy.
+    seed: 20250814
+
+camera:
+  sensor_id: "camera-bench-01"
+
+  # Stream the adapter opens on connect(). An MJPEG/HTTP video endpoint served by a phone
+  # camera app on the local network. Replace <phone-ip> with the handset's address.
+  stream_url: "http://192.168.1.50:8080/video"
+
+  # Seconds a decoded frame may age before the adapter treats the stream as stalled and
+  # reports itself DEGRADED. A stalled stream that keeps handing back the last good frame is
+  # otherwise indistinguishable from a still scene.
+  frame_timeout_s: 3.0
+
+  position_enu:
+    east_m: 0.0
+    north_m: 0.0
+    up_m: 3.0
+
+  # Bearing of the optical axis, degrees clockwise from true north, and the horizontal field
+  # of view. Together these turn a horizontal pixel offset into a true bearing.
+  boresight_deg: 0.0
+  horizontal_fov_deg: 66.0
+
+  # A fixed monocular camera cannot measure range. It reports a bearing only, and the
+  # canonical schema requires a position, so the adapter places the detection at this nominal
+  # range along the measured bearing and attaches an uncertainty large enough to say plainly
+  # that the range is an assumption. Downstream must never read this as a measurement.
+  assumed_range_m: 150.0
+  assumed_range_uncertainty_m: 120.0
+
+  motion:
+    # Minimum contiguous moving area, in pixels, before a region counts as motion. Below this
+    # is sensor noise, foliage and compression artefacts.
+    min_area_px: 400
+
+    # Per-pixel intensity delta counted as changed, 0-255. Lower is more sensitive.
+    sensitivity_threshold: 25
+
+    # Frames of history the background model retains, and how readily it treats a change as
+    # part of the background.
+    background_history: 300
+    background_var_threshold: 32.0
+
+  classifier:
+    # Model weights. Resolved by the inference library; a filename means a bundled model.
+    model_name: "yolov8n.pt"
+
+    # Below this the crop is reported as an unknown contact rather than a named class. A
+    # confident label is worth more than a guessed one to everything downstream.
+    confidence_threshold: 0.35
+
+    # Longest edge the crop is resized to before inference. Bounds per-frame cost on a
+    # machine with no accelerator.
+    inference_size_px: 320

@@ -48,6 +48,7 @@ from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
+from sensors.adapters.interface import SensorAdapter
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
 from sensors.schemas.detection import Detection
@@ -109,7 +110,10 @@ class Pipeline:
         # alert, and an operator cannot tell an empty feed from a quiet sky.
         self.alerting.rebuild()
 
-        self._adapters: list[SimulatedSensorAdapter] = []
+        # Typed to the interface, not to the simulated adapter. `step()` polls this list and
+        # must stay unable to tell what kind of source is in it; adding a physical sensor is
+        # then an addition to whatever builds the list and no change to the loop that reads it.
+        self._adapters: list[SensorAdapter] = []
 
         # The site and its sensors are configuration the API reads back, so they are persisted
         # once at startup rather than being loaded independently by every request.

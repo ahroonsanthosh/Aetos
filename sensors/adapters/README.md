@@ -61,3 +61,10 @@ radio-frequency one, so the adapter does not pretend to know it (FM-010).
 |---|---|
 | `interface.py` | The contract |
 | `simulated/` | The simulated adapter, its sensor model, and the registry loader |
+| `radar/` | The stub radar in use today, and the empty shell for the physical unit |
+| `camera/` | The camera adapter, its motion detection and its classifier |
+
+`radar/` and `camera/` are the only directories permitted to know anything about a particular
+piece of hardware — a model number, a transport, an imaging or inference library. Both
+confinements are asserted in `tests/unit/test_module_boundaries.py` rather than left to
+convention, because a leak is invisible until the day somebody tries to swap the unit.

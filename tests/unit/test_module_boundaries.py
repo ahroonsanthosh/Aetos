@@ -153,3 +153,70 @@ def test_no_sensor_vendor_names_in_the_codebase(vendor_term: str) -> None:
     ]
 
     assert not violations, f"vendor name {vendor_term!r} appears in: {violations}"
+
+
+RADAR_ADAPTERS = SENSORS / "adapters" / "radar"
+CAMERA_ADAPTERS = SENSORS / "adapters" / "camera"
+
+
+def test_hardware_specifics_stay_inside_their_own_adapter_package() -> None:
+    """The separation the swap depends on, asserted rather than trusted.
+
+    A physical sensor is replaceable only for as long as nothing outside its own package knows
+    anything about it. The moment a model number, a transport or an imaging library name
+    appears elsewhere, swapping the unit stops being a one-file change and nobody finds out
+    until the replacement arrives.
+
+    Terms are matched against source text, so the docstring that explains a term counts as a
+    reference — deliberately. A module that needs to explain a UART is a module that knows
+    about one.
+    """
+    confined = {
+        RADAR_ADAPTERS: ("ld2451", "uart", "pyserial", "baud"),
+        CAMERA_ADAPTERS: ("cv2", "opencv", "ultralytics", "yolo", "videocapture"),
+    }
+    allowed_elsewhere = {
+        # This file names what it forbids, and the tests exercise the adapters directly.
+        REPO_ROOT / "tests" / "unit" / "test_module_boundaries.py",
+        SENSORS / "tests" / "test_camera_adapter.py",
+        SENSORS / "tests" / "test_motion_detector.py",
+    }
+
+    violations: list[str] = []
+    for owner, terms in confined.items():
+        for source in _python_sources(BACKEND, SENSORS):
+            if owner in source.parents or source in allowed_elsewhere:
+                continue
+            lowered = source.read_text().lower()
+            for term in terms:
+                if term in lowered:
+                    violations.append(
+                        f"{source.relative_to(REPO_ROOT)} contains {term!r}, "
+                        f"which belongs to {owner.relative_to(REPO_ROOT)}"
+                    )
+
+    assert not violations, (
+        "sensor hardware specifics must not leak past their own adapter package:\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_nothing_outside_its_package_imports_the_stub_radar() -> None:
+    """The stub is the one file deleted when the physical radar arrives.
+
+    Everything downstream reads `SensorAdapter`, so the only place that may name the stub
+    class is the composition point that decides which adapter to construct. Anywhere else,
+    the import would have to be found and changed during the swap.
+    """
+    violations = [
+        str(source.relative_to(REPO_ROOT))
+        for source in _python_sources(BACKEND, SENSORS)
+        if RADAR_ADAPTERS not in source.parents
+        and source not in {SENSORS / "tests" / "test_stub_radar_adapter.py"}
+        and "stub_radar_adapter" in source.read_text()
+    ]
+
+    assert not violations, (
+        "the stub radar must be importable from the composition point only; "
+        f"these modules name it directly: {violations}"
+    )
