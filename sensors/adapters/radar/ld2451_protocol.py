@@ -89,6 +89,23 @@ class WireFormat:
     without a bound the reader would wait forever for bytes that are not coming, and a stalled
     reader is indistinguishable from a quiet sky (FM-010)."""
 
+    def representable_range_m(self) -> tuple[float, float]:
+        """Distances a single-byte field can express.
+
+        The wire format bounds the sensor's usable envelope regardless of what the datasheet
+        claims, and `radar.coverage` in configuration must sit inside it. Exposed so that
+        constraint can be asserted rather than discovered when a distant target wraps.
+        """
+        return (0.0, 255.0)
+
+    def representable_angle_deg(self) -> tuple[float, float]:
+        """Angles the biased single-byte field can express, relative to boresight."""
+        return (float(-self.angle_offset), float(255 - self.angle_offset))
+
+    def representable_speed_mps(self) -> tuple[float, float]:
+        """Speeds the single-byte field can express at the configured scale."""
+        return (0.0, 255 * self.speed_scale_mps)
+
 
 WIRE_FORMAT = WireFormat()
 """The default layout. Replace the constants here after verifying against a capture."""
@@ -304,9 +321,26 @@ def build_frame(targets: list[RawTarget], *, wire: WireFormat = WIRE_FORMAT) -> 
     for target in targets:
         speed_raw = round(abs(target.radial_velocity_mps) / wire.speed_scale_mps)
         direction = wire.approaching_flag if target.radial_velocity_mps < 0 else 0x00
+        angle_raw = int(target.angle_deg) + wire.angle_offset
+
+        # Named rather than left to `bytes()` raising "byte must be in range(0, 256)", which
+        # says nothing about which field overflowed or what the limit means. The limits are a
+        # property of the wire format, so a target outside them is one this device could not
+        # have reported — worth stating plainly wherever it is encountered.
+        for name, raw, limit in (
+            ("angle_deg", angle_raw, wire.representable_angle_deg()),
+            ("distance_m", int(target.distance_m), wire.representable_range_m()),
+            ("radial_velocity_mps", speed_raw, wire.representable_speed_mps()),
+        ):
+            if not 0 <= raw <= 255:
+                raise ProtocolError(
+                    f"{name}={getattr(target, name)} is outside what this wire format can "
+                    f"express ({limit[0]} to {limit[1]}); the device could not report it"
+                )
+
         body.extend(
             (
-                int(target.angle_deg) + wire.angle_offset,
+                angle_raw,
                 int(target.distance_m),
                 direction,
                 speed_raw,

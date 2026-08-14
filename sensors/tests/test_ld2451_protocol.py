@@ -22,6 +22,7 @@ import pytest
 from sensors.adapters.radar.ld2451_protocol import (
     WIRE_FORMAT,
     FrameDecoder,
+    ProtocolError,
     RawTarget,
     WireFormat,
     build_frame,
@@ -342,3 +343,69 @@ class TestWireFormatIsData:
 
         assert decoder.feed(build_frame([_target()])) == []
         assert decoder.stats.bytes_discarded > 0
+
+
+class TestRepresentableEnvelope:
+    """The wire format bounds the sensor's envelope, whatever the datasheet says.
+
+    Every field is a single byte, so range, angle and speed each have a hard ceiling that no
+    configuration can exceed. A configured envelope larger than the wire format would not fail
+    loudly — it would wrap, and a distant target would be reported as a near one.
+    """
+
+    def test_the_configured_coverage_fits_inside_the_wire_format(self) -> None:
+        """Guards the two files against drifting apart.
+
+        `radar.coverage` and `WireFormat` are edited for different reasons by different people:
+        one from a datasheet, one from a capture. Nothing else connects them.
+        """
+        from sensors.config.loader import load_sensor_config
+
+        coverage = load_sensor_config().radar.coverage
+        assert coverage is not None, "the radar has no configured coverage to check"
+
+        range_min, range_max = WIRE_FORMAT.representable_range_m()
+        angle_min, angle_max = WIRE_FORMAT.representable_angle_deg()
+        _, speed_max = WIRE_FORMAT.representable_speed_mps()
+
+        assert range_min <= coverage.min_range_m
+        assert coverage.max_range_m <= range_max, (
+            f"max_range_m={coverage.max_range_m} exceeds the {range_max} m the distance field "
+            "can express; a target beyond it would wrap and be reported as a near contact"
+        )
+        assert coverage.max_speed_mps <= speed_max
+        half_fov = coverage.horizontal_fov_deg / 2.0
+        assert angle_min <= -half_fov and half_fov <= angle_max
+
+    @pytest.mark.parametrize(
+        ("field", "target"),
+        [
+            ("distance_m", RawTarget(0.0, 300.0, 1.0, 100)),
+            ("angle_deg", RawTarget(200.0, 10.0, 1.0, 100)),
+            ("radial_velocity_mps", RawTarget(0.0, 10.0, 200.0, 100)),
+        ],
+    )
+    def test_an_unrepresentable_target_is_named_not_just_rejected(
+        self, field: str, target: RawTarget
+    ) -> None:
+        """"byte must be in range(0, 256)" says nothing about which field or what the limit is."""
+        with pytest.raises(ProtocolError, match=field):
+            build_frame([target])
+
+    def test_the_envelope_boundaries_themselves_round_trip(self) -> None:
+        """The limits are inclusive, so the edge of the envelope must still encode."""
+        _, range_max = WIRE_FORMAT.representable_range_m()
+        angle_min, angle_max = WIRE_FORMAT.representable_angle_deg()
+
+        decoder = FrameDecoder()
+        frames = decoder.feed(
+            build_frame(
+                [
+                    RawTarget(angle_min, range_max, 0.0, 255),
+                    RawTarget(angle_max, 0.0, 0.0, 0),
+                ]
+            )
+        )
+
+        assert [t.distance_m for t in frames[0]] == [range_max, 0.0]
+        assert [t.angle_deg for t in frames[0]] == [angle_min, angle_max]
