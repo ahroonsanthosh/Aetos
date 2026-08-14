@@ -211,8 +211,13 @@ def run(duration_s: float, interval_s: float) -> int:
     print(f"  polling    : every {interval_s:.1f}s for up to {duration_s:.0f}s (Ctrl+C to stop)")
     print()
 
-    print("Connecting…")
-    connected = adapter.connect()
+    print("Connecting… (can take up to ~30s if the stream has to retry; let it run)")
+    try:
+        connected = adapter.connect()
+    except KeyboardInterrupt:
+        print("\nInterrupted while connecting.")
+        adapter.disconnect()
+        return 130
     health = adapter.health()
 
     # OFFLINE immediately after start() means the stream would not open. DEGRADED means it
