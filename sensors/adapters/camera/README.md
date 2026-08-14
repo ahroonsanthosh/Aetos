@@ -57,3 +57,36 @@ simulator or the test suite.
 `sensors/config/sensor_config.yaml`, under `camera:`. Stream URL, mounting position and
 boresight, horizontal field of view, the assumed range and its uncertainty, motion thresholds
 and classifier thresholds.
+
+## Detection envelope
+
+Measured against synthesised frames at 1920x1080 / 66 deg, for a 335 x 253 x 95 mm airframe.
+Synthetic, so treat it as bounding the *pipeline's* behaviour, not as a field result.
+
+**Holds up:**
+
+| Condition | Result |
+|---|---|
+| Position in frame, centre to hard edge | 11/11 across a full traverse |
+| Crossing speed, 10 to 200 px/frame | 12/12 at every speed |
+| Horizontal motion blur to 41 px | 6/6 |
+| Radial approach (growing silhouette) | 30/30, never absorbed |
+| Airframe tone, 40 to 180 against sky at 205 | 6/6 at every tone |
+| Range, top aspect | 6/6 at 10 m, 15 m, 20 m; holds to ~30 m |
+| Range, side aspect | 6/6 at 10 m, 15 m, 20 m; lost by 30 m (19 x 5 px) |
+
+**Does not:**
+
+- **Against ground clutter: 0/6.** A target crossing a treeline or roofline is not detected at
+  all. MOG2 estimates variance per pixel, so a textured region demands a far larger deviation
+  than open sky does, and the target disappears into the background's own noise. Sky
+  background is a requirement, not a preference.
+- **Stationary target: absorbed after ~4 frames.** A hovering airframe, or a camera panned to
+  follow one, is learned into the background within about 6 s at the default poll. The target
+  must move across the frame, and the camera must not move at all.
+
+**Untested and unknown until a field run:** lens distortion at frame edges (a bearing-accuracy
+question rather than a detection one), true airframe contrast against real sky in varying
+cloud, daylight auto-exposure behaviour, and the stream's actual delivered resolution — nothing
+asserts the frame size, so a silently negotiated 640x480 would shrink every pixel figure above
+by three and report nothing.
