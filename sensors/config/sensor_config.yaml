@@ -110,18 +110,33 @@ camera:
     # Frames of history the background model retains, and how readily it treats a change as
     # part of the background.
     #
-    # var_threshold raised from 32.0, then from 75.0, across two bench runs against the real
-    # phone stream. 75.0 cut false regions per run from 443 to 33, but a run with the hand
-    # kept fully out of frame the whole time still produced all 33 — confirmed false, not
-    # under-sensitive detection. The remaining pattern (several large regions appearing at
-    # once, scattered across the frame) is auto-exposure/white-balance hunting on the phone,
-    # not per-pixel sensor noise, which is why this alone may not fully clear it: a wide
-    # enough exposure swing shifts pixels by as much as real motion does. If detections with
-    # nothing in frame persist after this, the fix is on the phone (lock auto-exposure /
-    # white balance in the camera app) rather than a further increase here — pushing this
-    # value past what real motion needs starts risking missed genuine detections instead.
-    background_history: 300
-    background_var_threshold: 120.0
+    # `background_history` is counted in FRAMES THE MODEL IS GIVEN, not seconds, and the
+    # adapter gives it exactly one frame per poll. At the default 1.5s poll interval, the old
+    # value of 300 meant 300 x 1.5s = 450s — over seven minutes — before the model had a full
+    # history window behind its variance estimates. Every bench run so far has been under a
+    # minute, so the model was never remotely converged in any of them: it was running on a
+    # handful of samples, and its output was unstable rather than mis-tuned. That instability,
+    # not the threshold, is why raising var_threshold produced erratic results (443 false
+    # regions at 32.0, 33 at 75.0, zero-even-for-a-real-wave at 120.0).
+    #
+    # 40 frames is ~60s at a 1.5s poll — a window the model actually fills within a normal
+    # bench run, so its variance estimates mean something by the time anyone is waving at it.
+    # It also keeps the model adapting on a timescale that suits a fixed camera watching a
+    # mostly-static scene at low frame rate.
+    #
+    # RE-TUNE THIS if the poll interval changes: the meaningful quantity is
+    # background_history x poll_interval_s, and it should land in the tens of seconds, not
+    # minutes. A faster poll wants a proportionally larger history.
+    background_history: 40
+
+    # How far a pixel must deviate from the learned background before it counts as foreground.
+    #
+    # Back to 50.0, near the OpenCV default of 16.0 but raised for MJPEG compression noise at
+    # 1920x1080. The earlier excursion to 75.0 and 120.0 was an attempt to suppress false
+    # positives that were actually caused by the unconverged history window above; with that
+    # fixed, this should not need to carry the load alone. Tune this only after a run where
+    # the model has had a full history window to settle.
+    background_var_threshold: 50.0
 
   classifier:
     # Model weights. Resolved by the inference library; a filename means a bundled model.
