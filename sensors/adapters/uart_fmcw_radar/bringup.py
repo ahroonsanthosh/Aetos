@@ -1,5 +1,6 @@
 """Bring-up tool: find the baud rate, watch the frames, capture the raw stream.
 
+    python -m sensors.adapters.uart_fmcw_radar.bringup --list-ports
     python -m sensors.adapters.uart_fmcw_radar.bringup --port /dev/ttyUSB0
     python -m sensors.adapters.uart_fmcw_radar.bringup --port COM4 --baud 256000 --watch
     python -m sensors.adapters.uart_fmcw_radar.bringup --port /dev/ttyUSB0 --record var/raw.log
@@ -38,6 +39,30 @@ PROBE_SECONDS = 4.0
 """Long enough for several report periods at any plausible update rate."""
 
 
+class PortUnavailable(RuntimeError):
+    """The serial port could not be opened. Distinct from the sensor being silent.
+
+    Worth its own type because the two failures have nothing in common. A port that will not
+    open is a wrong device name, a missing driver, or something else already holding it — none
+    of which is fixed by checking a jumper wire, and all of which are answered by looking at
+    what ports the machine actually has.
+    """
+
+
+def available_ports() -> list[str]:
+    """Every serial port this machine reports, described. Empty if none or if pyserial is
+    absent — this is diagnostic help, and failing to enumerate must not become its own error."""
+    try:
+        from serial.tools import list_ports  # noqa: PLC0415 — optional dependency
+    except ImportError:  # pragma: no cover - depends on the install extra
+        return []
+
+    return [
+        f"{port.device}  {port.description}"
+        for port in sorted(list_ports.comports(), key=lambda p: p.device)
+    ]
+
+
 def probe(
     port: str,
     rates: tuple[int, ...],
@@ -60,8 +85,11 @@ def probe(
         try:
             link.open()
         except LinkError as exc:
-            print(f"cannot open: {exc}")
-            return None
+            # Not a probe result. The port could not be opened at all, which no baud rate can
+            # fix — reporting it as "nothing framed" would send someone to check jumper wires
+            # over a port that does not exist.
+            print("cannot open")
+            raise PortUnavailable(str(exc)) from exc
 
         try:
             _read_until(link, parser, clock, seconds, config.max_read_bytes)
@@ -163,7 +191,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Bring up the serial-attached FMCW radar before running Aetos live.",
     )
-    parser.add_argument("--port", required=True, help="serial device, e.g. /dev/ttyUSB0 or COM4")
+    parser.add_argument(
+        "--port", help="serial device, e.g. /dev/ttyUSB0 or COM4. Required unless --list-ports."
+    )
+    parser.add_argument(
+        "--list-ports",
+        action="store_true",
+        help="list the serial ports this machine reports, and exit",
+    )
     parser.add_argument(
         "--baud",
         type=int,
@@ -184,10 +219,23 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     clock = SystemClock()
 
+    if arguments.list_ports:
+        ports = available_ports()
+        print("\n".join(ports) if ports else "No serial ports reported by this machine.")
+        return 0 if ports else 1
+
+    if not arguments.port:
+        parser.error("--port is required unless --list-ports is given")
+
     baud = arguments.baud
     if baud is None:
         print(f"Probing {arguments.port} for a rate that frames:")
-        baud = probe(arguments.port, UartLinkConfig(port=arguments.port).probe_baud_rates, clock)
+        try:
+            baud = probe(
+                arguments.port, UartLinkConfig(port=arguments.port).probe_baud_rates, clock
+            )
+        except PortUnavailable as exc:
+            return _report_missing_port(arguments.port, str(exc))
         if baud is None:
             print(
                 "\nNo candidate rate produced a decoded frame. Before assuming the sensor is "
@@ -204,6 +252,36 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.watch or arguments.baud is not None:
         return watch(arguments.port, baud, clock, arguments.record)
     return 0
+
+
+def _report_missing_port(port: str, reason: str) -> int:
+    """Say which port failed, and show what the machine actually has.
+
+    The list is the whole point. "COM4 not found" leaves someone guessing; "COM4 not found, but
+    here is COM7 with a CP2102 on it" ends the problem in one line.
+    """
+    print(f"\nCould not open {port}: {reason}", file=sys.stderr)
+
+    ports = available_ports()
+    if ports:
+        print("\nSerial ports this machine reports:", file=sys.stderr)
+        for entry in ports:
+            print(f"  {entry}", file=sys.stderr)
+        print(
+            "\nRun again with --port set to whichever of those is the radar's USB adapter "
+            "(it will usually name CP2102, CH340 or FTDI).",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "\nThis machine reports no serial ports at all. The USB-to-TTL adapter is not "
+            "plugged in, or its driver is not installed:"
+            "\n  - unplug and replug it, then run this again,"
+            "\n  - on Windows, check Device Manager for a device with a warning triangle,"
+            "\n  - the CP2102 driver is a separate install on some Windows versions.",
+            file=sys.stderr,
+        )
+    return 1
 
 
 if __name__ == "__main__":

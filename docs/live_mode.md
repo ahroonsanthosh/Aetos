@@ -37,6 +37,15 @@ Find the port:
 - macOS: `ls /dev/tty.*` — usually `/dev/tty.SLAB_USBtoUART` or `/dev/tty.usbserial-*`.
 - Windows: Device Manager → Ports (COM & LPT) — `COM3`, `COM4`, …
 
+Or ask the tool, which is quicker and describes each one:
+
+```bash
+.venv/bin/python -m sensors.adapters.uart_fmcw_radar.bringup --list-ports
+.venv/Scripts/python.exe -m sensors.adapters.uart_fmcw_radar.bringup --list-ports   # Windows
+```
+
+The radar's adapter usually names its chipset — CP2102, CH340 or FTDI.
+
 ## 2. Prove the link before involving Aetos
 
 ```bash
