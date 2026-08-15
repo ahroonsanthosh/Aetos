@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -134,6 +135,10 @@ class Pipeline:
         self.alerting.rebuild()
 
         self._adapters: list[SensorAdapter] = []
+
+        self.deployment_lock: DeploymentLock | None = None
+        """Held by whoever assembled this pipeline, released when it closes. None in tests and
+        embedded uses, which construct a Pipeline directly against a directory of their own."""
 
         # The site and its sensors are configuration the API reads back, so they are persisted
         # once at startup rather than being loaded independently by every request.
@@ -301,6 +306,8 @@ class Pipeline:
             adapter.stop()
         self.repositories.close()
         self.events.close()
+        if self.deployment_lock is not None:
+            self.deployment_lock.release()
 
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", ""})
@@ -563,7 +570,70 @@ def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count
         )
 
 
+class DeploymentLock:
+    """An advisory lock held for as long as one process owns a deployment directory.
+
+    Two Aetos processes writing one event log breaks the single-writer discipline the log
+    depends on (ADR 0006): interleaved sequence numbers, a projection catching up on events
+    from two runs, and no way afterwards to say which process wrote what. Different ports do
+    not help — the port stops two servers, not two writers.
+
+    **It fails open.** If the platform cannot lock, or locking errors for any reason, the run
+    continues with a warning. The protection is worth having where it works; it is not worth a
+    system that refuses to start because its own lock mechanism misbehaved on a machine nobody
+    could test. The Windows path in particular is written from documentation rather than from a
+    machine, and that is exactly why it must not be able to block a start.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._handle = None
+
+    def acquire(self) -> bool:
+        """True when the lock is held by this process, False when another process holds it."""
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            handle = self._path.open("a+")
+        except OSError as exc:  # pragma: no cover - unwritable directory is reported elsewhere
+            _LOG.warning("Could not open the deployment lock %s: %s", self._path, exc)
+            return True
+
+        try:
+            if os.name == "nt":  # pragma: no cover - not exercised on this platform
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            return False
+        except Exception as exc:  # pragma: no cover - defensive: never block a start
+            _LOG.warning("Deployment locking is unavailable (%s); continuing without it.", exc)
+            handle.close()
+            return True
+
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{os.getpid()}\n")
+        handle.flush()
+        self._handle = handle
+        return True
+
+    def release(self) -> None:
+        handle, self._handle = self._handle, None
+        if handle is None:
+            return
+        try:
+            handle.close()  # closing releases both flock and msvcrt locks
+        except OSError:  # pragma: no cover - releasing a dead handle is not an error
+            pass
+
+
 DEPLOYMENT_MARKER = "deployment.json"
+DEPLOYMENT_LOCK = "deployment.lock"
 """Names which (site, run mode) a data directory belongs to. See `claim_data_dir`."""
 
 
@@ -603,6 +673,15 @@ def claim_data_dir(data_dir: Path, site: str, mode: RunMode) -> None:
     marker = data_dir / DEPLOYMENT_MARKER
     claim = {"site": site, "mode": mode.value, "schema_version": "1.0.0"}
 
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise StartupRefused(
+            f"Could not create the data directory {data_dir}: {exc}. Aetos cannot run without "
+            "somewhere to write its event log — a system that keeps no record of what it "
+            "showed an operator is worse than one that does not start."
+        ) from exc
+
     if marker.exists():
         try:
             existing = json.loads(marker.read_text(encoding="utf-8"))
@@ -626,8 +705,13 @@ def claim_data_dir(data_dir: Path, site: str, mode: RunMode) -> None:
             )
         return
 
-    data_dir.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps(claim, indent=2) + "\n", encoding="utf-8")
+    try:
+        marker.write_text(json.dumps(claim, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise StartupRefused(
+            f"Could not write {marker}: {exc}. Without it nothing records which deployment owns "
+            "this directory, and the next run could inherit this one's history (FM-053)."
+        ) from exc
 
 
 def _warn_about_legacy_data(paths: ConfigPaths) -> None:
@@ -684,9 +768,20 @@ def build_application(
 
     resolved = resolve_data_dir(site, mode, data_dir)
     claim_data_dir(resolved, site, mode)
+
+    lock = DeploymentLock(resolved / DEPLOYMENT_LOCK)
+    if not lock.acquire():
+        raise StartupRefused(
+            f"Another Aetos process is already running this deployment ({site} in {mode.value} "
+            f"mode, {resolved}).\n\n"
+            "  Two processes writing one event log interleave their records and leave no way "
+            "to tell afterwards which wrote what (ADR 0006).\n\n"
+            "  Stop the other one, or give this run its own site or --data-dir."
+        )
     _warn_about_legacy_data(ConfigPaths.default())
 
     pipeline = Pipeline(clock, geometry, resolved)
+    pipeline.deployment_lock = lock
     if attach_hardware:
         pipeline.attach_hardware()
         _report_hardware_state(pipeline, tick_s)

@@ -105,13 +105,25 @@ Restart recovery is unaffected and deliberately tested alongside: the same site 
 mode resolves to the same directory and picks its own history back up, alerts included
 (FM-030, ADR 0015). Wiping state on start would have "fixed" the leak by breaking that.
 
-### 6. The pipeline steps whenever any adapter is attached
+### 6. One writer per deployment, enforced by a lock that fails open
+
+A deployment directory carries an advisory lock, held for the life of the process. A second
+Aetos told to run the same site in the same mode is refused, because two processes writing one
+event log interleave their records and leave no way to say afterwards which wrote what
+(ADR 0006). Different ports do not help — a port stops two servers, not two writers.
+
+It **fails open**: if the platform cannot lock, or locking errors, the run continues with a
+warning. The Windows path is written from documentation rather than from a machine, and a lock
+mechanism that could refuse a legitimate start on a platform nobody could test would be a worse
+defect than the one it prevents.
+
+### 7. The pipeline steps whenever any adapter is attached
 
 Previously the cycle loop ran only when a scenario was named. Live hardware produces detections
 because something is in the sky, not because a scenario said so, and a loop gated on scenarios
 would have left real sensors reporting into a pipeline nobody was stepping.
 
-### 7. Hardware construction lives in `backend/main.py`
+### 8. Hardware construction lives in `backend/main.py`
 
 `build_hardware_adapter` is where a site document meets a driver, and it is deliberately dull:
 it copies configuration across and constructs one object. It sits in `main.py` because
@@ -119,6 +131,21 @@ it copies configuration across and constructs one object. It sits in `main.py` b
 and nothing about sites, zones or run modes. The one piece of arithmetic it does is adding the
 site reference altitude to the mast height, because the driver works in metres above the
 ellipsoid and `height_m` is measured from the site reference (FM-004).
+
+### 9. Accounts are installation-wide, and are not partitioned
+
+`data/identity.db`, shared by every deployment and resolved from `ConfigPaths` by the server,
+the admin CLI and `start.sh` alike.
+
+This is the exception to decision 5, and it was learned the hard way: partitioning moved the
+server's database while the admin CLI kept writing to the old path, so `admin add` reported
+success and the login endpoint answered 401 to the same credentials. Both halves worked, against
+different files.
+
+The principle underneath: **history belongs to a deployment, identity belongs to the
+installation.** One person signs in to the simulator and to the live system; requiring an
+account per run mode is friction with no safety behind it, and the first response to it would
+be one password reused everywhere.
 
 ## Consequences
 

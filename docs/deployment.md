@@ -152,6 +152,21 @@ an open one, stated by the backend rather than assumed from how it was launched.
 - **`data/` holds the event log and the account table.** Back it up, and treat the backup as
   sensitive: it contains password hashes and the complete operational record. It does *not*
   contain usable session tokens — only hashes of them are stored.
+
+  Its layout has two levels, and they are separated deliberately (ADR 0018):
+
+  | Path | What it is |
+  |---|---|
+  | `data/identity.db` | Operator accounts, credentials and sessions. **Installation-wide** — one account signs in whatever site or mode is running |
+  | `data/<site>/<mode>/` | One deployment's event log, track projection and any raw sensor capture |
+
+  A deployment directory carries a `deployment.json` naming its owner, and start-up refuses a
+  directory that belongs to a different site or run mode. That refusal is what stops one
+  deployment's history being served as another's (FM-053) — a live display showing tracks a
+  simulation produced. Restart recovery is unaffected: the same site in the same mode picks its
+  own history back up, alerts included.
+
+  Back up both levels. Backing up only the deployment directories loses every account.
 - **No password reset flow, no multi-factor.** An administrator resets a password with
   `passwd`, then `disable` and `enable` to end that account's existing sessions.
 - **No rate limiting on anything except login.** A reverse proxy is the right place to add it,

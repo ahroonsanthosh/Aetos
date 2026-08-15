@@ -18,6 +18,9 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       # The event log is the source of truth and survives the container.
+      # Holds both levels of the data layout: data/identity.db (accounts, installation-wide)
+      # and data/<site>/<mode>/ (one deployment's event log and projection). One volume keeps
+      # accounts and history together across container restarts — losing it loses both.
       - aetos-data:/app/data
     restart: unless-stopped
     healthcheck:

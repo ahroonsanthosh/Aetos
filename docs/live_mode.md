@@ -132,6 +132,18 @@ loader refuses anything else.
 Then http://localhost:8000. The badge top-right reads **LIVE**, and the tooltip says the
 hardware is unvalidated.
 
+If this is the first run on this machine, `start.sh` stops before serving and tells you to
+create an account — nobody can sign in otherwise, and the login screen deliberately cannot
+distinguish "wrong password" from "no accounts exist":
+
+```bash
+.venv/bin/python -m backend.auth.admin add --username you --role admin           # Linux, macOS
+.venv/Scripts/python.exe -m backend.auth.admin add --username you --role admin   # Windows
+```
+
+One account covers every site and run mode — accounts are installation-wide, while track
+history is per deployment.
+
 Under the hood:
 
 ```bash

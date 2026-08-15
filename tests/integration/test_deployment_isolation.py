@@ -121,6 +121,74 @@ def test_an_unreadable_marker_refuses_rather_than_guesses(tmp_path: Path) -> Non
         claim_data_dir(tmp_path, "a_site", RunMode.LIVE)
 
 
+# -- one writer at a time ---------------------------------------------------------------------
+
+
+def test_a_second_process_cannot_hold_the_same_deployment(tmp_path: Path) -> None:
+    """Two processes writing one event log interleave their records (ADR 0006).
+
+    Different ports do not help: the port stops two servers, not two writers.
+    """
+    from backend.main import DeploymentLock
+
+    first = DeploymentLock(tmp_path / "deployment.lock")
+    second = DeploymentLock(tmp_path / "deployment.lock")
+
+    assert first.acquire() is True
+    assert second.acquire() is False, "a second holder was allowed to write the same log"
+
+    first.release()
+    assert second.acquire() is True, "the lock was not released when its holder let go"
+    second.release()
+
+
+def test_the_lock_records_the_holding_process(tmp_path: Path) -> None:
+    """So that whoever hits the refusal can find what is already running."""
+    import os
+
+    from backend.main import DeploymentLock
+
+    lock = DeploymentLock(tmp_path / "deployment.lock")
+    lock.acquire()
+
+    assert (tmp_path / "deployment.lock").read_text().strip() == str(os.getpid())
+    lock.release()
+
+
+def test_a_second_application_on_the_same_deployment_is_refused(tmp_path: Path) -> None:
+    """End to end: the second `./start.sh` against a running deployment stops with a reason."""
+    from backend.main import build_application
+
+    first = build_application(
+        site="fictional_test_range",
+        data_dir=tmp_path / "run",
+        authenticated=False,
+        mode=RunMode.SIMULATION,
+    )
+
+    with pytest.raises(StartupRefused, match="already running this deployment"):
+        build_application(
+            site="fictional_test_range",
+            data_dir=tmp_path / "run",
+            authenticated=False,
+            mode=RunMode.SIMULATION,
+        )
+
+    assert first.state.services is not None, "the first application must remain usable"
+
+
+def test_an_unwritable_data_directory_refuses_with_a_reason(tmp_path: Path) -> None:
+    """A system that keeps no record of what it showed an operator is worse than one that does
+    not start — but it must say which of the two happened."""
+    from backend.main import claim_data_dir
+
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+
+    with pytest.raises(StartupRefused, match="Could not create the data directory"):
+        claim_data_dir(blocker / "inside", "a_site", RunMode.LIVE)
+
+
 # -- the whole thing, through build_application ----------------------------------------------
 
 
