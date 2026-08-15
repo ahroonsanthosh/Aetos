@@ -235,6 +235,10 @@ fi
 if [[ "$ACCOUNTS" == "0" ]]; then
   echo
   printf '\033[33m!\033[0m No operator accounts exist yet, so nobody can sign in.\n'
+  # Name the database that was counted. When a login fails after an account was created
+  # successfully, the missing fact is always which file each side meant.
+  printf '  (checked %s)\n' \
+    "$("$PY" -c 'from backend.common.config import ConfigPaths; print(ConfigPaths.default().identity_db)' 2>/dev/null || echo 'the identity database')"
   echo
   printf '  Create one:\n'
   # "$PY", not "python". The dependencies live in .venv, and the bare interpreter on PATH
