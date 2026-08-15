@@ -44,7 +44,7 @@ entire test suite is measuring nothing.
 4. **Detection-level `classification` is evidence, never a verdict.** The classification
    module treats it as one weighted input among several, discounted by provenance, and is
    required to produce a defensible label without it.
-5. **A guard test enforces 1–4.** `tests/integration/test_detection_provenance_guard.py`
+5. **A guard test enforces 1–4.** the provenance guard in `tests/integration/test_pipeline.py`
    runs a full scenario twice — once with detections as produced, once with `kinematics`
    and `classification` stripped from every detection — and asserts the resulting track
    states are identical.

@@ -113,7 +113,7 @@ class Kinematics(BaseModel):
     its provenance. It is carried because some sources genuinely produce it and downstream
     consumers other than the filter (diagnostics, fusion tie-breaking evidence) may use it.
 
-    Enforced by tests/integration/test_detection_provenance_guard.py. See docs/adr/0002.
+    Enforced by the provenance guard in tests/integration/test_pipeline.py. See docs/adr/0002.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

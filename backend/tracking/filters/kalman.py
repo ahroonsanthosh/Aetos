@@ -23,6 +23,29 @@ VELOCITY = slice(3, 6)
 STATE_DIM = 6
 MEASUREMENT_DIM = 3
 
+MIN_SLANT_RANGE_M = 50.0
+"""Range below which a Doppler measurement is declined rather than applied.
+
+Range rate is a nonlinear function of state, and its Jacobian with respect to position carries
+a factor of 1/range. Close in, that term explodes: at 0.5 m with a 50 m/s target the position
+row reaches ~100 per second, the linearisation is valid over a span far smaller than the
+track's own positional uncertainty, and the update stops being merely imprecise and starts
+injecting large spurious position corrections.
+
+Physically the measurement is worth little there anyway — at short range the range rate says
+almost nothing about the *direction* of travel. Declining is therefore the honest answer, not
+a limitation being worked around.
+"""
+
+
+class DopplerUnobservable(ValueError):
+    """The geometry does not support a range-rate update at this instant.
+
+    Raised rather than returned so the caller must decide what to do. `TrackManager` absorbs
+    it and lets the position update stand alone, which is the correct behaviour: the detection
+    is still good, only its range rate is unusable.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class FilterConfig:
@@ -181,6 +204,65 @@ class ConstantVelocityFilter:
 
         return self._bounded(KalmanState(mean, _symmetrise(covariance)))
 
+    def update_radial_velocity(
+        self,
+        state: KalmanState,
+        measured_mps: float,
+        variance_m2s2: float,
+        sensor_position_enu: np.ndarray,
+    ) -> KalmanState:
+        """Correct state with a directly measured range rate.
+
+        A *second, separate* update applied after the positional one, not a fourth row bolted
+        onto it. Processing independent measurements sequentially is mathematically identical
+        to one stacked update when their noise is uncorrelated — and position noise and Doppler
+        noise are independent in every sensor model here — so this buys the equivalence at a
+        fraction of the disruption. `H`, `MEASUREMENT_DIM`, `innovation`, `mahalanobis_squared`
+        and the association gate are all untouched and stay purely positional.
+
+        Gating deliberately stays positional too. A range-rate gate would reject a legitimately
+        manoeuvring track, and range rate carries almost no discrimination between two contacts
+        at similar bearings anyway.
+
+        Linearising after the position update rather than before is not incidental: the
+        posterior position is the best estimate available, so it is the best point about which
+        to linearise, and the first-order error is correspondingly smaller.
+
+        Raises `DopplerUnobservable` when the geometry cannot support the update; the caller is
+        expected to let the position update stand alone.
+        """
+        if variance_m2s2 <= 0.0:
+            raise ValueError("radial velocity variance must be positive")
+
+        row, predicted = radial_velocity_jacobian(state.mean, sensor_position_enu)
+
+        # Scalar measurement, so the innovation covariance is a float and the gain is a vector.
+        # No linear solve, no matrix inverse.
+        covariance_row = state.covariance @ row
+        innovation_variance = float(row @ covariance_row) + variance_m2s2
+        if innovation_variance <= 0.0 or not np.isfinite(innovation_variance):
+            raise DopplerUnobservable("range-rate innovation covariance is not positive")
+
+        gain = covariance_row / innovation_variance
+        mean = state.mean + gain * (measured_mps - predicted)
+
+        # Joseph form, for the same reason as the positional update: it stays symmetric and
+        # positive semi-definite under finite precision, and this update writes straight into
+        # the velocity block that every subsequent prediction and gate depends on.
+        factor = np.eye(STATE_DIM) - np.outer(gain, row)
+        covariance = (
+            factor @ state.covariance @ factor.T + np.outer(gain, gain) * variance_m2s2
+        )
+
+        if not np.all(np.isfinite(mean)) or not np.all(np.isfinite(covariance)):
+            # Refusing a bad update is always better than poisoning the track with NaN, which
+            # would propagate through every future prediction and never clear.
+            raise DopplerUnobservable("range-rate update produced a non-finite state")
+
+        # _bounded matters more here than anywhere: this is the only update that writes
+        # directly into the velocity block.
+        return self._bounded(KalmanState(mean, _symmetrise(covariance)))
+
     def innovation(
         self,
         state: KalmanState,
@@ -251,6 +333,44 @@ class ConstantVelocityFilter:
         if speed > self._config.max_speed_mps:
             state.mean[VELOCITY] *= self._config.max_speed_mps / speed
         return state
+
+
+def radial_velocity_jacobian(
+    state_mean: np.ndarray, sensor_position_enu: np.ndarray
+) -> tuple[np.ndarray, float]:
+    """The measurement row for range rate, and the rate this state predicts.
+
+    Range rate is `r_dot = (p - s) . v / |p - s|` — the component of velocity along the line of
+    sight from sensor `s` to target `p`. Unlike position it is *nonlinear* in the state, so it
+    cannot be expressed as a constant row of `H` and must be linearised about the current
+    estimate:
+
+        d(r_dot)/dp = (v - r_dot * u) / rho     u = (p - s) / rho, rho = |p - s|
+        d(r_dot)/dv = u
+
+    The position term is the component of velocity perpendicular to the line of sight, divided
+    by range: moving the target sideways changes how fast the range closes, and the closer it
+    is the more a given sideways step matters. That 1/rho is why `MIN_SLANT_RANGE_M` exists.
+
+    Returns the row and the predicted rate together because both come from the same three
+    quantities and computing them separately would mean deriving `u` twice.
+    """
+    offset = state_mean[POSITION] - sensor_position_enu
+    slant_range = float(np.linalg.norm(offset))
+    if not np.isfinite(slant_range) or slant_range < MIN_SLANT_RANGE_M:
+        raise DopplerUnobservable(
+            f"slant range {slant_range:.1f} m is below the {MIN_SLANT_RANGE_M} m at which a "
+            "range-rate measurement can be linearised usefully"
+        )
+
+    unit = offset / slant_range
+    velocity = state_mean[VELOCITY]
+    predicted = float(unit @ velocity)
+
+    row = np.zeros(STATE_DIM)
+    row[POSITION] = (velocity - predicted * unit) / slant_range
+    row[VELOCITY] = unit
+    return row, predicted
 
 
 def isotropic_covariance(sigma_m: float) -> np.ndarray:

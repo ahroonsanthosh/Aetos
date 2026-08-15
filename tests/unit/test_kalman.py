@@ -7,10 +7,14 @@ import pytest
 
 from backend.tracking.filters.kalman import (
     POSITION,
+    STATE_DIM,
     VELOCITY,
     ConstantVelocityFilter,
+    DopplerUnobservable,
     FilterConfig,
+    KalmanState,
     isotropic_covariance,
+    radial_velocity_jacobian,
 )
 
 
@@ -336,3 +340,164 @@ def test_mahalanobis_is_direction_sensitive_under_anisotropy(
 def test_isotropic_covariance_rejects_non_positive_uncertainty() -> None:
     with pytest.raises(ValueError, match="must be positive"):
         isotropic_covariance(0.0)
+
+
+# --------------------------------------------------------------------------------------
+# Range rate (Doppler)
+# --------------------------------------------------------------------------------------
+
+SENSOR = np.zeros(3)
+
+
+def _state(position: list[float], velocity: list[float]) -> KalmanState:
+    mean = np.array(position + velocity, dtype=float)
+    covariance = np.eye(STATE_DIM) * 25.0
+    return KalmanState(mean, covariance)
+
+
+def _true_rate(mean: np.ndarray, sensor: np.ndarray) -> float:
+    """r_dot computed directly from the definition, for checking the linearisation."""
+    offset = mean[POSITION] - sensor
+    return float(offset @ mean[VELOCITY] / np.linalg.norm(offset))
+
+
+class TestRadialVelocityJacobian:
+    def test_the_predicted_rate_matches_the_definition(self) -> None:
+        state = _state([300.0, 400.0, 100.0], [12.0, -5.0, 1.0])
+
+        _, predicted = radial_velocity_jacobian(state.mean, SENSOR)
+
+        assert predicted == pytest.approx(_true_rate(state.mean, SENSOR))
+
+    def test_the_jacobian_matches_a_finite_difference(self) -> None:
+        """The linearisation checked against the function it linearises.
+
+        An analytic derivative is easy to get subtly wrong — a missing term, a sign, a
+        transposed index — and the result is a filter that converges to something plausible
+        and incorrect. Numerical differentiation is the independent check.
+        """
+        state = _state([300.0, -400.0, 120.0], [15.0, 7.0, -2.0])
+        row, _ = radial_velocity_jacobian(state.mean, SENSOR)
+
+        step = 1e-5
+        for index in range(STATE_DIM):
+            forward = state.mean.copy()
+            backward = state.mean.copy()
+            forward[index] += step
+            backward[index] -= step
+            numerical = (_true_rate(forward, SENSOR) - _true_rate(backward, SENSOR)) / (2 * step)
+            assert row[index] == pytest.approx(numerical, rel=1e-5, abs=1e-9), (
+                f"analytic and numerical derivative disagree in state component {index}"
+            )
+
+    def test_a_purely_radial_target_has_rate_equal_to_its_speed(self) -> None:
+        state = _state([200.0, 0.0, 0.0], [9.0, 0.0, 0.0])
+
+        _, predicted = radial_velocity_jacobian(state.mean, SENSOR)
+
+        assert predicted == pytest.approx(9.0)
+
+    def test_a_purely_tangential_target_has_zero_rate(self) -> None:
+        """Crossing the beam changes bearing, not range."""
+        state = _state([200.0, 0.0, 0.0], [0.0, 9.0, 0.0])
+
+        _, predicted = radial_velocity_jacobian(state.mean, SENSOR)
+
+        assert predicted == pytest.approx(0.0, abs=1e-9)
+
+    def test_an_approaching_target_reports_a_negative_rate(self) -> None:
+        """The sign convention, asserted where it is actually consumed."""
+        state = _state([200.0, 0.0, 0.0], [-9.0, 0.0, 0.0])
+
+        _, predicted = radial_velocity_jacobian(state.mean, SENSOR)
+
+        assert predicted < 0
+
+    def test_close_range_is_declined_rather_than_linearised_badly(self) -> None:
+        """Below the minimum the 1/range term dominates and the update stops being valid."""
+        state = _state([10.0, 0.0, 0.0], [30.0, 0.0, 0.0])
+
+        with pytest.raises(DopplerUnobservable):
+            radial_velocity_jacobian(state.mean, SENSOR)
+
+
+class TestRadialVelocityUpdate:
+    def test_a_radial_measurement_pulls_the_speed_estimate_toward_it(self) -> None:
+        filt = ConstantVelocityFilter()
+        state = _state([300.0, 0.0, 0.0], [5.0, 0.0, 0.0])
+
+        updated = filt.update_radial_velocity(state, 20.0, 0.01, SENSOR)
+
+        assert updated.mean[VELOCITY][0] > state.mean[VELOCITY][0]
+
+    def test_it_converges_on_the_true_closing_speed(self) -> None:
+        """The accuracy claim: a measurement the filter previously threw away.
+
+        A target closing at a constant rate. Position is never updated at all — only the range
+        rate — and the velocity estimate must still find the truth, because that is precisely
+        the information a Doppler measurement carries and a position-only filter has to infer
+        slowly from a sequence of noisy fixes.
+        """
+        filt = ConstantVelocityFilter()
+        state = _state([500.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        truth = -18.0
+
+        for _ in range(20):
+            state = filt.update_radial_velocity(state, truth, 0.25, SENSOR)
+
+        assert state.mean[VELOCITY][0] == pytest.approx(truth, abs=1.0)
+
+    def test_a_tangential_pass_barely_moves_the_estimate(self) -> None:
+        """Honest about what the measurement does not say.
+
+        A target crossing the beam has near-zero range rate whatever its speed, so a range-rate
+        measurement must not be allowed to claim it is slow. This is the failure mode where a
+        filter over-trusts a measurement outside its observable subspace.
+        """
+        filt = ConstantVelocityFilter()
+        state = _state([300.0, 0.0, 0.0], [0.0, 25.0, 0.0])
+
+        updated = filt.update_radial_velocity(state, 0.0, 0.01, SENSOR)
+
+        assert updated.mean[VELOCITY][1] == pytest.approx(25.0, abs=1.0)
+
+    def test_the_covariance_stays_symmetric_and_positive_semi_definite(self) -> None:
+        """A thousand updates without the covariance decaying into something that is not one.
+
+        Joseph form exists for this. A covariance that drifts asymmetric or indefinite makes
+        the Mahalanobis distance stop being a distance, which corrupts the gate silently.
+        """
+        filt = ConstantVelocityFilter()
+        state = _state([400.0, 100.0, 50.0], [10.0, -3.0, 0.5])
+
+        for step in range(1000):
+            state = filt.update_radial_velocity(state, 8.0 + (step % 5), 0.5, SENSOR)
+            state = filt.predict(state, 0.1)
+
+        assert np.allclose(state.covariance, state.covariance.T, atol=1e-9)
+        assert np.min(np.linalg.eigvalsh(state.covariance)) > -1e-9
+
+    def test_an_absurd_measurement_cannot_drive_the_speed_past_the_bound(self) -> None:
+        """`_bounded` applies here above all: this is the only update writing into velocity."""
+        filt = ConstantVelocityFilter()
+        state = _state([300.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+
+        updated = filt.update_radial_velocity(state, 1e6, 0.001, SENSOR)
+
+        assert float(np.linalg.norm(updated.mean[VELOCITY])) <= filt.config.max_speed_mps + 1e-6
+
+    def test_a_non_positive_variance_is_rejected(self) -> None:
+        filt = ConstantVelocityFilter()
+        state = _state([300.0, 0.0, 0.0], [5.0, 0.0, 0.0])
+
+        with pytest.raises(ValueError):
+            filt.update_radial_velocity(state, 10.0, 0.0, SENSOR)
+
+    def test_the_position_estimate_is_not_wrecked_by_a_range_rate_update(self) -> None:
+        """A range rate mostly informs velocity; it must not throw the position away."""
+        filt = ConstantVelocityFilter()
+        state = _state([300.0, 0.0, 0.0], [5.0, 0.0, 0.0])
+
+        updated = filt.update_radial_velocity(state, 12.0, 0.25, SENSOR)
+
+        assert np.linalg.norm(updated.mean[POSITION] - state.mean[POSITION]) < 25.0

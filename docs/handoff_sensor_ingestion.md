@@ -109,9 +109,11 @@ track to carry altitude provenance. Noted in the adapter's implementation requir
 `IngestionPipeline._reduce` does not read `kinematics`, and the Kalman `H` matrix has the
 velocity columns structurally zero. A radar's best measurement (σ ≈ 0.1 m/s against metres of
 position noise) contributes nothing to the state estimate. Admitting it changes the measurement
-dimension, `MEASUREMENT_DOF` in `gnn.py`, and would fail
-`tests/integration/test_detection_provenance_guard.py` **by design** — that guard exists to
-catch exactly this. Deserves an ADR, not a patch.
+dimension, `MEASUREMENT_DOF` in `gnn.py`, and would fail the
+provenance guard at `tests/integration/test_pipeline.py:160` **by design** — that guard exists
+to catch exactly this. (Note: ADR 0002 cites a standalone
+`test_detection_provenance_guard.py`; no such file exists, the guard lives in
+`test_pipeline.py`.) Deserves an ADR, not a patch.
 
 **3. Risk policy is scaled for the 8 km simulated radar.**
 `proximity_to_protected_area.far_m: 4000`, `loitering_near_asset.relevant_range_m: 3000`,

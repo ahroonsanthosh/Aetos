@@ -121,7 +121,7 @@ So:
 2. **Detection-level `classification` is evidence, not a verdict.** The classification module
    weights it as one input among several, discounted by provenance, and must produce a
    defensible label without it.
-3. **A guard test enforces both.** `tests/integration/test_detection_provenance_guard.py`
+3. **A guard test enforces both.** the provenance guard in `tests/integration/test_pipeline.py`
    runs a scenario twice — once normally, once with every detection passed through
    `Detection.without_inferred_fields()` — and requires identical track output.
 

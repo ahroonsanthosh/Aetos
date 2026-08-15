@@ -111,9 +111,17 @@ class RadialVelocityModel(BaseModel):
     """Whether the sensor reports range rate, and how well.
 
     Unlike speed and heading, range rate is a quantity a Doppler-capable sensor genuinely
-    measures, which is why the canonical schema carries it as its own field. The simulated
-    adapter still marks what it emits as `simulated_truth`, because however much noise is
-    applied the number originates in the simulator's own state. See the adapter for why.
+    measures, which is why the canonical schema carries it as its own field.
+
+    The simulated adapter marks what it emits `measured`, not `simulated_truth`. Provenance
+    records *how a value was produced, not which process produced it* (ADR 0012): the number
+    is degraded through `sigma_mps` exactly as position is, so it is a measurement by a
+    modelled sensor rather than a copy of truth. Marking it `simulated_truth` would also make
+    provenance a channel distinguishing simulated input from real, which is the failure ADR
+    0002 exists to prevent.
+
+    This docstring previously claimed the opposite of what the adapter does. The adapter was
+    right; see `sensors/adapters/simulated/adapter.py` for the full reasoning.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
