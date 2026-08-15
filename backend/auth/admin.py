@@ -98,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     identity_path.parent.mkdir(parents=True, exist_ok=True)
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    arguments.identity_path = identity_path
     repositories = SqliteRepositories(
         clock, data_dir / "admin.db", identity_path=identity_path
     )
@@ -123,7 +124,7 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
     command = arguments.command
 
     if command == "list":
-        return _list(repos)
+        return _list(repos, arguments.identity_path)
 
     if command == "add":
         password = _prompt_new_password()
@@ -139,7 +140,11 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        print(f"Created {user.username} ({user.role}).")
+        # Name the file. Both times this went wrong — a CLI and a server reading different
+        # databases, and later a CLI run from the wrong working directory — the symptom was
+        # "created successfully" followed by a login that failed, and the missing fact was
+        # always which file the account had gone into.
+        print(f"Created {user.username} ({user.role}) in {arguments.identity_path}.")
         return 0
 
     user = repos.users.by_username(arguments.username.strip().lower())
@@ -182,10 +187,11 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
     raise AssertionError(f"unhandled command {command!r}")
 
 
-def _list(repos: SqliteRepositories) -> int:
+def _list(repos: SqliteRepositories, identity_path: Path) -> int:
     users = repos.users.list_all()
     if not users:
-        print(f"No accounts. Create one with:\n  {sys.executable} -m backend.auth.admin add "
+        print(f"No accounts in {identity_path}. Create one with:\n  "
+              f"{sys.executable} -m backend.auth.admin add "
               "--username <name> --role admin")
         return 0
 
