@@ -374,8 +374,10 @@ not defects in the driver, and none of them is fixable in software. They are rec
 the alternative — a driver that quietly papers over them — produces an operator display that
 looks the same whether it is right or wrong.
 
-The adapter is not constructed by `backend/main.py` and is referenced by no site
-configuration, so none of these currently affects a running system.
+The adapter is constructed only in LIVE or HYBRID mode, against a site that declares hardware
+(ADR 0018). A default `./start.sh` run is unaffected by all three. A `./start.sh --live` run is
+affected by all three, which is why that mode warns about them at start-up rather than relying
+on this document being read.
 
 ### FM-050 — The testbed radar's link parameters and frame layout are unverified
 **Status:** Open · **Severity:** High for anyone trusting its output · Blocks run mode LIVE

@@ -46,10 +46,19 @@ from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
+from backend.zones.site import SensorPlacement, Site
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
+from sensors.adapters.interface import SensorAdapter, SensorHealth, SensorState
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
+from sensors.adapters.uart_fmcw_radar import (
+    DetectionGateConfig,
+    MountConfig,
+    UartFmcwRadarAdapter,
+    UartFmcwRadarConfig,
+    UartLinkConfig,
+)
 from sensors.schemas.detection import Detection
 
 _LOG = logging.getLogger("aetos.pipeline")
@@ -73,6 +82,7 @@ class Pipeline:
     ) -> None:
         self.clock = clock
         self.geometry = geometry
+        self.data_dir = data_dir
 
         self.events = SqliteEventStore(clock, data_dir / "events.db")
         self.repositories = SqliteRepositories(clock, data_dir / "aetos.db")
@@ -109,7 +119,7 @@ class Pipeline:
         # alert, and an operator cannot tell an empty feed from a quiet sky.
         self.alerting.rebuild()
 
-        self._adapters: list[SimulatedSensorAdapter] = []
+        self._adapters: list[SensorAdapter] = []
 
         # The site and its sensors are configuration the API reads back, so they are persisted
         # once at startup rather than being loaded independently by every request.
@@ -130,6 +140,7 @@ class Pipeline:
                     sensor_id=placement.sensor_id,
                     site_id=self.geometry.site.site_id,
                     registry_key=placement.registry_key,
+                    hardware_driver=placement.hardware.driver if placement.hardware else None,
                     latitude=placement.position.latitude,
                     longitude=placement.position.longitude,
                     height_m=placement.height_m,
@@ -140,14 +151,43 @@ class Pipeline:
             ],
         )
 
+    @property
+    def adapters(self) -> list[SensorAdapter]:
+        return list(self._adapters)
+
+    @property
+    def live_adapter_count(self) -> int:
+        """How many attached adapters read physical hardware.
+
+        The number `GET /system/mode` reports, and therefore the number the operator interface
+        turns into the SIMULATION-or-LIVE badge. Counted from the adapters actually attached,
+        not from what the configuration asked for, because a live sensor that failed to attach
+        must not leave the display claiming to be live.
+        """
+        return sum(1 for adapter in self._adapters if not adapter.sensor_type.is_simulated)
+
+    def sensor_health(self) -> list[SensorHealth]:
+        """Every attached adapter's self-report, for `GET /system/health`.
+
+        Polled per request rather than cached: the whole value of the row is that it is current
+        when someone looks at it, which is exactly when they have stopped trusting the display.
+        """
+        return [adapter.health() for adapter in self._adapters]
+
     def attach_scenario(self, scenario_id: str) -> None:
-        """Point the simulated sensors at a scenario's world."""
+        """Point the simulated sensors at a scenario's world.
+
+        Simulated placements only. A live placement is not driven by a scenario — the sky is —
+        so running a scenario at a site that has both leaves the hardware reporting whatever it
+        actually sees, alongside synthetic tracks. That is HYBRID mode, and it is why every
+        detection carries its sensor's type.
+        """
         scenario = load_all()[scenario_id]
         registry = load_sensor_registry()
         world = ScenarioWorld(scenario, self.clock.now())
         positions = self.geometry.site.sensor_positions_enu()
 
-        self._adapters = [
+        adapters = [
             SimulatedSensorAdapter(
                 clock=self.clock,
                 sensor_id=placement.sensor_id,
@@ -159,10 +199,35 @@ class Pipeline:
                 boresight_deg=placement.boresight_deg,
             )
             for placement in self.geometry.site.sensors
-            if placement.enabled
+            if placement.enabled and placement.registry_key is not None
         ]
-        for adapter in self._adapters:
+        self._attach(adapters)
+
+    def attach_hardware(self) -> None:
+        """Construct and start an adapter for every enabled real sensor at this site.
+
+        Construction cannot fail on an unplugged device — adapters open nothing until they are
+        started, and a start that cannot reach its hardware records OFFLINE rather than raising.
+        A site with three radars and one unplugged USB cable therefore runs with three, and says
+        which one is missing, instead of refusing to start at all.
+        """
+        self._attach(
+            [
+                build_hardware_adapter(
+                    self.clock,
+                    placement,
+                    self.data_dir,
+                    self.geometry.site.reference.altitude_m,
+                )
+                for placement in self.geometry.site.sensors
+                if placement.enabled and placement.is_live
+            ]
+        )
+
+    def _attach(self, adapters: list[SensorAdapter]) -> None:
+        for adapter in adapters:
             adapter.start()
+        self._adapters.extend(adapters)
 
     def step(self) -> int:
         """Run one cycle. Returns how many detections were accepted.
@@ -221,6 +286,145 @@ laptop", and it means every interface including whatever the machine is plugged 
 """
 
 
+def build_hardware_adapter(
+    clock: Clock,
+    placement: SensorPlacement,
+    data_dir: Path,
+    reference_altitude_m: float = 0.0,
+) -> SensorAdapter:
+    """One real sensor, from its site placement.
+
+    This is the only place in the repository where a site document meets a hardware driver, and
+    it is deliberately dull: it copies configuration across and constructs one object. Anything
+    cleverer — deriving mount tilt from a zone, defaulting a port from a scan of /dev — would
+    put a guess between what the installer wrote down and what the sensor is told it is.
+
+    Lives in `backend/main.py` rather than in `sensors/` so that the adapter package keeps its
+    dependency rule: adapters know about the canonical schema and the clock, and nothing about
+    sites, zones or run modes.
+    """
+    link = placement.hardware
+    if link is None:
+        raise ValueError(f"sensor {placement.sensor_id} has no hardware link to build")
+
+    if link.driver != "uart_fmcw_radar":  # pragma: no cover - the model's Literal forbids it
+        raise ValueError(f"unknown sensor driver {link.driver!r}")
+
+    return UartFmcwRadarAdapter(
+        clock,
+        UartFmcwRadarConfig(
+            sensor_id=placement.sensor_id,
+            link=UartLinkConfig(port=link.port, baud=link.baud),
+            mount=MountConfig(
+                latitude=placement.position.latitude,
+                longitude=placement.position.longitude,
+                # `height_m` is height above the *site reference*, and the driver works in
+                # metres above the WGS-84 ellipsoid like everything else — so the reference
+                # altitude has to be added back. Skipping this is a silent vertical offset of
+                # exactly the site's elevation on every detection (FM-004).
+                altitude_m=reference_altitude_m + placement.height_m,
+                boresight_deg=placement.boresight_deg,
+                tilt_deg=link.tilt_deg,
+            ),
+            gate=DetectionGateConfig(
+                min_range_m=link.min_range_m, max_range_m=link.max_range_m
+            ),
+            raw_log_path=(data_dir / link.raw_log_path) if link.raw_log_path else None,
+        ),
+    )
+
+
+def _report_hardware_state(pipeline: Pipeline) -> None:
+    """Log what each real sensor said about itself immediately after starting.
+
+    Loudly, and at start-up rather than on request, because the two ways live operation goes
+    wrong are both silent: a sensor that never opened its port, and a sensor whose byte stream
+    never syncs. Both produce an empty display that looks exactly like a quiet sky, and this is
+    the moment at which the difference is cheapest to notice.
+
+    The caveats are logged with it. This hardware is unvalidated (FM-050, FM-052) and the
+    operator should be told so by the system rather than by a document they may not have read.
+    """
+    for adapter in pipeline.adapters:
+        if adapter.sensor_type.is_simulated:
+            continue
+        health = adapter.health()
+        log = _LOG.info if health.state is SensorState.OK else _LOG.warning
+        log("Sensor %s: %s — %s", health.sensor_id, health.state.upper(), health.reason)
+
+    if pipeline.live_adapter_count:
+        _LOG.warning(
+            "LIVE mode: %d real sensor(s) attached. This hardware is unvalidated — its frame "
+            "layout and baud rate are unconfirmed (FM-050) and its ability to detect a small "
+            "airframe at any range is unmeasured (FM-052). Treat every track as evidence to be "
+            "checked, not as fact. See docs/live_mode.md.",
+            pipeline.live_adapter_count,
+        )
+
+
+class ModeRefused(RuntimeError):
+    """The requested run mode cannot be satisfied by this site's configuration.
+
+    Distinct from `StartupRefused`, which is about exposure. This one is about honesty: a
+    system told to run LIVE and started anyway with nothing but simulated sensors would show an
+    operator synthetic tracks under a LIVE badge, which is the single worst thing this codebase
+    can do.
+    """
+
+
+def resolve_sources(
+    mode: RunMode, site: Site, scenario: str | None
+) -> tuple[bool, str | None]:
+    """Which adapter families a run mode wants, and the refusals if it cannot have them.
+
+    Returns `(attach_hardware, scenario_to_run)`. Every refusal below is a state that would
+    otherwise produce a confident display over data that is not what it claims to be.
+    """
+    live_placements = [p for p in site.sensors if p.enabled and p.is_live]
+    simulated_placements = [p for p in site.sensors if p.enabled and not p.is_live]
+
+    if mode is RunMode.SIMULATION:
+        if scenario is None:
+            return False, None
+        if not simulated_placements:
+            raise ModeRefused(
+                f"site {site.site_id!r} has no enabled simulated sensors, so scenario "
+                f"{scenario!r} would drive nothing and the display would stay empty for a "
+                "reason nobody could see. Add a placement with a registry_key, or run "
+                "--mode live against the hardware this site is fitted with."
+            )
+        return False, scenario
+
+    if mode is RunMode.LIVE:
+        if scenario is not None:
+            raise ModeRefused(
+                "--mode live does not take a scenario. Synthetic tracks alongside real ones is "
+                "HYBRID mode; ask for it by name (--mode hybrid) so that whoever reads the "
+                "screen knows both are present."
+            )
+        if not live_placements:
+            raise ModeRefused(
+                f"--mode live, but site {site.site_id!r} has no enabled sensor with a hardware "
+                "block. Nothing would feed the pipeline and the interface would show an empty "
+                "sky indistinguishable from a quiet one. Add a hardware placement to "
+                f"config/sites/{site.site_id}.json — see docs/live_mode.md."
+            )
+        return True, None
+
+    # HYBRID: both, and it must genuinely be both or the name is a lie.
+    if not live_placements:
+        raise ModeRefused(
+            f"--mode hybrid, but site {site.site_id!r} has no enabled hardware placement. That "
+            "is simulation with a different label; run --mode simulation."
+        )
+    if scenario is None:
+        raise ModeRefused(
+            "--mode hybrid needs a scenario to supply the simulated half. Without one it is "
+            "live operation with a misleading badge; run --mode live."
+        )
+    return True, scenario
+
+
 class StartupRefused(RuntimeError):
     """The requested configuration would expose the system. Raised instead of starting."""
 
@@ -275,8 +479,14 @@ def build_application(
     data_dir: Path | None = None,
     tick_s: float = DEFAULT_TICK_S,
     authenticated: bool = True,
+    mode: RunMode = RunMode.SIMULATION,
 ):
     """Assemble the pipeline and the API around it.
+
+    `mode` selects which adapter families feed the pipeline, and is checked against the site's
+    configuration before anything starts (`resolve_sources`). It is not a decoration on the
+    display: SIMULATION attaches simulated adapters only, LIVE attaches hardware only, HYBRID
+    attaches both. Nothing downstream of ingestion is aware of which one is running.
 
     `authenticated` selects the identity provider. True is the default and the only setting safe
     off loopback; False attributes everything to one local operator with no login at all
@@ -287,7 +497,12 @@ def build_application(
     geometry = load_site_geometry(site)
     resolved = data_dir or ConfigPaths.default().repo_root / "data"
 
+    attach_hardware, scenario = resolve_sources(mode, geometry.site, scenario)
+
     pipeline = Pipeline(clock, geometry, resolved)
+    if attach_hardware:
+        pipeline.attach_hardware()
+        _report_hardware_state(pipeline)
     if scenario:
         pipeline.attach_scenario(scenario)
 
@@ -309,11 +524,13 @@ def build_application(
         alerts=pipeline.alerting,
         classification_running=True,
         situation=pipeline.risk,
-        run_mode=RunMode.SIMULATION,
+        run_mode=mode,
+        live_adapter_count=pipeline.live_adapter_count,
+        sensor_health=pipeline,
     )
 
     app = create_app(services)
-    _attach_pipeline_task(app, pipeline, scenario, tick_s)
+    _attach_pipeline_task(app, pipeline, tick_s)
 
     # After the routers, so the interface's catch-all can only ever match paths the API did
     # not claim.
@@ -321,8 +538,13 @@ def build_application(
     return app
 
 
-def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s: float) -> None:
+def _attach_pipeline_task(app, pipeline: Pipeline, tick_s: float) -> None:
     """Run the pipeline on the event loop for as long as the server is up.
+
+    Stepped whenever *any* adapter is attached, not only when a scenario is running. That
+    distinction is what LIVE mode turns on: a live sensor produces detections because there is
+    something in the sky, and a loop that only ran for scenarios would leave real hardware
+    reporting into a pipeline nobody was stepping.
 
     Composed into the application's existing lifespan rather than registered with
     `@app.on_event`. FastAPI **silently ignores** startup and shutdown handlers when a
@@ -339,7 +561,7 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
         async with existing_lifespan(scope_app):
             handle: asyncio.Task | None = None
 
-            if scenario:
+            if pipeline.adapters:
 
                 async def run() -> None:
                     consecutive_failures = 0
@@ -392,6 +614,16 @@ def main() -> None:
         default=None,
         help="scenario to drive the simulator with; omit to serve an idle system",
     )
+    parser.add_argument(
+        "--mode",
+        type=RunMode,
+        choices=list(RunMode),
+        default=RunMode.SIMULATION,
+        help=(
+            "where detections come from: simulation (synthetic only), live (this site's "
+            "configured hardware only), or hybrid (both, and it must genuinely be both)"
+        ),
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
@@ -417,13 +649,19 @@ def main() -> None:
     arguments = parser.parse_args()
 
     authenticated = not arguments.no_auth
-    app = build_application(
-        site=arguments.site,
-        scenario=arguments.scenario,
-        data_dir=arguments.data_dir,
-        tick_s=arguments.tick,
-        authenticated=authenticated,
-    )
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+    try:
+        app = build_application(
+            site=arguments.site,
+            scenario=arguments.scenario,
+            data_dir=arguments.data_dir,
+            tick_s=arguments.tick,
+            authenticated=authenticated,
+            mode=arguments.mode,
+        )
+    except ModeRefused as refusal:
+        raise SystemExit(f"\n  {refusal}\n") from refusal
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.

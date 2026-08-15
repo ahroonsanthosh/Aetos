@@ -41,7 +41,14 @@ class SensorRecord(BaseModel):
 
     sensor_id: str = Field(min_length=1, max_length=64)
     site_id: str = Field(min_length=1, max_length=64)
-    registry_key: str = Field(min_length=1, max_length=64)
+    registry_key: str | None = Field(default=None, min_length=1, max_length=64)
+    """Null for a real sensor: it has no simulation profile, and inventing one would put
+    fabricated detection characteristics where a reader expects configured ones."""
+
+    hardware_driver: str | None = Field(default=None, min_length=1, max_length=64)
+    """Which real driver is fitted here, or null for a simulated placement. Carried so that
+    `GET /sensors` can distinguish a sensor that exists physically from one that exists only
+    in a scenario — the single most important thing about any row in that table."""
 
     sensor_type: SensorType | None = None
     """Left null rather than guessed. The registry entry that would state a sensor's type has
@@ -151,6 +158,7 @@ def sensor_records_from_site(site: Site) -> list[SensorRecord]:
             sensor_id=placement.sensor_id,
             site_id=site.site_id,
             registry_key=placement.registry_key,
+            hardware_driver=placement.hardware.driver if placement.hardware else None,
             latitude=placement.position.latitude,
             longitude=placement.position.longitude,
             height_m=placement.height_m,

@@ -7,6 +7,8 @@ is inside this package and nowhere else. See `README.md` here and `docs/adr/0017
 
 from sensors.adapters.uart_fmcw_radar.adapter import UartFmcwRadarAdapter
 from sensors.adapters.uart_fmcw_radar.config import (
+    ConfidenceConfig,
+    DetectionGateConfig,
     MountConfig,
     UartFmcwRadarConfig,
     UartLinkConfig,
@@ -22,6 +24,8 @@ from sensors.adapters.uart_fmcw_radar.protocol import (
 
 __all__ = [
     "ByteLink",
+    "ConfidenceConfig",
+    "DetectionGateConfig",
     "FrameError",
     "LinkError",
     "MountConfig",

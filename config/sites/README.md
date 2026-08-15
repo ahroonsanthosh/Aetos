@@ -106,6 +106,37 @@ false alarm rate belong to the sensor registry, because one sensor model is plac
 sites and one site is fitted with different sensors. `boresight_deg` is ignored by sensor models
 with full azimuthal coverage.
 
+#### Real sensors
+
+A placement fitted with physical hardware carries a `hardware` block **instead of**
+`registry_key` — exactly one of the two, never both:
+
+```jsonc
+{
+  "sensor_id": "radar_testbed_01",
+  "position": { "latitude": …, "longitude": … },
+  "height_m": 1.5,
+  "boresight_deg": 0.0,                 // clockwise from TRUE north. The usual mistake.
+  "enabled": true,
+  "hardware": {
+    "driver": "uart_fmcw_radar",        // closed set; an unknown name fails at load
+    "port": "/dev/ttyUSB0",             // COM4 on Windows
+    "baud": 115200,                     // confirm against the unit first (FM-050)
+    "tilt_deg": 0.0,                    // the only elevation this hardware has (FM-051)
+    "min_range_m": 10.0,
+    "max_range_m": 100.0,
+    "raw_log_path": "raw/radar_01.log"  // relative to the data directory
+  }
+}
+```
+
+The exclusivity is enforced, and it is the point: pointing real hardware at a registry entry
+would fill the sensors table with invented probabilities of detection, and no reader could tell
+which rows described a device and which described a scenario.
+
+`local_testbed.json` is a working example fitted with one radar. See `docs/live_mode.md` for
+the bring-up sequence and ADR 0018 for how a run mode selects between the two kinds.
+
 ## The shipped site
 
 Reference at 45.0 N, 0.0 E, 120 m ellipsoidal. Distances below are from the reference point.

@@ -33,6 +33,7 @@ from backend.database.repositories import (
 )
 from backend.events.store import EventStore
 from backend.risk.correlation import SituationAssessment
+from sensors.adapters.interface import SensorHealth
 
 
 @dataclass(frozen=True)
@@ -115,15 +116,40 @@ class ApiServices:
     and a frontend-side toggle would let synthetic data be presented as real by editing one
     line."""
 
+    live_adapter_count: int = 0
+    """How many real sensor adapters the wiring attached.
+
+    Set by whoever assembles the pipeline, from the adapters it holds rather than from what the
+    configuration asked for — declaring LIVE does not change the badge, attaching a sensor
+    does.
+
+    Attached, not necessarily talking. Whether a fitted sensor is currently reporting is a
+    different question with a different answer, and it is `sensors` in `GET /system/health`.
+    Folding the two together would make an unplugged radar read as SIMULATION, which is the
+    worse lie of the two: it would claim everything on screen is synthetic when in fact nothing
+    is on screen at all."""
+
+    sensor_health: SensorHealthSource | None = None
+    """Where `GET /system/health` reads per-sensor state from. None when nothing is attached."""
+
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
-        Structurally zero: no real sensor adapter integration exists in this build, and there
-        is no adapter registry for the API to consult. Written as a method returning a
-        computed zero rather than a literal so that wiring in a registry later changes one
-        implementation instead of every caller that assumed the answer.
+        Zero unless the wiring attached real hardware, which is what makes `GET /system/mode`
+        a fact rather than a restatement of the configured mode: declaring LIVE does not make
+        the badge change, attaching a sensor does.
         """
-        return 0
+        return self.live_adapter_count
+
+
+class SensorHealthSource(Protocol):
+    """Anything that can report what its sensors say about themselves — in practice `Pipeline`.
+
+    Facts, unjudged, exactly as the adapters report them. The endpoint that reads this decides
+    what a silent sensor means; the adapters do not, and neither does this protocol (FM-010).
+    """
+
+    def sensor_health(self) -> list[SensorHealth]: ...
 
 
 class AlertSource(Protocol):

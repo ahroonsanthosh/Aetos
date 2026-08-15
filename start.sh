@@ -7,6 +7,8 @@
 #   ./start.sh --list                   show the available scenarios
 #   ./start.sh --port 9000              serve somewhere else
 #   ./start.sh --no-scenario            serve an idle system, no synthetic data
+#   ./start.sh --live                   run against real hardware (see docs/live_mode.md)
+#   ./start.sh --site local_testbed     use a different site configuration
 #   ./start.sh --no-auth                no login, localhost only (see ADR 0016)
 #
 # Sets up the Python environment, builds the operator interface if it is not already built,
@@ -65,6 +67,11 @@ SCENARIO="b_approaching_threat"
 PORT=8000
 HOST="127.0.0.1"
 NO_AUTH=0
+MODE="simulation"
+SITE=""
+# --live defaults to the hardware testbed site, because the shipped fictional site has no
+# hardware fitted and would be refused. An explicit --site always wins.
+LIVE_DEFAULT_SITE="local_testbed"
 
 # ---------------------------------------------------------------------------------------
 # Arguments
@@ -81,6 +88,9 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --no-scenario) SCENARIO=""; shift ;;
+    --live) MODE="live"; SCENARIO=""; shift ;;
+    --hybrid) MODE="hybrid"; shift ;;
+    --site) SITE="$2"; shift 2 ;;
     --no-auth) NO_AUTH=1; shift ;;
     --port) PORT="$2"; shift 2 ;;
     --host) HOST="$2"; shift 2 ;;
@@ -115,16 +125,26 @@ PY=".venv/bin/python"
 
 # Reinstall only when the dependency declaration is newer than the last install, so a repeat
 # run starts immediately instead of resolving packages every time.
+# Live mode needs the serial library; simulation does not, and installing it for everyone
+# would make a laptop demo depend on a package it never calls. The stamp records which of the
+# two was installed, so switching to --live installs the extra rather than failing at the port.
 STAMP=".venv/.aetos-installed"
-if [[ ! -f "$STAMP" || pyproject.toml -nt "$STAMP" ]]; then
+EXTRAS="."
+WANTED="base"
+if [[ "$MODE" != "simulation" ]]; then
+  EXTRAS=".[hardware]"
+  WANTED="hardware"
+fi
+
+if [[ ! -f "$STAMP" || pyproject.toml -nt "$STAMP" || "$(cat "$STAMP" 2>/dev/null)" != "$WANTED" ]]; then
   say "Installing backend dependencies"
   if command -v uv >/dev/null; then
-    uv pip install --quiet -e .
+    uv pip install --quiet -e "$EXTRAS"
   else
     "$PY" -m pip install --quiet --upgrade pip
-    "$PY" -m pip install --quiet -e .
+    "$PY" -m pip install --quiet -e "$EXTRAS"
   fi
-  touch "$STAMP"
+  echo "$WANTED" > "$STAMP"
 fi
 
 # ---------------------------------------------------------------------------------------
@@ -265,8 +285,13 @@ echo
   done
 ) &
 
-ARGS=(--host "$HOST" --port "$PORT")
+if [[ "$MODE" != "simulation" && -z "$SITE" ]]; then
+  SITE="$LIVE_DEFAULT_SITE"
+fi
+
+ARGS=(--host "$HOST" --port "$PORT" --mode "$MODE")
 [[ "$NO_AUTH" == "1" ]] && ARGS+=(--no-auth)
+[[ -n "$SITE" ]] && ARGS+=(--site "$SITE")
 [[ -n "$SCENARIO" ]] && ARGS+=(--scenario "$SCENARIO")
 
 exec "$PY" -m backend.main "${ARGS[@]}"

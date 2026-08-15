@@ -15,11 +15,10 @@ Aetos is **software only**. It stops at a human-facing recommendation.
   effector integration is a separate future system with its own authorisation and safety
   architecture, and does not belong in this codebase.
 
-At this stage every detection a running system produces is **synthetic**, from a built-in
-simulator. A driver for one piece of testbed radar hardware exists in
-`sensors/adapters/uart_fmcw_radar/`, but it is not wired into any run mode and nothing it
-reports has been validated against a real airframe — see its README and ADR 0017 before
-treating it as a sensor integration.
+By default every detection is **synthetic**, from a built-in simulator. Aetos can also run
+against a real radar — `./start.sh --live`, see **[docs/live_mode.md](docs/live_mode.md)** —
+but that hardware is a testbed unit whose detection performance has never been measured
+(FM-050, FM-052). Live mode makes the system usable; it does not make the sensor trustworthy.
 
 ## Core principle
 
@@ -77,6 +76,7 @@ interface, so there is no second terminal and no proxy to configure.
 ./start.sh --list                  # show the nine scenarios and what each one is for
 ./start.sh h_track_crossing        # run a specific one
 ./start.sh --no-scenario           # idle system, no synthetic data
+./start.sh --live                  # real radar instead of the simulator
 ./start.sh --port 9000             # serve somewhere else
 ```
 

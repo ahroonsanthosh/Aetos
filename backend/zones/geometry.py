@@ -531,17 +531,20 @@ def load_site_geometry(name: str, paths: ConfigPaths | None = None) -> SiteGeome
 def registry_keys_in_use(site: Site, environment: EnvironmentConfig) -> tuple[str, ...]:
     """Sensor registry keys an environment actually needs at a site, sorted and deduplicated.
 
-    Two independent filters, and both matter: a placement disabled in the site document is not
-    fitted at all, and a key the environment does not permit is not run here even where it is
-    fitted. The sensor layer loads exactly these documents, which is how a simulation profile
-    stays out of a run that was not configured for it.
+    Three independent filters, and each matters: a placement disabled in the site document is
+    not fitted at all, a key the environment does not permit is not run here even where it is
+    fitted, and a real sensor has no registry key to load because it has no simulation profile.
+    The sensor layer loads exactly these documents, which is how a simulation profile stays out
+    of a run that was not configured for it.
     """
     return tuple(
         sorted(
             {
                 placement.registry_key
                 for placement in site.sensors
-                if placement.enabled and environment.permits_registry_key(placement.registry_key)
+                if placement.enabled
+                and placement.registry_key is not None
+                and environment.permits_registry_key(placement.registry_key)
             }
         )
     )
