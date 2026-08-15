@@ -84,8 +84,23 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     clock = SystemClock()
-    data_dir = arguments.data_dir or ConfigPaths.default().repo_root / "data"
-    repositories = SqliteRepositories(clock, data_dir / "aetos.db")
+    # Accounts are installation-wide and live outside the per-deployment data directories, so
+    # this resolves the identity database exactly the way the server does — from one function,
+    # rather than from two paths that agree until one of them changes. When they disagree the
+    # failure is silent and complete: accounts created successfully here, and a login screen
+    # that rejects every one of them.
+    data_dir = arguments.data_dir or ConfigPaths.default().repo_root / "data" / "admin"
+    identity_path = (
+        (arguments.data_dir / "identity.db")
+        if arguments.data_dir
+        else ConfigPaths.default().identity_db
+    )
+    identity_path.parent.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    repositories = SqliteRepositories(
+        clock, data_dir / "admin.db", identity_path=identity_path
+    )
     events = SqliteEventStore(clock, data_dir / "events.db")
 
     auth = AuthService(

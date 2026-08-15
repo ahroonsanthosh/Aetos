@@ -97,7 +97,9 @@ class Pipeline:
         self.data_dir = data_dir
 
         self.events = SqliteEventStore(clock, data_dir / "events.db")
-        self.repositories = SqliteRepositories(clock, data_dir / "aetos.db")
+        self.repositories = SqliteRepositories(
+            clock, data_dir / "aetos.db", identity_path=ConfigPaths.default().identity_db
+        )
         self.projection = TrackProjection(
             store=self.events,
             tracks=self.repositories.tracks,
@@ -635,12 +637,23 @@ def _warn_about_legacy_data(paths: ConfigPaths) -> None:
     more, and the alert-rebuild-on-start that depends on it will find nothing. Saying so once is
     the difference between a puzzling empty feed and a known consequence of an upgrade.
     """
-    legacy = paths.repo_root / "data" / "events.db"
-    if legacy.exists():
+    legacy_log = paths.repo_root / "data" / "events.db"
+    if legacy_log.exists():
         _LOG.info(
             "An event log from before per-deployment data directories exists at %s. It is no "
             "longer read: history is now kept per site and run mode. Nothing has been deleted.",
-            legacy,
+            legacy_log,
+        )
+
+    legacy_accounts = paths.repo_root / "data" / "aetos.db"
+    if legacy_accounts.exists() and not paths.identity_db.exists():
+        _LOG.warning(
+            "Accounts now live in %s, shared by every deployment. Any account in the older %s "
+            "is not read — create yours again with: %s -m backend.auth.admin add --username "
+            "<name> --role admin",
+            paths.identity_db,
+            legacy_accounts,
+            sys.executable,
         )
 
 

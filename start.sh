@@ -221,7 +221,11 @@ from backend.common.clock import SystemClock
 from backend.common.config import ConfigPaths
 from backend.database.sqlite import SqliteRepositories
 
-repos = SqliteRepositories(SystemClock(), ConfigPaths.default().repo_root / "data" / "aetos.db")
+# The identity database, resolved the same way the server and the admin CLI resolve it.
+# Reading a different file here would report "no accounts" to someone who has one, or wave
+# through a run nobody can sign in to.
+paths = ConfigPaths.default()
+repos = SqliteRepositories(SystemClock(), paths.identity_db, identity_path=paths.identity_db)
 print(repos.users.count())
 repos.close()
 PY
