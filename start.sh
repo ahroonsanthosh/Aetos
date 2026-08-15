@@ -243,15 +243,26 @@ URL="http://${HOST}:${PORT}"
 echo
 printf '\033[1m  AETOS\033[0m  Counter-UAS / Sensor Fusion\n'
 echo
+printf '  Mode       %s\n' "$MODE"
 if [[ -n "$SCENARIO" ]]; then
   printf '  Scenario   %s\n' "$SCENARIO"
-else
+elif [[ "$MODE" == "simulation" ]]; then
   printf '  Scenario   none — the picture will stay empty\n'
+else
+  printf '  Site       %s\n' "$SITE"
 fi
 printf '  Interface  \033[36m%s\033[0m\n' "$URL"
 printf '  API docs   %s/api/v1/docs\n' "$URL"
 echo
-printf '  Data is \033[33mSIMULATED\033[0m. No real sensor is connected.\n'
+# This said SIMULATED unconditionally, so a live run announced itself as synthetic before the
+# backend could say otherwise — the one claim this system must never get backwards.
+if [[ "$MODE" == "simulation" ]]; then
+  printf '  Data is \033[33mSIMULATED\033[0m. No real sensor is connected.\n'
+else
+  printf '  Data is \033[33mLIVE\033[0m, from unvalidated testbed hardware. Its frame layout and\n'
+  printf '  baud rate are unconfirmed, and detection of a small airframe is unmeasured\n'
+  printf '  (FM-050, FM-052). Treat every track as evidence to check — docs/live_mode.md.\n'
+fi
 if [[ "$NO_AUTH" == "1" ]]; then
   printf '  \033[33mNo authentication\033[0m — anyone who can reach this port has full access.\n'
 else
