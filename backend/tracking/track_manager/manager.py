@@ -187,15 +187,34 @@ class TrackManager:
     def process(self, detections: list[IncomingDetection]) -> list[Track]:
         """Run one tracking cycle and return the resulting displayable tracks.
 
-        The order below matters. Prediction happens before association so that every track is
-        compared against detections at the same instant; associating against stale positions
-        would make a fast object look like a mismatch and split its track.
+        The order below matters, and there are two distinct epochs in play.
+
+        **Association** compares every track against every detection at one common instant.
+        Associating against stale positions would make a fast object look like a mismatch and
+        split its track, so tracks are projected forward to the cycle time *for gating only*.
+
+        **The update** happens at the detection's own observation time, not the cycle time. A
+        measurement is a statement about where something was when it was observed, and
+        applying it to a state advanced past that moment injects an error of exactly
+        `latency x speed` — 10 m for a half-second-old report of a 20 m/s object, against a
+        sensor whose own noise is a few metres. The gating projection is therefore discarded
+        rather than written back, and each track is advanced to its own detection's timestamp
+        in `_apply_detection`.
+
+        Simulation cannot reveal this: every simulated adapter timestamps from the same
+        injected clock at the same instant, so the two epochs coincide and the error is
+        identically zero. It appears only with real sensors, which report at their own rates
+        with their own latencies.
         """
         now = self._clock.now()
 
-        self._predict_all(now)
+        # Projected copies for gating. Deliberately not written back — see the docstring.
+        gating = {
+            track.track_id: self._project(track, now) for track in self._active.values()
+        }
+
         result = self._associator.associate(
-            [TrackCandidate(t.track_id, t.filter_state) for t in self._active.values()],
+            [TrackCandidate(t.track_id, gating[t.track_id]) for t in self._active.values()],
             [
                 Candidate(d.detection_id, d.position_enu, d.covariance)
                 for d in detections
@@ -220,6 +239,11 @@ class TrackManager:
             self._initiate(by_id[detection_id], now)
 
         self._retire_expired(now)
+
+        # Every surviving track is brought to the cycle time last, so the picture handed to
+        # classification, risk and the operator is current rather than frozen at whenever each
+        # sensor last happened to report.
+        self._predict_all(now)
 
         return [self.to_track(t) for t in self._active.values() if t.state.is_displayable]
 
@@ -270,6 +294,18 @@ class TrackManager:
         """
         return dict(self._last_assignments)
 
+    def _project(self, track: _ActiveTrack, when: datetime) -> KalmanState:
+        """The track's state projected to `when`, without advancing the track itself.
+
+        Used for association gating, where every track must be compared at one instant but
+        must not be left there — the update that follows belongs at its own detection's
+        observation time.
+        """
+        dt = (when - track.last_updated).total_seconds()
+        if dt <= 0.0:
+            return track.filter_state
+        return self._kalman.predict(track.filter_state, dt)
+
     def _predict_all(self, now: datetime) -> None:
         for track in self._active.values():
             dt = (now - track.last_updated).total_seconds()
@@ -280,13 +316,26 @@ class TrackManager:
     def _apply_detection(
         self, track: _ActiveTrack, detection: IncomingDetection, now: datetime
     ) -> None:
+        # Advance to the instant the observation was made, then apply it there. Predicting to
+        # the cycle time and updating with an older measurement is a pure lag of
+        # `latency x speed` and is invisible in simulation, where every adapter shares one
+        # clock. `last_updated` becomes the observation time, and `process` brings the whole
+        # picture to the cycle time once at the end.
+        elapsed = (detection.timestamp - track.last_updated).total_seconds()
+        if elapsed > 0.0:
+            track.filter_state = self._kalman.predict(track.filter_state, elapsed)
+
+        # A detection older than the track's own epoch is out of order — a slow sensor
+        # reporting after a fast one, or a clock stepping back. It is applied where the track
+        # already stands rather than dropped: rewinding the filter is not possible without
+        # keeping history, and a slightly-late measurement still carries information.
         track.filter_state = self._kalman.update(
             track.filter_state, detection.position_enu, detection.covariance
         )
         track.detection_count += 1
         track.consecutive_misses = 0
         track.last_seen = detection.timestamp
-        track.last_updated = now
+        track.last_updated = max(track.last_updated, detection.timestamp)
         track.contributing_sensors.add(detection.sensor_id)
 
         self._transition_after_detection(track, now)

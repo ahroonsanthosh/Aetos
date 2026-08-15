@@ -437,3 +437,108 @@ def test_timestamps_come_from_the_injected_clock(
     feed(manager, clock, cycles=3, dt=2.0)
 
     assert manager.active_tracks()[0].updated_at == START + timedelta(seconds=4)
+
+
+# --------------------------------------------------------------------------------------
+# Observation epoch
+# --------------------------------------------------------------------------------------
+
+
+def latent_detection(
+    clock: SimClock,
+    position: list[float],
+    detection_id: str,
+    latency_s: float,
+) -> IncomingDetection:
+    """A report of where something was `latency_s` ago, arriving now.
+
+    What a real sensor produces and what simulation never does: every simulated adapter
+    timestamps from the same injected clock at the same instant, so latency is identically
+    zero there and an epoch error is invisible.
+    """
+    return IncomingDetection(
+        detection_id=detection_id,
+        sensor_id="SIM-RADAR-01",
+        timestamp=clock.now() - timedelta(seconds=latency_s),
+        position_enu=np.array(position),
+        covariance=R,
+    )
+
+
+def test_a_latent_detection_keeps_its_own_observation_time(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """`last_seen` is when the sensor looked, not when the cycle ran."""
+    clock.advance(10.0)
+    incoming = latent_detection(clock, [0.0, 0.0, 100.0], "det-1", latency_s=0.4)
+
+    manager.process([incoming])
+
+    assert manager.active_tracks()[0].tracking.last_seen == incoming.timestamp
+
+
+def test_a_consistently_late_sensor_does_not_drag_the_estimate_behind_the_target(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """The regression this exists for, stated in metres.
+
+    A target moves east at a constant speed and every report arrives 0.4 s late. Applying
+    those reports at the cycle time rather than at their own observation time is a pure lag of
+    `latency x speed` — 8 m here, against a sensor whose own sigma is 10 m and a filter that
+    should be doing better than its raw noise, not worse.
+
+    The tracker knows how old each report is, so it can and must account for it.
+    """
+    speed = 20.0
+    latency = 0.4
+    tick = 0.5
+
+    errors = []
+    for step in range(30):
+        clock.advance(tick)
+        elapsed = (step + 1) * tick
+        observed_at = elapsed - latency
+        manager.process(
+            [latent_detection(clock, [speed * observed_at, 0.0, 100.0], f"det-{step}", latency)]
+        )
+        tracks = manager.active_tracks()
+        if tracks and step > 15:
+            errors.append(abs(tracks[0].enu.east_m - speed * elapsed))
+
+    assert errors, "no track survived to be measured"
+    mean_error = sum(errors) / len(errors)
+    assert mean_error < 4.0, (
+        f"mean along-track error {mean_error:.2f} m; a lag near {latency * speed:.0f} m means "
+        "detections are being applied at the cycle time rather than at their observation time"
+    )
+
+
+def test_an_out_of_order_detection_is_absorbed_rather_than_destroying_the_track(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """A report older than the track's own epoch still carries information.
+
+    Rewinding the filter is not possible without keeping history, so it is applied where the
+    track already stands. What must not happen is a crash, or a negative-duration prediction.
+    """
+    clock.advance(5.0)
+    manager.process([detection(clock, [0.0, 0.0, 100.0], "det-1")])
+    clock.advance(0.5)
+
+    manager.process([latent_detection(clock, [10.0, 0.0, 100.0], "det-2", latency_s=2.0)])
+
+    assert manager.active_tracks(), "an out-of-order detection destroyed the track"
+
+
+def test_simultaneous_detections_are_unaffected(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """The zero-latency path must be untouched.
+
+    Every existing simulated scenario reports with zero latency, so this asserts the change is
+    a no-op exactly where the old behaviour was already correct.
+    """
+    tracks = feed(manager, clock, cycles=12)
+
+    assert tracks
+    assert tracks[0].enu.east_m == pytest.approx(11 * 20.0, abs=6.0)
