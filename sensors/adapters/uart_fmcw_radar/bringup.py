@@ -38,6 +38,21 @@ from sensors.adapters.uart_fmcw_radar.protocol import ReportParser
 PROBE_SECONDS = 4.0
 """Long enough for several report periods at any plausible update rate."""
 
+_NO_PORTS_AT_ALL = """This machine reports no serial ports at all — not the radar's, not any other.
+
+That is a driver or cable problem on this computer, and nothing in Aetos can affect it:
+  - unplug and replug the USB-to-TTL adapter, and watch whether the list changes at all,
+  - on Windows, look in Device Manager for a device with a warning triangle. A CP2102 with no
+    driver appears under "Other devices" rather than under "Ports (COM & LPT)",
+  - the CP2102 driver is a separate install on some Windows builds — Silicon Labs publish it
+    as "CP210x USB to UART Bridge VCP Drivers",
+  - try another USB cable. Charge-only cables carry power and no data lines, and look
+    identical to the ones that work."""
+
+
+class SerialLibraryMissing(RuntimeError):
+    """pyserial is not installed, so nothing can be said about this machine's ports."""
+
 
 class PortUnavailable(RuntimeError):
     """The serial port could not be opened. Distinct from the sensor being silent.
@@ -50,12 +65,23 @@ class PortUnavailable(RuntimeError):
 
 
 def available_ports() -> list[str]:
-    """Every serial port this machine reports, described. Empty if none or if pyserial is
-    absent — this is diagnostic help, and failing to enumerate must not become its own error."""
+    """Every serial port this machine reports, described.
+
+    Raises `SerialLibraryMissing` rather than returning nothing when pyserial is absent. An
+    empty list must mean exactly one thing — **this machine has no serial ports** — because the
+    person reading it is about to go and reinstall a USB driver on the strength of it. Two
+    causes behind one silent answer is the failure this whole codebase is written against, and
+    it is no more acceptable in a diagnostic tool than in the operator display.
+    """
     try:
         from serial.tools import list_ports  # noqa: PLC0415 — optional dependency
-    except ImportError:  # pragma: no cover - depends on the install extra
-        return []
+    except ImportError as exc:  # pragma: no cover - depends on the install extra
+        raise SerialLibraryMissing(
+            "pyserial is not installed in this environment, so no serial port can be seen "
+            "whether or not one exists. Install the hardware extra:\n"
+            "    pip install -e '.[hardware]'\n"
+            "or run ./start.sh --live once, which installs it."
+        ) from exc
 
     return [
         f"{port.device}  {port.description}"
@@ -220,9 +246,16 @@ def main(argv: list[str] | None = None) -> int:
     clock = SystemClock()
 
     if arguments.list_ports:
-        ports = available_ports()
-        print("\n".join(ports) if ports else "No serial ports reported by this machine.")
-        return 0 if ports else 1
+        try:
+            ports = available_ports()
+        except SerialLibraryMissing as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        if ports:
+            print("\n".join(ports))
+            return 0
+        print(_NO_PORTS_AT_ALL, file=sys.stderr)
+        return 1
 
     if not arguments.port:
         parser.error("--port is required unless --list-ports is given")
@@ -262,7 +295,12 @@ def _report_missing_port(port: str, reason: str) -> int:
     """
     print(f"\nCould not open {port}: {reason}", file=sys.stderr)
 
-    ports = available_ports()
+    try:
+        ports = available_ports()
+    except SerialLibraryMissing as exc:
+        print(f"\n{exc}", file=sys.stderr)
+        return 1
+
     if ports:
         print("\nSerial ports this machine reports:", file=sys.stderr)
         for entry in ports:
@@ -273,14 +311,7 @@ def _report_missing_port(port: str, reason: str) -> int:
             file=sys.stderr,
         )
     else:
-        print(
-            "\nThis machine reports no serial ports at all. The USB-to-TTL adapter is not "
-            "plugged in, or its driver is not installed:"
-            "\n  - unplug and replug it, then run this again,"
-            "\n  - on Windows, check Device Manager for a device with a warning triangle,"
-            "\n  - the CP2102 driver is a separate install on some Windows versions.",
-            file=sys.stderr,
-        )
+        print(f"\n{_NO_PORTS_AT_ALL}", file=sys.stderr)
     return 1
 
 

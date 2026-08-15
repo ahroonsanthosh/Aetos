@@ -14,7 +14,12 @@ from datetime import UTC, datetime
 import pytest
 
 from backend.common.clock import SimClock
-from sensors.adapters.uart_fmcw_radar.bringup import PortUnavailable, probe
+from sensors.adapters.uart_fmcw_radar.bringup import (
+    PortUnavailable,
+    SerialLibraryMissing,
+    available_ports,
+    probe,
+)
 from sensors.adapters.uart_fmcw_radar.config import UartLinkConfig
 from sensors.adapters.uart_fmcw_radar.link import LinkError
 from sensors.adapters.uart_fmcw_radar.protocol import REPORT_HEADER, REPORT_TAIL
@@ -85,6 +90,28 @@ def test_a_silent_link_is_not_a_result_either() -> None:
         return ScriptedLink(config, framing_at=None, noise=False)
 
     assert probe("COM4", (115200, 256000), _clock(), link_factory=factory) is None
+
+
+def test_no_ports_and_no_pyserial_are_different_answers(monkeypatch) -> None:
+    """An empty port list must mean exactly one thing: this machine has no serial ports.
+
+    Whoever reads it is about to reinstall a USB driver on the strength of it, and "the library
+    is missing" would send them to do that for nothing. Two causes behind one silent answer is
+    the failure this codebase is written against — a diagnostic tool gets no exemption.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def without_pyserial(name, *args, **kwargs):
+        if name.startswith("serial"):
+            raise ImportError("no module named serial")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_pyserial)
+
+    with pytest.raises(SerialLibraryMissing, match="hardware extra"):
+        available_ports()
 
 
 def test_a_port_that_will_not_open_raises_rather_than_reporting_no_frames() -> None:
