@@ -8,7 +8,7 @@
 #   ./start.sh --port 9000              serve somewhere else
 #   ./start.sh --no-scenario            serve an idle system, no synthetic data
 #   ./start.sh --live                   run against real hardware (see docs/live_mode.md)
-#   ./start.sh --site local_testbed     use a different site configuration
+#   ./start.sh --site my_site           use a different site configuration
 #   ./start.sh --no-auth                no login, localhost only (see ADR 0016)
 #
 # Sets up the Python environment, builds the operator interface if it is not already built,
@@ -71,7 +71,7 @@ MODE="simulation"
 SITE=""
 # --live defaults to the hardware testbed site, because the shipped fictional site has no
 # hardware fitted and would be refused. An explicit --site always wins.
-LIVE_DEFAULT_SITE="local_testbed"
+LIVE_DEFAULT_SITE="hardware_testbed"
 
 # ---------------------------------------------------------------------------------------
 # Arguments

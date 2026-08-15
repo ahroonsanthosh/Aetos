@@ -134,7 +134,7 @@ The exclusivity is enforced, and it is the point: pointing real hardware at a re
 would fill the sensors table with invented probabilities of detection, and no reader could tell
 which rows described a device and which described a scenario.
 
-`local_testbed.json` is a working example fitted with one radar. See `docs/live_mode.md` for
+`hardware_testbed.json` is a working example fitted with one radar. See `docs/live_mode.md` for
 the bring-up sequence and ADR 0018 for how a run mode selects between the two kinds.
 
 ## The shipped site

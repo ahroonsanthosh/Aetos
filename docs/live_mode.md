@@ -70,11 +70,11 @@ straight through, check 5 V and a common ground, and check nothing else already 
 
 ## 3. Describe your site
 
-Copy `config/sites/local_testbed.json` and edit it, or edit it in place:
+Copy `config/sites/hardware_testbed.json` and edit it, or edit it in place:
 
 ```json
 {
-  "site_id": "local_testbed",
+  "site_id": "hardware_testbed",
   "reference": { "latitude": 51.8971, "longitude": -8.4697, "altitude_m": 5.0 },
   "protected_radius_m": 100.0,
   "sensors": [
@@ -116,7 +116,7 @@ loader refuses anything else.
 ## 4. Run it
 
 ```bash
-./start.sh --live                       # uses config/sites/local_testbed.json
+./start.sh --live                       # uses config/sites/hardware_testbed.json
 ./start.sh --live --site my_site        # your own site document
 ```
 
@@ -126,7 +126,7 @@ hardware is unvalidated.
 Under the hood:
 
 ```bash
-.venv/bin/python -m backend.main --mode live --site local_testbed
+.venv/bin/python -m backend.main --mode live --site hardware_testbed
 ```
 
 ### What each mode does, and what it refuses
