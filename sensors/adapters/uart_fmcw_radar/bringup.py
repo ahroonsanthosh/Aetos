@@ -32,7 +32,13 @@ from pathlib import Path
 
 from backend.common.clock import Clock, SystemClock
 from sensors.adapters.uart_fmcw_radar.config import UartLinkConfig
-from sensors.adapters.uart_fmcw_radar.link import ByteLink, LinkError, SerialByteLink
+from sensors.adapters.uart_fmcw_radar.link import (
+    ByteLink,
+    LinkError,
+    SerialByteLink,
+    SerialLibraryMissing,
+    available_ports,
+)
 from sensors.adapters.uart_fmcw_radar.protocol import ReportParser
 
 PROBE_SECONDS = 4.0
@@ -50,10 +56,6 @@ That is a driver or cable problem on this computer, and nothing in Aetos can aff
     identical to the ones that work."""
 
 
-class SerialLibraryMissing(RuntimeError):
-    """pyserial is not installed, so nothing can be said about this machine's ports."""
-
-
 class PortUnavailable(RuntimeError):
     """The serial port could not be opened. Distinct from the sensor being silent.
 
@@ -62,31 +64,6 @@ class PortUnavailable(RuntimeError):
     of which is fixed by checking a jumper wire, and all of which are answered by looking at
     what ports the machine actually has.
     """
-
-
-def available_ports() -> list[str]:
-    """Every serial port this machine reports, described.
-
-    Raises `SerialLibraryMissing` rather than returning nothing when pyserial is absent. An
-    empty list must mean exactly one thing — **this machine has no serial ports** — because the
-    person reading it is about to go and reinstall a USB driver on the strength of it. Two
-    causes behind one silent answer is the failure this whole codebase is written against, and
-    it is no more acceptable in a diagnostic tool than in the operator display.
-    """
-    try:
-        from serial.tools import list_ports  # noqa: PLC0415 — optional dependency
-    except ImportError as exc:  # pragma: no cover - depends on the install extra
-        raise SerialLibraryMissing(
-            "pyserial is not installed in this environment, so no serial port can be seen "
-            "whether or not one exists. Install the hardware extra:\n"
-            "    pip install -e '.[hardware]'\n"
-            "or run ./start.sh --live once, which installs it."
-        ) from exc
-
-    return [
-        f"{port.device}  {port.description}"
-        for port in sorted(list_ports.comports(), key=lambda p: p.device)
-    ]
 
 
 def probe(

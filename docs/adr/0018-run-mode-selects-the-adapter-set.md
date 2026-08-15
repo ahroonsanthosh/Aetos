@@ -85,13 +85,33 @@ This is the first thing in the system that answers "is my sensor actually workin
 evidence. It is not the watchdog `backend/system_health` will be — there is no rate analysis,
 no degraded-mode controller, no automatic action — and it does not claim to be.
 
-### 5. The pipeline steps whenever any adapter is attached
+### 5. Persistent state is partitioned per deployment
+
+`data/<site>/<mode>/`, with a `deployment.json` marker naming the owner and a start-up refusal
+when it disagrees.
+
+This was not in the original design and was added after the mode switch was found to leak: a
+live run started after a scenario inherited the scenario's tracks and served them under a LIVE
+badge (FM-053). The event log survives restarts by design, and nothing said which deployment a
+given history belonged to, so "survives restarts" quietly meant "survives becoming a different
+system".
+
+The partition follows from what a log *is*. It is the record of one site operating in one
+mode; two of those in one file was never meaningful, and the storage layout now says so. The
+marker exists because an explicit `--data-dir` bypasses any defaulting scheme, and a guarantee
+that holds only when the path was chosen for you is not a guarantee.
+
+Restart recovery is unaffected and deliberately tested alongside: the same site in the same
+mode resolves to the same directory and picks its own history back up, alerts included
+(FM-030, ADR 0015). Wiping state on start would have "fixed" the leak by breaking that.
+
+### 6. The pipeline steps whenever any adapter is attached
 
 Previously the cycle loop ran only when a scenario was named. Live hardware produces detections
 because something is in the sky, not because a scenario said so, and a loop gated on scenarios
 would have left real sensors reporting into a pipeline nobody was stepping.
 
-### 6. Hardware construction lives in `backend/main.py`
+### 7. Hardware construction lives in `backend/main.py`
 
 `build_hardware_adapter` is where a site document meets a driver, and it is deliberately dull:
 it copies configuration across and constructs one object. It sits in `main.py` because

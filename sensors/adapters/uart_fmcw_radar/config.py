@@ -36,9 +36,18 @@ class UartLinkConfig(BaseModel):
     probe_baud_rates: tuple[int, ...] = (115200, 256000)
     """Candidate rates for the bring-up sweep. Not used in normal operation."""
 
-    read_timeout_s: float = Field(default=0.1, gt=0.0)
-    """Blocking-read budget per poll. Short: `get_detections()` is called from the ingestion
-    cycle and must not stall it."""
+    read_timeout_s: float = Field(default=0.05, gt=0.0)
+    """Blocking-read budget per poll, and a direct tax on the ingestion cycle.
+
+    `get_detections()` runs on the event loop thread, so a read that waits here is a read that
+    delays every WebSocket broadcast and HTTP response for the same period. The arithmetic that
+    matters: **live sensors × this timeout** must stay well under the pipeline tick (0.5 s by
+    default), or the loop spends more time waiting on quiet ports than doing anything else.
+    `backend/main.py` warns at start-up when a configuration crosses half the tick.
+
+    In practice the sensor reports several times a second, so bytes are usually already
+    buffered and the read returns at once. This budget is what bounds the *quiet* case, which
+    is exactly when a stalled interface would be most misleading."""
 
     reconnect_backoff_s: float = Field(default=2.0, gt=0.0)
     """Delay before retrying a dropped link. A USB serial adapter that is unplugged and

@@ -14,7 +14,13 @@ from sensors.adapters.uart_fmcw_radar.config import (
     UartLinkConfig,
     UncertaintyConfig,
 )
-from sensors.adapters.uart_fmcw_radar.link import ByteLink, LinkError, SerialByteLink
+from sensors.adapters.uart_fmcw_radar.link import (
+    ByteLink,
+    LinkError,
+    SerialByteLink,
+    SerialLibraryMissing,
+    available_ports,
+)
 from sensors.adapters.uart_fmcw_radar.protocol import (
     FrameError,
     RadarReport,
@@ -24,6 +30,7 @@ from sensors.adapters.uart_fmcw_radar.protocol import (
 
 __all__ = [
     "ByteLink",
+    "available_ports",
     "ConfidenceConfig",
     "DetectionGateConfig",
     "FrameError",
@@ -33,6 +40,7 @@ __all__ = [
     "RadarTarget",
     "ReportParser",
     "SerialByteLink",
+    "SerialLibraryMissing",
     "UartFmcwRadarAdapter",
     "UartFmcwRadarConfig",
     "UartLinkConfig",

@@ -110,6 +110,12 @@ class UartFmcwRadarAdapter(SensorAdapter):
         self._retry_after_monotonic: float | None = None
         self._raw_log: Path | None = config.raw_log_path
 
+    @property
+    def read_timeout_s(self) -> float:
+        """How long one poll of this adapter can block. Read by the wiring, which has to keep
+        the total across sensors under the pipeline tick."""
+        return self._config.link.read_timeout_s
+
     # -- lifecycle ---------------------------------------------------------------------
 
     def start(self) -> None:

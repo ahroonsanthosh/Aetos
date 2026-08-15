@@ -117,7 +117,7 @@ What each field actually costs you if it is wrong:
 | `boresight_deg` | **the most common mistake.** Degrees clockwise from *true* north, not magnetic and not "roughly that way". Ten degrees out puts a target 17 m sideways at 100 m |
 | `tilt_deg` | the sensor has no elevation channel, so this is the only elevation there is. Record it per session; do not assume it is still zero because it was yesterday (FM-051) |
 | `baud` | nothing frames, and health reports DEGRADED naming the rate |
-| `raw_log_path` | you lose the only record that can explain the session afterwards |
+| `raw_log_path` | you lose the only record that can explain the session afterwards. Relative to this run's data directory, so it lands in `data/<site>/<mode>/` |
 
 A placement is **either** simulated (`registry_key`) **or** real (`hardware`), never both. The
 loader refuses anything else.
@@ -144,12 +144,32 @@ Under the hood:
 |---|---|---|
 | `simulation` (default) | simulated adapters, driven by a scenario | a scenario is asked for at a site with no simulated sensors |
 | `live` | this site's hardware only | the site has no enabled hardware placement, or a scenario was also asked for |
-| `hybrid` | both at once | either half is missing |
+| `hybrid` | both at once | either half is missing. **No shipped site supports it** — `fictional_test_range` has no hardware and `hardware_testbed` has no simulated sensors, so hybrid needs a site document declaring both |
 
 The refusals are the point. Each one is a state where the display would have shown data that
 was not what the badge above it claimed — a LIVE badge over an empty sky, or synthetic tracks
 in a live picture with nothing saying so. `--mode live --scenario x` is refused by name so that
 mixing the two has to be asked for deliberately.
+
+### Where your data goes
+
+Each deployment gets its own directory: `data/<site>/<mode>/`. The event log, the track
+projection, and any raw capture live there.
+
+That partition is load-bearing rather than tidy-mindedness. The event log survives restarts on
+purpose — alerts outlive the process that raised them — so before this, a live run started
+after a scenario inherited that scenario's tracks and drew them on a live display (FM-053). A
+different site, or a different mode, is now a different history, and a directory that already
+belongs to one deployment refuses to accept another.
+
+Practical consequences:
+
+- Switching between `./start.sh` and `./start.sh --live` no longer mixes anything, and each
+  keeps its own history across restarts.
+- `--data-dir` is still honoured exactly as given, and still refuses a directory another
+  deployment owns.
+- If you ran Aetos before this change, `data/events.db` is not read any more. Nothing was
+  deleted, and start-up mentions it once.
 
 ## 5. Check it is actually seeing
 

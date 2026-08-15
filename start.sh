@@ -100,6 +100,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Resolved here rather than just before launch, because the banner prints it. A value the
+# banner reads must be settled before the banner runs, or it prints a blank where the site
+# should be — which is how "Site" came to be empty on every --live run.
+if [[ "$MODE" != "simulation" && -z "$SITE" ]]; then
+  SITE="$LIVE_DEFAULT_SITE"
+fi
+
 # ---------------------------------------------------------------------------------------
 # Prerequisites — checked up front, so a missing tool is reported before anything is built
 # ---------------------------------------------------------------------------------------
@@ -295,10 +302,6 @@ echo
     sleep 0.5
   done
 ) &
-
-if [[ "$MODE" != "simulation" && -z "$SITE" ]]; then
-  SITE="$LIVE_DEFAULT_SITE"
-fi
 
 ARGS=(--host "$HOST" --port "$PORT" --mode "$MODE")
 [[ "$NO_AUTH" == "1" ]] && ARGS+=(--no-auth)

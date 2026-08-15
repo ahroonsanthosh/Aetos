@@ -25,6 +25,38 @@ class LinkError(RuntimeError):
     """The byte link could not be opened, read or written."""
 
 
+class SerialLibraryMissing(RuntimeError):
+    """pyserial is not installed, so nothing can be said about this machine's ports."""
+
+
+def available_ports() -> list[str]:
+    """Every serial port this machine reports, described.
+
+    Raises rather than returning nothing when pyserial is absent. An empty list must mean
+    exactly one thing — **this machine has no serial ports** — because the person reading it is
+    about to go and reinstall a USB driver on the strength of it. Two causes behind one silent
+    answer is the failure this codebase is written against, and a diagnostic gets no exemption.
+
+    Lives here rather than in the bring-up CLI because the running system needs it too: a
+    sensor that cannot open its port is far more useful with the list of ports that do exist
+    printed underneath it.
+    """
+    try:
+        from serial.tools import list_ports  # noqa: PLC0415 — optional dependency
+    except ImportError as exc:  # pragma: no cover - depends on the install extra
+        raise SerialLibraryMissing(
+            "pyserial is not installed in this environment, so no serial port can be seen "
+            "whether or not one exists. Install the hardware extra:\n"
+            "    pip install -e '.[hardware]'\n"
+            "or run ./start.sh --live once, which installs it."
+        ) from exc
+
+    return [
+        f"{port.device}  {port.description}"
+        for port in sorted(list_ports.comports(), key=lambda p: p.device)
+    ]
+
+
 @runtime_checkable
 class ByteLink(Protocol):
     """A bidirectional byte pipe. Deliberately smaller than a serial port."""

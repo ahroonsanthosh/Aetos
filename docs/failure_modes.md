@@ -379,6 +379,39 @@ The adapter is constructed only in LIVE or HYBRID mode, against a site that decl
 affected by all three, which is why that mode warns about them at start-up rather than relying
 on this document being read.
 
+### FM-053 — A live run inherited a simulation run's tracks
+**Status:** Closed · **Severity:** was Critical — synthetic tracks on a live display
+
+**What it was.** The event log and its projection lived in one `data/` directory, shared by
+every run. The projection survives restarts by design (ADR 0006, FM-030), so starting
+`--mode live` after a scenario **inherited that scenario's tracks and served them under a LIVE
+badge**: `simulated: false`, four synthetic tracks, and nothing in the data that could have
+told the operator.
+
+Every component was reporting truthfully. Real adapters *were* attached, so the badge was
+right. The tracks were real records of things that had really been tracked — in a different
+run, of a different kind. The falsehood was in the assembly, which is what made it invisible
+from inside any one module.
+
+**How it was found.** By running the system the way a user does — a scenario, then `--live`,
+then reading `GET /tracks` — rather than by testing the parts. Nothing in the unit or
+integration suites could have caught it: every test built its own pipeline in its own
+temporary directory, which is precisely the isolation the product did not have.
+
+**Fix.** Persistent state is partitioned per deployment: `data/<site>/<mode>/`. A different
+site, or a different run mode, is a different history. A `deployment.json` marker in the
+directory records which deployment owns it, and start-up refuses rather than proceeding when
+it disagrees — which also covers an explicitly chosen `--data-dir`.
+
+**What makes it stay closed.** `tests/integration/test_deployment_isolation.py` pins both
+halves: a different deployment never inherits state, and the **same** deployment always does,
+because restart recovery is a requirement rather than an accident. Testing only the first
+would leave the obvious over-correction — wiping state on start — passing.
+
+**What it cost, deliberately kept.** A pre-existing `data/events.db` from before this change
+is no longer read. It is not deleted, and start-up says so once rather than leaving an empty
+alert feed unexplained.
+
 ### FM-050 — The testbed radar's link parameters and frame layout are unverified
 **Status:** Open · **Severity:** High for anyone trusting its output · Blocks run mode LIVE
 

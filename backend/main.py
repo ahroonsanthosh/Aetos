@@ -19,8 +19,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import uvicorn
@@ -53,15 +55,25 @@ from sensors.adapters.interface import SensorAdapter, SensorHealth, SensorState
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
 from sensors.adapters.uart_fmcw_radar import (
+    ByteLink,
     DetectionGateConfig,
     MountConfig,
+    SerialLibraryMissing,
     UartFmcwRadarAdapter,
     UartFmcwRadarConfig,
     UartLinkConfig,
+    available_ports,
 )
-from sensors.schemas.detection import Detection
+from sensors.schemas.detection import Detection, SensorType
 
 _LOG = logging.getLogger("aetos.pipeline")
+
+DRIVER_SENSOR_TYPES = {"uart_fmcw_radar": SensorType.RADAR}
+"""What kind of source each hardware driver is, for the sensors the API serves.
+
+Asserted here rather than left null: the driver declares its own `sensor_type` to every
+detection it emits, so leaving the sensors table blank would have the same system describing
+one sensor two ways. Generic kinds only — no manufacturer or model appears in any of it."""
 
 DEFAULT_SITE = "fictional_test_range"
 DEFAULT_TICK_S = 0.5
@@ -141,6 +153,11 @@ class Pipeline:
                     site_id=self.geometry.site.site_id,
                     registry_key=placement.registry_key,
                     hardware_driver=placement.hardware.driver if placement.hardware else None,
+                    sensor_type=(
+                        DRIVER_SENSOR_TYPES.get(placement.hardware.driver)
+                        if placement.hardware
+                        else None
+                    ),
                     latitude=placement.position.latitude,
                     longitude=placement.position.longitude,
                     height_m=placement.height_m,
@@ -203,13 +220,18 @@ class Pipeline:
         ]
         self._attach(adapters)
 
-    def attach_hardware(self) -> None:
+    def attach_hardware(self, link_factory: LinkFactory | None = None) -> None:
         """Construct and start an adapter for every enabled real sensor at this site.
 
         Construction cannot fail on an unplugged device — adapters open nothing until they are
         started, and a start that cannot reach its hardware records OFFLINE rather than raising.
         A site with three radars and one unplugged USB cable therefore runs with three, and says
         which one is missing, instead of refusing to start at all.
+
+        `link_factory` replaces the serial port with something else, which is how the whole
+        live path — bytes in, tracks out — is tested without hardware. It is the same seam the
+        adapter itself offers, carried up to here so that the *wiring* is covered too and not
+        just the driver.
         """
         self._attach(
             [
@@ -218,6 +240,7 @@ class Pipeline:
                     placement,
                     self.data_dir,
                     self.geometry.site.reference.altitude_m,
+                    link_factory=link_factory,
                 )
                 for placement in self.geometry.site.sensors
                 if placement.enabled and placement.is_live
@@ -286,11 +309,16 @@ laptop", and it means every interface including whatever the machine is plugged 
 """
 
 
+LinkFactory = Callable[[UartLinkConfig], ByteLink]
+"""How to obtain a byte pipe for a link configuration. Defaults to a real serial port."""
+
+
 def build_hardware_adapter(
     clock: Clock,
     placement: SensorPlacement,
     data_dir: Path,
     reference_altitude_m: float = 0.0,
+    link_factory: LinkFactory | None = None,
 ) -> SensorAdapter:
     """One real sensor, from its site placement.
 
@@ -310,31 +338,54 @@ def build_hardware_adapter(
     if link.driver != "uart_fmcw_radar":  # pragma: no cover - the model's Literal forbids it
         raise ValueError(f"unknown sensor driver {link.driver!r}")
 
-    return UartFmcwRadarAdapter(
-        clock,
-        UartFmcwRadarConfig(
-            sensor_id=placement.sensor_id,
-            link=UartLinkConfig(port=link.port, baud=link.baud),
-            mount=MountConfig(
-                latitude=placement.position.latitude,
-                longitude=placement.position.longitude,
-                # `height_m` is height above the *site reference*, and the driver works in
-                # metres above the WGS-84 ellipsoid like everything else — so the reference
-                # altitude has to be added back. Skipping this is a silent vertical offset of
-                # exactly the site's elevation on every detection (FM-004).
-                altitude_m=reference_altitude_m + placement.height_m,
-                boresight_deg=placement.boresight_deg,
-                tilt_deg=link.tilt_deg,
-            ),
-            gate=DetectionGateConfig(
-                min_range_m=link.min_range_m, max_range_m=link.max_range_m
-            ),
-            raw_log_path=(data_dir / link.raw_log_path) if link.raw_log_path else None,
+    config = UartFmcwRadarConfig(
+        sensor_id=placement.sensor_id,
+        link=UartLinkConfig(port=link.port, baud=link.baud),
+        mount=MountConfig(
+            latitude=placement.position.latitude,
+            longitude=placement.position.longitude,
+            # `height_m` is height above the *site reference*, and the driver works in
+            # metres above the WGS-84 ellipsoid like everything else — so the reference
+            # altitude has to be added back. Skipping this is a silent vertical offset of
+            # exactly the site's elevation on every detection (FM-004).
+            altitude_m=reference_altitude_m + placement.height_m,
+            boresight_deg=placement.boresight_deg,
+            tilt_deg=link.tilt_deg,
         ),
+        gate=DetectionGateConfig(
+            min_range_m=link.min_range_m, max_range_m=link.max_range_m
+        ),
+        raw_log_path=(data_dir / link.raw_log_path) if link.raw_log_path else None,
+    )
+    return UartFmcwRadarAdapter(
+        clock, config, link=link_factory(config.link) if link_factory else None
     )
 
 
-def _report_hardware_state(pipeline: Pipeline) -> None:
+def _warn_if_reads_could_stall_the_cycle(pipeline: Pipeline, tick_s: float) -> None:
+    """Say so when the serial reads could take up most of the pipeline cycle.
+
+    Each live adapter's read blocks up to its configured timeout on a quiet port, on the event
+    loop thread. Enough sensors, or a generous timeout, and the loop spends its time waiting —
+    the interface goes sluggish and the cause is invisible from the outside. Cheap to detect at
+    start-up, miserable to diagnose later.
+    """
+    budget = sum(
+        adapter.read_timeout_s
+        for adapter in pipeline.adapters
+        if isinstance(adapter, UartFmcwRadarAdapter)
+    )
+    if budget > tick_s / 2:
+        _LOG.warning(
+            "Serial reads may block up to %.2fs of each %.2fs pipeline cycle. The interface "
+            "will feel sluggish and the stream will jitter. Lower read_timeout_s, raise --tick, "
+            "or fit fewer sensors per process.",
+            budget,
+            tick_s,
+        )
+
+
+def _report_hardware_state(pipeline: Pipeline, tick_s: float) -> None:
     """Log what each real sensor said about itself immediately after starting.
 
     Loudly, and at start-up rather than on request, because the two ways live operation goes
@@ -345,12 +396,19 @@ def _report_hardware_state(pipeline: Pipeline) -> None:
     The caveats are logged with it. This hardware is unvalidated (FM-050, FM-052) and the
     operator should be told so by the system rather than by a document they may not have read.
     """
+    offline = False
     for adapter in pipeline.adapters:
         if adapter.sensor_type.is_simulated:
             continue
         health = adapter.health()
         log = _LOG.info if health.state is SensorState.OK else _LOG.warning
         log("Sensor %s: %s — %s", health.sensor_id, health.state.upper(), health.reason)
+        offline = offline or health.state is SensorState.OFFLINE
+
+    if offline:
+        _report_available_ports()
+
+    _warn_if_reads_could_stall_the_cycle(pipeline, tick_s)
 
     if pipeline.live_adapter_count:
         _LOG.warning(
@@ -359,6 +417,36 @@ def _report_hardware_state(pipeline: Pipeline) -> None:
             "airframe at any range is unmeasured (FM-052). Treat every track as evidence to be "
             "checked, not as fact. See docs/live_mode.md.",
             pipeline.live_adapter_count,
+        )
+
+
+def _report_available_ports() -> None:
+    """List the serial ports this machine has, when a configured one could not be opened.
+
+    "Could not open COM4" leaves someone in Device Manager guessing. "Could not open COM4, but
+    here is COM7 with a CP2102 on it" ends the problem on the line it appeared. The listing is
+    diagnostic help, so a failure to produce it is reported and never raised — a machine that
+    cannot enumerate its ports still has a system to run.
+    """
+    try:
+        ports = available_ports()
+    except SerialLibraryMissing as exc:
+        _LOG.warning("%s", exc)
+        return
+    except Exception as exc:  # pragma: no cover - defensive: enumeration is best-effort
+        _LOG.warning("Could not list this machine's serial ports: %s", exc)
+        return
+
+    if ports:
+        _LOG.warning(
+            "Serial ports this machine reports: %s. Set the right one in the site's hardware "
+            "block (it will usually name CP2102, CH340 or FTDI).",
+            "; ".join(ports),
+        )
+    else:
+        _LOG.warning(
+            "This machine reports no serial ports at all. The USB-to-TTL adapter is not "
+            "plugged in, or its driver is not installed — see docs/live_mode.md."
         )
 
 
@@ -473,6 +561,89 @@ def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count
         )
 
 
+DEPLOYMENT_MARKER = "deployment.json"
+"""Names which (site, run mode) a data directory belongs to. See `claim_data_dir`."""
+
+
+def resolve_data_dir(site: str, mode: RunMode, override: Path | None = None) -> Path:
+    """Where this run's event log and projection live.
+
+    **Partitioned by site and run mode**, because persistent state is the record of one
+    deployment and mixing two of them in one log is not a storage detail — it is how synthetic
+    tracks end up on a live display.
+
+    That is not hypothetical. Before this, a simulation run and a live run shared `data/`: the
+    projection survives restarts by design (ADR 0006, FM-030), so starting `--mode live` after a
+    scenario inherited that scenario's tracks and served them under a LIVE badge. The badge was
+    correct — real adapters *were* attached — and the tracks beside it were synthetic. Nothing
+    in the interface could have told the operator, because nothing in the data said so.
+
+    An explicit `--data-dir` is honoured exactly as given, on the principle that naming a
+    directory means that directory. `claim_data_dir` then does the checking, so the guarantee
+    holds however the path was chosen.
+    """
+    if override is not None:
+        return override
+    return ConfigPaths.default().repo_root / "data" / site / mode.value
+
+
+def claim_data_dir(data_dir: Path, site: str, mode: RunMode) -> None:
+    """Record which deployment owns this directory, or refuse if another one already does.
+
+    The partitioning above makes a collision unlikely; this makes it impossible. A directory
+    that already holds one deployment's history will not silently accept another's, whether it
+    was reached by default or named with `--data-dir`.
+
+    Refusing is the conservative answer only in appearance. The alternative is a system that
+    starts happily and shows an operator a picture assembled from two different deployments,
+    which is the failure mode this project exists to rule out.
+    """
+    marker = data_dir / DEPLOYMENT_MARKER
+    claim = {"site": site, "mode": mode.value, "schema_version": "1.0.0"}
+
+    if marker.exists():
+        try:
+            existing = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StartupRefused(
+                f"{marker} exists but could not be read ({exc}). It records which deployment "
+                "owns this data directory; refusing to start rather than risk mixing two "
+                "deployments' history. Delete the directory to start fresh, or point "
+                "--data-dir somewhere else."
+            ) from exc
+
+        if (existing.get("site"), existing.get("mode")) != (site, mode.value):
+            raise StartupRefused(
+                f"{data_dir} holds the history of site {existing.get('site')!r} in "
+                f"{existing.get('mode')!r} mode, and this run is site {site!r} in "
+                f"{mode.value!r} mode.\n\n"
+                "  Refusing to start: the event log survives restarts by design, so this run "
+                "would inherit the other deployment's tracks and show them as its own — "
+                "synthetic tracks on a live display, or one site's picture at another.\n\n"
+                "  Use --data-dir to give this run its own directory, or delete that one."
+            )
+        return
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps(claim, indent=2) + "\n", encoding="utf-8")
+
+
+def _warn_about_legacy_data(paths: ConfigPaths) -> None:
+    """Point at a pre-partitioning event log rather than leaving it silently orphaned.
+
+    Anyone who ran Aetos before this change has history in `data/events.db`. It is not read any
+    more, and the alert-rebuild-on-start that depends on it will find nothing. Saying so once is
+    the difference between a puzzling empty feed and a known consequence of an upgrade.
+    """
+    legacy = paths.repo_root / "data" / "events.db"
+    if legacy.exists():
+        _LOG.info(
+            "An event log from before per-deployment data directories exists at %s. It is no "
+            "longer read: history is now kept per site and run mode. Nothing has been deleted.",
+            legacy,
+        )
+
+
 def build_application(
     site: str = DEFAULT_SITE,
     scenario: str | None = None,
@@ -495,14 +666,17 @@ def build_application(
     """
     clock = SystemClock()
     geometry = load_site_geometry(site)
-    resolved = data_dir or ConfigPaths.default().repo_root / "data"
 
     attach_hardware, scenario = resolve_sources(mode, geometry.site, scenario)
+
+    resolved = resolve_data_dir(site, mode, data_dir)
+    claim_data_dir(resolved, site, mode)
+    _warn_about_legacy_data(ConfigPaths.default())
 
     pipeline = Pipeline(clock, geometry, resolved)
     if attach_hardware:
         pipeline.attach_hardware()
-        _report_hardware_state(pipeline)
+        _report_hardware_state(pipeline, tick_s)
     if scenario:
         pipeline.attach_scenario(scenario)
 
@@ -660,7 +834,7 @@ def main() -> None:
             authenticated=authenticated,
             mode=arguments.mode,
         )
-    except ModeRefused as refusal:
+    except (ModeRefused, StartupRefused) as refusal:
         raise SystemExit(f"\n  {refusal}\n") from refusal
 
     # After the application is built, so the account count is a real read of the database rather
