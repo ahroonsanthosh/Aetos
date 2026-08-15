@@ -44,13 +44,15 @@ from sensors.adapters.uart_fmcw_radar.protocol import ReportParser
 PROBE_SECONDS = 4.0
 """Long enough for several report periods at any plausible update rate."""
 
-_NO_PORTS_AT_ALL = """This machine reports no serial ports at all — not the radar's, not any other.
+# ASCII only: every string in this constant reaches a console that may be on a legacy code
+# page, where a print of an em dash raises rather than degrading.
+_NO_PORTS_AT_ALL = """This machine reports no serial ports at all - not the radar's, not any other.
 
 That is a driver or cable problem on this computer, and nothing in Aetos can affect it:
   - unplug and replug the USB-to-TTL adapter, and watch whether the list changes at all,
   - on Windows, look in Device Manager for a device with a warning triangle. A CP2102 with no
     driver appears under "Other devices" rather than under "Ports (COM & LPT)",
-  - the CP2102 driver is a separate install on some Windows builds — Silicon Labs publish it
+  - the CP2102 driver is a separate install on some Windows builds. Silicon Labs publish it
     as "CP210x USB to UART Bridge VCP Drivers",
   - try another USB cable. Charge-only cables carry power and no data lines, and look
     identical to the ones that work."""
@@ -83,7 +85,10 @@ def probe(
         config = UartLinkConfig(port=port, baud=rate)
         link = link_factory(config)
         parser = ReportParser()
-        print(f"  {rate:>7} baud … ", end="", flush=True)
+        # ASCII only, deliberately. This is the first thing anyone runs on Windows, and a
+        # console on a legacy code page raises UnicodeEncodeError on print rather than
+        # dropping the character — the diagnostic tool would crash instead of diagnosing.
+        print(f"  {rate:>7} baud ... ", end="", flush=True)
 
         try:
             link.open()
@@ -110,7 +115,7 @@ def probe(
         if stats.bytes_discarded:
             print(f"bytes arriving but nothing framed ({stats.bytes_discarded} discarded)")
         else:
-            print("silent — no bytes at all")
+            print("silent - no bytes at all")
 
     return None
 
@@ -172,7 +177,7 @@ def watch(port: str, baud: int, clock: Clock, record: Path | None = None) -> int
                 for target in report.targets:
                     direction = "closing" if target.approaching else "opening"
                     print(
-                        f"{stamp:>12}  {target.azimuth_deg:>6.0f}°  "
+                        f"{stamp:>12}  {target.azimuth_deg:>6.0f}deg  "
                         f"{target.range_m:>6.0f}m  "
                         f"{target.radial_velocity_mps:>6.1f}m/s  {target.quality:>7}  "
                         f"{direction}"

@@ -44,6 +44,8 @@ def available_ports() -> list[str]:
     try:
         from serial.tools import list_ports  # noqa: PLC0415 — optional dependency
     except ImportError as exc:  # pragma: no cover - depends on the install extra
+        # ASCII only: this message is printed by the bring-up CLI, which runs on Windows
+        # consoles whose code page cannot encode punctuation used elsewhere in this codebase.
         raise SerialLibraryMissing(
             "pyserial is not installed in this environment, so no serial port can be seen "
             "whether or not one exists. Install the hardware extra:\n"
