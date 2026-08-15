@@ -30,7 +30,7 @@ The third is the one that actually holds the line. The first two are conventions
 
 ```
   ┌─────────────────────────────────────────────────────┐
-  │  SOURCE   simulated adapter  │  (future) real adapter │
+  │  SOURCE   simulated adapter  │  testbed radar adapter  │
   └────────────────────┬────────────────────────────────┘
                        │  canonical Detection (WGS-84, UTC)
                        ▼
@@ -125,8 +125,10 @@ touching the others.
 Three modes are designed for; only the first is built.
 
 - **SIMULATION** — all detections synthetic. Current state.
-- **LIVE** — all detections from real sensor adapters. Not built. No real sensor integration
-  exists or is claimed.
+- **LIVE** — all detections from real sensor adapters. **Not built.** One real adapter exists
+  (`sensors/adapters/uart_fmcw_radar/`, ADR 0017), but a driver is not an integration: it is
+  constructed by nothing, referenced by no site configuration, and unvalidated against any
+  real airframe (FM-050, FM-052).
 - **HYBRID** — real and simulated detections coexisting, for controlled testing against a
   live baseline.
 
@@ -152,7 +154,7 @@ Per spec §20. Status updated as stages complete.
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
-| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
+| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; one real driver written for testbed radar hardware, unvalidated and unwired (ADR 0017) |
 | 12 | Chaos hardening, degraded-mode UI states | not started |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow

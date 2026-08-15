@@ -363,3 +363,73 @@ same kind may remain.
 
 **Mitigation:** `./start.sh` is the verified path. Anyone using the container should expect to
 debug the first build.
+
+---
+
+## Testbed radar hardware
+
+The three entries below concern the serial-attached FMCW radar in
+`sensors/adapters/uart_fmcw_radar/` (ADR 0017). All three are properties of the *hardware*,
+not defects in the driver, and none of them is fixable in software. They are recorded because
+the alternative — a driver that quietly papers over them — produces an operator display that
+looks the same whether it is right or wrong.
+
+The adapter is not constructed by `backend/main.py` and is referenced by no site
+configuration, so none of these currently affects a running system.
+
+### FM-050 — The testbed radar's link parameters and frame layout are unverified
+**Status:** Open · **Severity:** High for anyone trusting its output · Blocks run mode LIVE
+
+Published sources disagree about the unit's baud rate (115200 versus 256000) and about whether
+the report payload opens with a target count or with an alarm byte followed by a count. The
+vendor's protocol PDF has not been obtained. A wrong baud rate does not fail loudly: it
+delivers a byte stream that never frames, which without care looks exactly like a working
+sensor watching an empty sky (FM-010 one layer lower down).
+
+Separately, the report frame carries no timestamp, so detections are stamped at read time. That
+is receipt time, later than observation by the link and buffering latency — bounded by one
+report period, but not zero (FM-012).
+
+**Mitigation.** The parser accepts both payload layouts while the question is open, and counts
+what it discards. `health()` reports DEGRADED and names the configured baud rate when the
+stream is all discards, so the most likely bring-up mistake is visible rather than silent. The
+bring-up sequence in the package README ends the ambiguity: confirm the rate, obtain the PDF,
+delete the layout branch that is wrong.
+
+**Until then:** raw logging is the deliverable, not detections.
+
+### FM-051 — The testbed radar cannot measure elevation
+**Status:** Accepted · **Severity:** Inherent to the hardware
+
+There is no elevation channel and no configuration that produces one. Elevation exists only as
+the mechanical tilt of the mount, which rotates the whole ±20° cone — trading ground coverage
+for elevated coverage. The canonical `Detection` requires an altitude, so one must be produced.
+
+**Mitigation.** The adapter emits the beam-centre altitude implied by `tilt_deg`, and a
+`position_covariance_enu` whose vertical variance is the beam's full elevation ambiguity
+treated as a uniform spread. At every range that variance is several times the horizontal, so
+the filter discounts altitude rather than believing it. Asserted by
+`test_altitude_uncertainty_says_the_sensor_cannot_measure_it`.
+
+Collapsing this into the isotropic scalar would make the tracker confidently wrong about
+height, which is FM-004 arriving through the adapter instead of through a datum mismatch.
+
+**What remains open:** altitude from this sensor is a configured assumption, not a measurement,
+and no amount of tracking makes it one. Anything downstream that reasons about height — zone
+crossing in the vertical, climb rate — is reasoning about the mount angle.
+
+### FM-052 — The testbed radar's sensitivity is tuned for vehicles
+**Status:** Open · **Severity:** Unknown, and that is the point
+
+The firmware is vehicle-detection firmware and its 100 m rating is against vehicle-scale radar
+cross-section. Whether it detects a 135 g, 25 cm airframe at any range is **unverified**. It
+may not. The honest answer today is that nobody has measured it.
+
+**Mitigation.** The adapter emits no classification hint at all, so nothing downstream receives
+a label this hardware has no basis for, and confidence derived from the signal-quality byte is
+capped well below 1.0. Both are asserted by test.
+
+**What closes this:** the raw-logging test matrix in the package README — bare versus
+RCS-boosted airframe, four ranges, three angles, three motion types, three mount tilts — held
+next to a record of what was actually flying. Detection and alerting behaviour written before
+that dataset exists is guesswork dressed as engineering.

@@ -15,8 +15,11 @@ Aetos is **software only**. It stops at a human-facing recommendation.
   effector integration is a separate future system with its own authorisation and safety
   architecture, and does not belong in this codebase.
 
-At this stage all detections are **synthetic**, produced by a built-in simulator. No
-physical sensor integration exists or is claimed to exist.
+At this stage every detection a running system produces is **synthetic**, from a built-in
+simulator. A driver for one piece of testbed radar hardware exists in
+`sensors/adapters/uart_fmcw_radar/`, but it is not wired into any run mode and nothing it
+reports has been validated against a real airframe — see its README and ADR 0017 before
+treating it as a sensor integration.
 
 ## Core principle
 
@@ -52,7 +55,7 @@ a single combined pipeline function.
 | `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, simulated adapter, real-sensor stubs |
+| `sensors/` | `SensorAdapter` contract, simulated adapter, testbed radar driver |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
