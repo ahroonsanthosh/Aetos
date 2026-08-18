@@ -147,6 +147,100 @@ can reach this port has full operator access and the complete event log"* when t
 running with `--no-auth`. Worth alerting on: it is the difference between a guarded console and
 an open one, stated by the backend rather than assumed from how it was launched.
 
+## Deploying in live mode
+
+Everything above applies unchanged — the account, loopback binding, the proxy, the guard. Live
+mode adds three things, all of them consequences of the radar being a physical object attached
+to a particular machine.
+
+### The radar must be on the machine running Aetos
+
+There is no network sensor protocol. The USB-to-TTL adapter is plugged into the host that runs
+the process, and that host is what your reverse proxy points at. Aetos can serve operators
+anywhere; it cannot read a serial port on someone else's desk.
+
+### Give the serial port a stable name, and permission to open it
+
+`/dev/ttyUSB0` is assigned in plug order. Two USB serial devices, or a replug after a reboot,
+and yesterday's radar is today's something else — pointing at the wrong device is not a crash,
+it is a byte stream that never frames (FM-050). Use the by-id path instead, which is derived
+from the adapter itself:
+
+```bash
+ls -l /dev/serial/by-id/
+# usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 -> ../../ttyUSB0
+```
+
+Put that whole path in the site's `hardware.port`. It survives replugging and reboots.
+
+The service user needs permission to open it. On Debian and Ubuntu that is the `dialout` group;
+on Fedora and Arch it is `uucp`:
+
+```bash
+sudo usermod -aG dialout aetos     # then the user must log out and back in, or the unit restart
+```
+
+Without it the sensor reports `OFFLINE — Permission denied` at start-up and in
+`GET /system/health`. That is the intended behaviour, not a failure to start: one unreadable
+sensor must not take the site down.
+
+### Run it as a service
+
+```ini
+# /etc/systemd/system/aetos.service
+[Unit]
+Description=Aetos C-UAS
+After=network.target
+
+[Service]
+Type=exec
+User=aetos
+Group=dialout
+WorkingDirectory=/opt/aetos
+ExecStart=/opt/aetos/.venv/bin/python -m backend.main \
+    --mode live --site my_site \
+    --host 127.0.0.1 --port 8000 --behind-proxy
+
+# A crash must not leave the console dark, but a configuration Aetos refuses to start under
+# must not be retried forever either — the refusals are deliberate and a restart loop hides
+# them. RestartSec gives the log a chance to be read.
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now aetos
+journalctl -u aetos -f          # the sensor's state is reported here at every start
+```
+
+`start.sh` is a development convenience — it builds the interface and manages a virtualenv.
+A deployed service runs `backend.main` directly, with the interface built once at install time
+(`cd frontend && npm ci && npm run build`).
+
+### What to watch once it is up
+
+- `GET /system/health`, the `sensors` row. `OK` means frames are decoding. `DEGRADED` naming a
+  baud rate means bytes arrive and nothing frames. `OFFLINE` means the port could not be
+  opened. This is the only thing that distinguishes a working sensor watching an empty sky from
+  a broken one (FM-010).
+- `GET /system/mode`. `real_adapters_connected` counts attached hardware; `simulated: false` is
+  what puts the LIVE badge on the operator's screen.
+- The raw log under `data/<site>/live/`, if you configured `raw_log_path`. It grows for as long
+  as the sensor talks and nothing rotates it — size it, or turn it off once the hardware is
+  characterised.
+
+### Before you rely on it for anything
+
+This is worth repeating in the place someone reads while deploying. The radar this supports is
+an unvalidated testbed unit: its baud rate and frame layout are unconfirmed (FM-050), and
+whether it detects a small airframe at any range has never been measured (FM-052). Deploying it
+gives you a system that runs. It does not give you a system whose detections mean what a
+counter-UAS operator would assume they mean, and no amount of deployment hardening changes
+that — only the test matrix in `sensors/adapters/uart_fmcw_radar/README.md` does.
+
 ## What is still true after all this
 
 - **`data/` holds the event log and the account table.** Back it up, and treat the backup as
