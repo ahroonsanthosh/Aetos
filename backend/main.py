@@ -136,6 +136,10 @@ class Pipeline:
 
         self._adapters: list[SensorAdapter] = []
 
+        self._poll_failures: dict[str, str] = {}
+        """Sensor id to the error its last poll raised, cleared when it polls cleanly. Read by
+        `sensor_health()` so a driver that throws cannot report itself healthy."""
+
         self.deployment_lock: DeploymentLock | None = None
         """Held by whoever assembled this pipeline, released when it closes. None in tests and
         embedded uses, which construct a Pipeline directly against a directory of their own."""
@@ -195,8 +199,39 @@ class Pipeline:
 
         Polled per request rather than cached: the whole value of the row is that it is current
         when someone looks at it, which is exactly when they have stopped trusting the display.
+
+        Two things are overridden rather than passed through. An adapter that raised on its
+        last poll is reported DEGRADED whatever it says about itself — a driver that throws and
+        then claims OK is describing an intention, not a state. And an adapter whose `health()`
+        itself raises is reported OFFLINE rather than being allowed to take the health endpoint
+        down with it, because the one moment this endpoint must answer is when something is
+        already wrong.
         """
-        return [adapter.health() for adapter in self._adapters]
+        reports: list[SensorHealth] = []
+        for adapter in self._adapters:
+            try:
+                health = adapter.health()
+            except Exception as exc:  # noqa: BLE001 — see the docstring
+                reports.append(
+                    SensorHealth(
+                        sensor_id=adapter.sensor_id,
+                        sensor_type=adapter.sensor_type,
+                        state=SensorState.OFFLINE,
+                        reason=f"health() raised {type(exc).__name__}: {exc}",
+                    )
+                )
+                continue
+
+            failure = self._poll_failures.get(adapter.sensor_id)
+            if failure is not None and health.state is not SensorState.OFFLINE:
+                health = health.model_copy(
+                    update={
+                        "state": SensorState.DEGRADED,
+                        "reason": f"last poll raised {failure}",
+                    }
+                )
+            reports.append(health)
+        return reports
 
     def attach_scenario(self, scenario_id: str) -> None:
         """Point the simulated sensors at a scenario's world.
@@ -270,7 +305,7 @@ class Pipeline:
         """
         detections: list[Detection] = []
         for adapter in self._adapters:
-            detections.extend(adapter.get_detections())
+            detections.extend(self._poll(adapter))
 
         # Validates, deduplicates, records DETECTION_RECEIVED, and reduces to the tracker's
         # input. The classification hints come back separately — they are evidence about what
@@ -300,6 +335,33 @@ class Pipeline:
         # picture one cycle stale for no reason.
         self.projection.catch_up()
         return ingested.accepted
+
+    def _poll(self, adapter: SensorAdapter) -> list[Detection]:
+        """One adapter's detections, with its failures isolated from every other sensor's.
+
+        The cycle used to poll adapters in a bare loop, so one misbehaving driver raised
+        through `step()` and cost *every* sensor its cycle. The task-level guard kept the run
+        alive, but the operator picture stopped advancing on all sensors because one was
+        faulty — and the reason was in a log rather than on the display.
+
+        Start-up already tolerates this: a site with three radars and one unplugged cable runs
+        with three. Runtime now agrees with start-up. The failure is not swallowed — it is
+        recorded, logged, and reported through `sensor_health()`, which is where an operator
+        looks when the picture seems thin.
+        """
+        try:
+            detections = adapter.get_detections()
+        except Exception as exc:  # noqa: BLE001 — an adapter may raise anything; none of it
+            # is worth the rest of the site's cycle.
+            message = f"{type(exc).__name__}: {exc}"
+            first = self._poll_failures.get(adapter.sensor_id) != message
+            self._poll_failures[adapter.sensor_id] = message
+            if first:
+                _LOG.exception("Sensor %s failed to poll and was skipped.", adapter.sensor_id)
+            return []
+
+        self._poll_failures.pop(adapter.sensor_id, None)
+        return detections
 
     def close(self) -> None:
         for adapter in self._adapters:

@@ -467,3 +467,50 @@ def test_deescalation_is_slower_than_escalation(policy: RiskPolicy) -> None:
     """Asymmetric on purpose: a genuine threat must not be held back by a timer, and a
     de-escalation must not happen on one quiet cycle."""
     assert policy.hysteresis.deescalate_dwell_s > policy.hysteresis.escalate_dwell_s
+
+
+# --------------------------------------------------------------------------------------
+# Reason codes must earn their place in the list
+# --------------------------------------------------------------------------------------
+
+
+def _risk_with_benign_belief(benign_mass: float, confidence: float) -> TrackRisk:
+    """An inbound track the classifier thinks is *slightly* benign."""
+    return inbound(
+        1_200.0,
+        classification={"bird": benign_mass, "small_uas": 1.0 - benign_mass},
+        classification_confidence=confidence,
+        classification_assessed=True,
+    )
+
+
+def test_an_immaterial_discount_is_applied_but_not_reported() -> None:
+    """A reason line asserting a discount nobody can see is worse than no line.
+
+    `_MATERIAL_MITIGATION` was defined for exactly this and never wired in, so a 0.1% discount
+    produced "Discounted: classified bird (0% of the distribution at 50% confidence)" — a
+    sentence claiming a judgement the system did not really make, quoting a percentage that had
+    rounded away to nothing.
+    """
+    engine = build_risk_engine()
+    geometry = load_site_geometry("fictional_test_range")
+
+    assessment = engine.assess(_risk_with_benign_belief(0.004, 0.5), geometry)
+
+    assert assessment.mitigation < 1.0, "the discount is still applied to the score"
+    assert not any(f.code == "benign_classification" for f in assessment.factors), (
+        "an invisible discount must not appear in the operator's reason list"
+    )
+
+
+def test_a_material_discount_is_still_reported() -> None:
+    """The converse, so the fix cannot be over-applied into silence: an operator who sees a
+    score drop is owed the explanation."""
+    engine = build_risk_engine()
+    geometry = load_site_geometry("fictional_test_range")
+
+    assessment = engine.assess(_risk_with_benign_belief(0.9, 0.9), geometry)
+
+    reasons = [f for f in assessment.factors if f.code == "benign_classification"]
+    assert reasons, "a substantial benign classification must be explained"
+    assert "bird" in reasons[0].detail

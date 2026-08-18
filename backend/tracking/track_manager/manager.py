@@ -31,7 +31,6 @@ from backend.tracking.association.gnn import (
 from backend.tracking.filters.kalman import (
     ConstantVelocityFilter,
     KalmanState,
-    isotropic_covariance,
 )
 from backend.tracking.models import (
     EnuState,
@@ -525,7 +524,3 @@ class TrackManager:
         penalty = 1.0 / (1.0 + active.consecutive_misses)
         return round(min(1.0, support * penalty), 4)
 
-
-def covariance_from_uncertainty(uncertainty_m: float) -> np.ndarray:
-    """Isotropic fallback for sources reporting only a scalar uncertainty."""
-    return isotropic_covariance(uncertainty_m)

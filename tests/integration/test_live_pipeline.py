@@ -20,7 +20,7 @@ import pytest
 
 from backend.common.clock import SimClock
 from backend.common.config import RunMode
-from backend.main import Pipeline, resolve_sources
+from backend.main import Pipeline, build_hardware_adapter, resolve_sources
 from backend.zones.geometry import load_site_geometry
 from sensors.adapters.uart_fmcw_radar.config import UartLinkConfig
 from sensors.adapters.uart_fmcw_radar.link import LinkError
@@ -315,3 +315,99 @@ def test_the_shipped_hardware_site_is_refused_in_simulation_with_a_scenario() ->
 
     with pytest.raises(ModeRefused):
         resolve_sources(RunMode.SIMULATION, site, "a_benign_transit")
+
+# --------------------------------------------------------------------------------------
+# One sensor's failure is not every sensor's failure
+# --------------------------------------------------------------------------------------
+
+
+class _ExplodingLink(ScriptedLink):
+    """A link whose reads raise something the driver does not expect.
+
+    Not a `LinkError` — the driver handles those. This stands in for a genuine defect in a
+    driver, which is the case the pipeline has to survive without taking the site down.
+    """
+
+    def read(self, max_bytes: int) -> bytes:
+        raise RuntimeError("driver defect")
+
+
+def test_one_failing_sensor_does_not_cost_the_others_their_cycle(tmp_path: Path) -> None:
+    """Start-up already tolerates a broken sensor; the running cycle must agree with it.
+
+    Before this, `step()` polled adapters in a bare loop, so one driver raising cost *every*
+    sensor its cycle. The run survived — the task-level guard caught it — but the operator
+    picture stopped advancing on every sensor because one was faulty.
+    """
+    clock = SimClock(START)
+    geometry = load_site_geometry(SITE)
+    pipeline = Pipeline(clock, geometry, tmp_path)
+
+    healthy: list[ScriptedLink] = []
+
+    def factory(config: UartLinkConfig) -> ScriptedLink:
+        link = ScriptedLink(config)
+        healthy.append(link)
+        return link
+
+    try:
+        pipeline.attach_hardware(link_factory=factory)
+        # A second adapter on the same pipeline, whose driver is broken.
+        broken = build_hardware_adapter(
+            clock,
+            geometry.site.sensors[0].model_copy(update={"sensor_id": "radar_broken"}),
+            tmp_path,
+            geometry.site.reference.altitude_m,
+            link_factory=_ExplodingLink,
+        )
+        broken.start()
+        pipeline._attach([broken])  # noqa: SLF001 — attaching a second adapter is the setup
+
+        healthy[0].chunks.append(approaching_target(50))
+
+        assert pipeline.step() == 1, "the healthy sensor's detection was lost to the broken one"
+
+        states = {h.sensor_id: h.state.value for h in pipeline.sensor_health()}
+        assert states["radar_testbed_01"] == "ok"
+        assert states["radar_broken"] == "degraded", (
+            "a driver that raised must not be able to report itself healthy"
+        )
+    finally:
+        pipeline.close()
+
+
+def test_a_sensor_that_recovers_stops_being_reported_as_degraded(tmp_path: Path) -> None:
+    """Otherwise a single transient fault marks a sensor bad for the life of the process."""
+    clock = SimClock(START)
+    geometry = load_site_geometry(SITE)
+    pipeline = Pipeline(clock, geometry, tmp_path)
+
+    class Flaky(ScriptedLink):
+        fail = True
+
+        def read(self, max_bytes: int) -> bytes:
+            if Flaky.fail:
+                raise RuntimeError("driver defect")
+            return super().read(max_bytes)
+
+    links: list[Flaky] = []
+
+    def factory(config: UartLinkConfig) -> Flaky:
+        link = Flaky(config)
+        links.append(link)
+        return link
+
+    try:
+        pipeline.attach_hardware(link_factory=factory)
+        pipeline.step()
+        assert pipeline.sensor_health()[0].state.value == "degraded"
+
+        Flaky.fail = False
+        links[0].chunks.append(approaching_target(50))
+        clock.advance(0.5)
+
+        assert pipeline.step() == 1
+        assert pipeline.sensor_health()[0].state.value == "ok"
+    finally:
+        Flaky.fail = True
+        pipeline.close()
