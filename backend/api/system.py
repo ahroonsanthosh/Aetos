@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.api.deps import OptionalOperatorDep, ServicesDep
 from backend.api.services import ApiServices
 from backend.common.config import RunMode
+from sensors.adapters.interface import SensorState
 
 router = APIRouter()
 """Deliberately **not** gated at the router.
@@ -108,8 +109,9 @@ class ModeView(BaseModel):
 async def get_mode(services: ServicesDep) -> ModeView:
     """The run mode, as a fact rather than a frontend constant.
 
-    No real sensor adapter integration exists in this build, so `real_adapters_connected` is
-    structurally zero and `simulated` is structurally true. Both are computed rather than
+    No real sensor adapter is wired into this build — the testbed radar driver of ADR 0017 is
+    constructed by nothing — so `real_adapters_connected` is structurally zero and `simulated`
+    is structurally true. Both are computed rather than
     hardcoded, so they will start telling the truth on their own the day an adapter registry
     is wired in.
     """
@@ -119,6 +121,49 @@ async def get_mode(services: ServicesDep) -> ModeView:
         mode=services.run_mode,
         real_adapters_connected=real_adapters,
         simulated=real_adapters == 0,
+    )
+
+
+def _sensor_health(services: ApiServices) -> ComponentHealth:
+    """What the attached sensors say about themselves, summarised into one row.
+
+    The endpoint judges; the adapters only report (FM-010). The judgement here is deliberately
+    blunt and pessimistic: **any** sensor not reporting OK degrades the row, and the row names
+    which one and why. A site with four sensors and one dead USB cable must not average out to
+    healthy, because the operator's question is never "are most of my sensors fine".
+
+    Simulated adapters are included. A scenario that has finished driving them is a legitimate
+    reason for silence, and separating the two kinds here would mean the row said nothing at all
+    in the mode most people run.
+    """
+    if services.sensor_health is None:
+        return ComponentHealth(
+            component="sensors",
+            state=ComponentState.NOT_CONNECTED,
+            detail="No sensor adapters are attached to this process.",
+        )
+
+    reports = services.sensor_health.sensor_health()
+    if not reports:
+        return ComponentHealth(
+            component="sensors",
+            state=ComponentState.NOT_CONNECTED,
+            detail="No sensor adapters are attached to this process.",
+        )
+
+    unhealthy = [report for report in reports if report.state is not SensorState.OK]
+    if not unhealthy:
+        return ComponentHealth(
+            component="sensors",
+            state=ComponentState.OK,
+            detail=f"{len(reports)} sensor(s) reporting normally.",
+        )
+
+    named = "; ".join(f"{r.sensor_id}: {r.state.upper()} — {r.reason}" for r in unhealthy)
+    return ComponentHealth(
+        component="sensors",
+        state=ComponentState.DEGRADED,
+        detail=f"{len(unhealthy)} of {len(reports)} sensor(s) not reporting normally. {named}",
     )
 
 
@@ -188,6 +233,8 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
             ),
         )
     )
+
+    components.append(_sensor_health(services))
 
     components.append(_module_health("classification", services.classification_running,
         running="Track identity is being assessed from kinematics and sensor evidence.",

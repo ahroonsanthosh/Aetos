@@ -531,9 +531,29 @@ class SqliteRepositories:
     composition detail, and is the only place SQLite is named.
     """
 
-    def __init__(self, clock: Clock, path: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        path: Path | str | None = None,
+        identity_path: Path | str | None = None,
+    ) -> None:
         self._db = Database(clock, path)
         self._db.apply_schema(SCHEMA)
+
+        # Accounts belong to the installation, not to one deployment's history.
+        #
+        # Track state is partitioned per site and run mode (ADR 0018, FM-053) because mixing
+        # two deployments' observations is how synthetic tracks reach a live display. Accounts
+        # are the opposite case: the same person signs in to the simulator and to the live
+        # system, and making them create an account per mode would be an obstacle with no
+        # safety behind it — the first thing anyone would do is reuse one password everywhere.
+        #
+        # A second connection rather than a second class, because nothing spans both: auth
+        # writes accounts here and its audit trail to the event log, and no unit of work
+        # touches an account and a track together.
+        self._identity = Database(clock, identity_path) if identity_path is not None else self._db
+        if self._identity is not self._db:
+            self._identity.apply_schema(SCHEMA)
 
         self.is_durable = self._db.is_durable
         self.sites: SiteRepository = SqliteSiteRepository(self._db)
@@ -541,14 +561,16 @@ class SqliteRepositories:
         self.scenarios: ScenarioRepository = SqliteScenarioRepository(self._db)
         self.tracks: TrackRepository = SqliteTrackRepository(self._db)
         self.track_history: TrackHistoryRepository = SqliteTrackHistoryRepository(self._db)
-        self.users: UserRepository = SqliteUserRepository(self._db)
-        self.credentials: CredentialRepository = SqliteCredentialRepository(self._db)
-        self.sessions: SessionRepository = SqliteSessionRepository(self._db)
+        self.users: UserRepository = SqliteUserRepository(self._identity)
+        self.credentials: CredentialRepository = SqliteCredentialRepository(self._identity)
+        self.sessions: SessionRepository = SqliteSessionRepository(self._identity)
         self.projection_state: ProjectionStateRepository = SqliteProjectionStateRepository(
             self._db
         )
 
     def close(self) -> None:
+        if self._identity is not self._db:
+            self._identity.close()
         self._db.close()
 
 

@@ -20,6 +20,7 @@ from backend.api.app import API_PREFIX, create_app
 from backend.api.identity import LocalOperatorIdentityProvider
 from backend.api.services import ApiServices
 from backend.common.clock import SimClock
+from backend.common.config import RunMode
 from backend.common.geodesy import GeodeticPoint, LocalFrame
 from backend.database.projection import TrackProjection
 from backend.database.sqlite import SqliteRepositories
@@ -38,6 +39,8 @@ from backend.tracking.models import (
 )
 from backend.tracking.track_manager.manager import IncomingDetection, TrackManager
 from backend.zones.geometry import load_site_geometry
+from sensors.adapters.interface import SensorHealth, SensorState
+from sensors.schemas.detection import SensorType
 
 EPOCH = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
 R = isotropic_covariance(10.0)
@@ -360,6 +363,112 @@ class _SituationStub:
     @property
     def situation(self) -> SituationAssessment:
         return SituationAssessment()
+
+
+class _SensorHealthStub:
+    """Stands in for `Pipeline` as a sensor health source."""
+
+    def __init__(self, *reports: SensorHealth) -> None:
+        self._reports = list(reports)
+
+    def sensor_health(self) -> list[SensorHealth]:
+        return self._reports
+
+
+def _health_report(sensor_id: str, state: SensorState, reason: str) -> SensorHealth:
+    return SensorHealth(
+        sensor_id=sensor_id,
+        sensor_type=SensorType.RADAR,
+        state=state,
+        reason=reason,
+    )
+
+
+def _services_with_sensors(
+    clock, events, repositories, projection, source, live_adapters: int = 0
+) -> ApiServices:
+    return ApiServices(
+        clock=clock,
+        events=events,
+        sites=repositories.sites,
+        sensors=repositories.sensors,
+        scenarios=repositories.scenarios,
+        tracks=repositories.tracks,
+        track_history=repositories.track_history,
+        projection=projection,
+        identity=LocalOperatorIdentityProvider(clock),
+        sensor_health=source,
+        live_adapter_count=live_adapters,
+        run_mode=RunMode.LIVE if live_adapters else RunMode.SIMULATION,
+    )
+
+
+def test_health_reports_no_sensors_as_not_connected(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    services = _services_with_sensors(clock, events, repositories, projection, None)
+    client = TestClient(create_app(services))
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["sensors"]["state"] == "not_connected"
+
+
+def test_one_failed_sensor_degrades_the_row_and_is_named(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """A site with four sensors and one dead cable must not average out to healthy.
+
+    The operator's question is never "are most of my sensors fine", and an unplugged radar
+    reporting nothing looks exactly like a quiet sky unless something says otherwise (FM-010).
+    """
+    source = _SensorHealthStub(
+        _health_report("radar_01", SensorState.OK, "link open"),
+        _health_report("radar_02", SensorState.OFFLINE, "could not open /dev/ttyUSB1"),
+    )
+    services = _services_with_sensors(
+        clock, events, repositories, projection, source, live_adapters=2
+    )
+    client = TestClient(create_app(services))
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["sensors"]["state"] == "degraded"
+    assert "radar_02" in components["sensors"]["detail"]
+    assert "/dev/ttyUSB1" in components["sensors"]["detail"]
+
+
+def test_mode_reports_live_only_when_real_adapters_are_attached(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """Declaring LIVE does not change the badge. Attaching a sensor does."""
+    declared_only = _services_with_sensors(clock, events, repositories, projection, None)
+    body = TestClient(create_app(declared_only)).get(f"{API_PREFIX}/system/mode").json()
+    assert body["simulated"] is True
+    assert body["real_adapters_connected"] == 0
+
+    attached = _services_with_sensors(
+        clock,
+        events,
+        repositories,
+        projection,
+        _SensorHealthStub(_health_report("radar_01", SensorState.OK, "link open")),
+        live_adapters=1,
+    )
+    body = TestClient(create_app(attached)).get(f"{API_PREFIX}/system/mode").json()
+    assert body["simulated"] is False
+    assert body["real_adapters_connected"] == 1
 
 
 def test_health_reports_working_components_as_ok(client: TestClient) -> None:
