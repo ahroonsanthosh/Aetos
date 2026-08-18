@@ -1,6 +1,6 @@
 [project]
 name = "aetos"
-version = "0.4.0"
+version = "0.5.0"
 description = "Aetos — modular Counter-UAS command-and-control platform (software only; recommendation, never execution)"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Only needed to talk to physical sensor hardware. Deliberately optional: the whole test suite
+# runs without it, because every adapter is written against a byte-pipe interface rather than
+# against a serial port (ADR 0017).
+hardware = [
+    "pyserial>=3.5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

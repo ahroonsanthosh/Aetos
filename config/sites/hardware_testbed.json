@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "site_id": "hardware_testbed",
+  "name": "Hardware testbed",
+  "reference": {
+    "latitude": 51.8971,
+    "longitude": -8.4697,
+    "altitude_m": 5.0
+  },
+  "protected_radius_m": 100.0,
+  "zones": [
+    {
+      "zone_id": "testbed_core",
+      "name": "Testbed core",
+      "kind": "protected",
+      "geometry": {
+        "shape": "circle",
+        "centre": { "latitude": 51.8971, "longitude": -8.4697 },
+        "radius_m": 100.0
+      }
+    },
+    {
+      "zone_id": "testbed_monitored",
+      "name": "Testbed monitored area",
+      "kind": "monitored",
+      "geometry": {
+        "shape": "circle",
+        "centre": { "latitude": 51.8971, "longitude": -8.4697 },
+        "radius_m": 300.0
+      }
+    }
+  ],
+  "sensors": [
+    {
+      "sensor_id": "radar_testbed_01",
+      "position": { "latitude": 51.8971, "longitude": -8.4697 },
+      "height_m": 1.5,
+      "boresight_deg": 0.0,
+      "enabled": true,
+      "hardware": {
+        "driver": "uart_fmcw_radar",
+        "port": "/dev/ttyUSB0",
+        "baud": 115200,
+        "tilt_deg": 0.0,
+        "min_range_m": 10.0,
+        "max_range_m": 100.0,
+        "raw_log_path": "raw/radar_testbed_01.log"
+      }
+    }
+  ]
+}

@@ -430,7 +430,13 @@ class SensorView(BaseModel):
 
     sensor_id: str
     site_id: str
-    registry_key: str
+    registry_key: str | None
+    """Null for a real sensor, which has no simulation profile."""
+
+    hardware_driver: str | None
+    """Non-null when physical hardware is fitted at this placement. The distinction the
+    operator most needs from this table: whether the row describes a device or a scenario."""
+
     sensor_type: str | None
     position: GeoPointView
     height_m: float
@@ -443,6 +449,7 @@ class SensorView(BaseModel):
             sensor_id=record.sensor_id,
             site_id=record.site_id,
             registry_key=record.registry_key,
+            hardware_driver=record.hardware_driver,
             sensor_type=str(record.sensor_type) if record.sensor_type else None,
             position=GeoPointView(latitude=record.latitude, longitude=record.longitude),
             height_m=record.height_m,

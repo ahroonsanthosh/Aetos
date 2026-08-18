@@ -206,7 +206,11 @@ export interface GeoPointView {
 export interface SensorView {
   sensor_id: string
   site_id: string
-  registry_key: string
+  /** Null for a real sensor: hardware has no simulation profile. */
+  registry_key: string | null
+  /** Non-null when physical hardware is fitted at this placement. The distinction that
+   *  matters most about any row in the sensor table — a device, or a scenario. */
+  hardware_driver: string | null
   /** Null when the backend has not established the sensor's type. The registry entry that
    *  would state it has no loader behind the repository layer, and the backend leaves the
    *  field null rather than inventing one — so the interface must render its absence. */

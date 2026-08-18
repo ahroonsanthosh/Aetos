@@ -41,11 +41,22 @@ guarantee") and restated on the `SensorAdapter` docstring. In brief:
 
 ## Adding a real adapter
 
-`RadarAdapter`, `EOIRAdapter`, `RFSensorAdapter` and `AcousticAdapter` are additions to this
-directory and nothing else. None of tracking, fusion, classification or risk names a sensor
-kind or reads anything but a `Detection`, so a new source changes no module downstream. The
-reserved `radar` / `eo_ir` / `rf` / `acoustic` values in `SensorType` are a schema
-reservation, not a capability claim: no real sensor integration exists.
+A real adapter is an addition to this directory and nothing else. None of tracking, fusion,
+classification or risk names a sensor kind or reads anything but a `Detection`, so a new source
+changes no module downstream.
+
+`uart_fmcw_radar/` is the first one, and it is the test of that claim: adding it changed no
+module downstream of ingestion and no existing test. It is a driver for **testbed hardware**,
+built to be deleted — unvalidated, wired into no run mode, and described in full by its own
+README and ADR 0017. Run mode LIVE remains not built.
+
+What that adapter had to do, and what any real one will have to do, is say what its hardware
+cannot support rather than filling the gap: no elevation channel means an honest vertical
+covariance instead of a confident altitude (FM-051), vehicle-tuned firmware means no
+classification hint at all (FM-052), and an uncalibrated quality byte means no `snr_db`.
+
+The `eo_ir` / `rf` / `acoustic` values in `SensorType` remain schema reservations rather than
+capability claims: no adapter exists for any of them.
 
 ## Health
 
@@ -61,3 +72,4 @@ radio-frequency one, so the adapter does not pretend to know it (FM-010).
 |---|---|
 | `interface.py` | The contract |
 | `simulated/` | The simulated adapter, its sensor model, and the registry loader |
+| `uart_fmcw_radar/` | Testbed radar over a serial link. Isolated so it can be deleted whole |

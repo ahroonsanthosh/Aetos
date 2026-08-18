@@ -122,20 +122,76 @@ class Zone(BaseModel):
         return self
 
 
+class HardwareLink(BaseModel):
+    """How to reach a **physical** sensor fitted at this placement.
+
+    Its presence is what makes a placement live rather than simulated, and the two are mutually
+    exclusive by validation: a placement is either a simulation profile or a piece of hardware,
+    never both wearing each other's clothes. That exclusivity is what lets `--mode live` mean
+    something enforceable instead of aspirational (ADR 0018).
+
+    Deliberately thin. Only what is needed to *find* and *aim* the device lives here; the
+    driver's own detail — uncertainty, gating, confidence mapping, raw logging — stays in the
+    driver's configuration models, because a site document should not have opinions about frame
+    layouts.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    driver: Literal["uart_fmcw_radar"]
+    """Which adapter implementation to construct. A closed set: an unknown driver name is a
+    configuration error caught at load, not an import error at start-up."""
+
+    port: str = Field(min_length=1)
+    """Serial device path — `/dev/ttyUSB0`, `/dev/tty.SLAB_USBtoUART`, `COM4`."""
+
+    baud: int = Field(default=115200, gt=0)
+    """Confirm against the physical unit before trusting anything downstream (FM-050)."""
+
+    tilt_deg: float = Field(default=0.0, ge=-90.0, le=90.0)
+    """Mechanical up-tilt of the mount. For a sensor with no elevation channel this is the
+    only elevation there is, and it belongs in the site document because it describes how the
+    hardware is physically installed — recorded per session, never assumed (FM-051)."""
+
+    min_range_m: float = Field(default=10.0, ge=0.0)
+    max_range_m: float = Field(default=100.0, gt=0.0)
+    """Range window to accept, within whatever the hardware is rated for."""
+
+    raw_log_path: str | None = None
+    """Where to append the raw byte stream, relative to the repository root. Strongly
+    recommended while the hardware is unvalidated: it is the only record that can explain a
+    session afterwards."""
+
+    @model_validator(mode="after")
+    def _range_window_is_ordered(self) -> HardwareLink:
+        if self.max_range_m <= self.min_range_m:
+            raise ValueError(
+                f"max_range_m ({self.max_range_m}) must exceed min_range_m ({self.min_range_m})"
+            )
+        return self
+
+
 class SensorPlacement(BaseModel):
     """Where a sensor sits and which way it faces.
 
     Placement only. A sensor's detection characteristics — range, field of view, update rate,
-    uncertainty, probability of detection, false alarm rate — live in the sensor registry,
-    because the same sensor model can be placed at many sites and the same site can be fitted
-    with different sensors.
+    uncertainty, probability of detection, false alarm rate — live in the sensor registry for a
+    simulated sensor and in the driver for a real one, because the same sensor model can be
+    placed at many sites and the same site can be fitted with different sensors.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     sensor_id: str = Field(min_length=1, max_length=64)
-    registry_key: str = Field(min_length=1, max_length=64)
-    """Which entry in the sensor registry describes this sensor's characteristics."""
+
+    registry_key: str | None = Field(default=None, min_length=1, max_length=64)
+    """Which entry in the sensor registry describes this simulated sensor's characteristics.
+    Null for a real sensor, which has no simulation profile — the alternative, pointing live
+    hardware at a registry entry full of invented probabilities of detection, would put made-up
+    numbers where a reader expects measured ones."""
+
+    hardware: HardwareLink | None = None
+    """Set for a real sensor. Mutually exclusive with `registry_key`."""
 
     position: GeoPoint
     height_m: float = 0.0
@@ -146,6 +202,20 @@ class SensorPlacement(BaseModel):
     sensors with full azimuthal coverage, and ignored by those sensor models."""
 
     enabled: bool = True
+
+    @property
+    def is_live(self) -> bool:
+        return self.hardware is not None
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> SensorPlacement:
+        if (self.registry_key is None) == (self.hardware is None):
+            raise ValueError(
+                f"sensor {self.sensor_id}: set exactly one of registry_key (simulated) or "
+                "hardware (real). A placement that is both, or neither, has no defined source "
+                "of detections"
+            )
+        return self
 
 
 class Site(BaseModel):
