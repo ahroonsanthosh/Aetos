@@ -106,6 +106,32 @@ timestamps that imply impossible motion, corrupting the filter's velocity estima
 **Intended handling:** per-sensor skew estimation, bounds on acceptable skew, and rejection
 with an event beyond those bounds.
 
+### FM-012a — Sensor clock skew silently shortened the coast budget
+**Status:** Closed · **Severity:** was Medium — fragmented tracks, only at sites with
+unsynchronised sensors
+
+**What it was.** Track staleness was measured as `now - last_seen`: a pipeline instant minus a
+*sensor* instant. The difference therefore carried whatever offset existed between the two
+clocks. Ingestion accepts up to 30 s of skew (FM-012 proper), so a sensor lagging 25 s produced
+confirmed tracks that were **retired on their first missed cycle** instead of coasting for the
+configured six seconds. The object reappeared as a new track with a new identity and a split
+history — exactly the fragmentation `coast_seconds` exists to prevent (FM-022).
+
+Nothing reported it. The lifecycle thresholds simply meant a different duration than the one
+they named, and by how much depended on how well someone's sensors happened to be synchronised.
+
+**Fix.** `_ActiveTrack.last_supported` records when a track last received a detection on the
+**pipeline's** clock, and demotion is driven from that. `last_seen` remains the sensor's
+observation time and is still published as-is — the two are different questions and now have
+different fields. `last_updated` could not serve: prediction advances it every cycle, including
+for coasting tracks.
+
+**What makes it stay closed.** `tests/unit/test_track_manager.py` runs the coast test
+parametrised across 0, 3, 10 and 25 seconds of sensor lag and requires identical behaviour,
+alongside a test that real elapsed time still demotes an unsupported track — so the fix cannot
+degrade into "tracks never go stale" — and one asserting observation time is still reported
+from the sensor rather than restamped on receipt.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 

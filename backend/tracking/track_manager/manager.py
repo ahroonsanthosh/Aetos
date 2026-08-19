@@ -109,8 +109,32 @@ class _ActiveTrack:
     state: TrackState
     filter_state: KalmanState
     first_seen: datetime
+    """When the object was first observed, on the *sensor's* clock. Published as-is."""
+
     last_seen: datetime
+    """When it was most recently observed, on the sensor's clock. Published as-is, and
+    deliberately not used to measure staleness — see `last_supported`."""
+
+    last_supported: datetime
+    """When this track last received a detection, on the **pipeline's** clock.
+
+    Distinct from `last_seen` because the two are measured by different clocks, and the whole
+    point of a lifecycle threshold is that it means the duration it names.
+
+    Staleness used to be `now - last_seen`: a pipeline instant minus a sensor instant, so the
+    difference carried whatever skew existed between them. Ingestion accepts up to 30 s of it
+    (FM-012), so a sensor lagging 25 s produced tracks that were **retired on their first
+    missed cycle** instead of coasting for the configured six seconds — the object reappeared
+    as a new track with a new identity and a split history, which is precisely the
+    fragmentation `coast_seconds` exists to prevent (FM-022). Silently, and only for sites
+    whose sensors were not perfectly synchronised.
+
+    `last_updated` cannot serve this purpose: prediction advances it every cycle for coasting
+    tracks too, so it never grows."""
+
     last_updated: datetime
+    """When the filter state was last advanced, on the pipeline's clock. Prediction moves this
+    every cycle; it measures filter currency, not support."""
     detection_count: int = 0
     consecutive_misses: int = 0
     contributing_sensors: set[str] = field(default_factory=set)
@@ -137,7 +161,12 @@ class _ActiveTrack:
     `apply_classification` and passed through to `to_track`."""
 
     def seconds_since_detection(self, now: datetime) -> float:
-        return (now - self.last_seen).total_seconds()
+        """How long this track has gone without support, on one clock throughout.
+
+        Measured from `last_supported` rather than `last_seen` so the answer is a real
+        duration rather than a duration plus the sensor's clock offset.
+        """
+        return (now - self.last_supported).total_seconds()
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,6 +314,7 @@ class TrackManager:
         track.detection_count += 1
         track.consecutive_misses = 0
         track.last_seen = detection.timestamp
+        track.last_supported = now
         track.last_updated = now
         track.contributing_sensors.add(detection.sensor_id)
 
@@ -411,6 +441,7 @@ class TrackManager:
             filter_state=self._kalman.initiate(detection.position_enu, detection.covariance),
             first_seen=detection.timestamp,
             last_seen=detection.timestamp,
+            last_supported=now,
             last_updated=now,
             detection_count=1,
             contributing_sensors={detection.sensor_id},
