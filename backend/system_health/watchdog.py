@@ -85,6 +85,15 @@ class Watchdog:
         """Last verdict per source. Events are emitted on transition, not per cycle: a log
         that recorded a healthy radar twice a second would bury the moment it stopped."""
 
+        self._healthy_since: dict[str, datetime] = {}
+        """When each source last *began* satisfying its threshold continuously.
+
+        The hysteresis state. A source whose verdict was bad keeps it until this has stood for
+        `recovery_dwell_windows`, which is what stops a marginal sensor alternating between two
+        verdicts forever. Cleared the moment the source stops satisfying the threshold, so the
+        dwell measures sustained recovery rather than elapsed time since anything.
+        """
+
         self._posture: Posture = Posture.NOMINAL
         self._latest: HealthAssessment | None = None
 
@@ -134,6 +143,9 @@ class Watchdog:
         Read-only: it appends nothing and mutates nothing, so the request path can call it.
         """
         if self._latest is None:
+            # Genuinely unknown: this watchdog has never been given anything to judge, so it
+            # cannot distinguish an idle deployment from a dead one and must not guess. The
+            # wiring assesses once at startup precisely so a running system never lands here.
             return HealthAssessment(
                 assessed_at=self._clock.now(),
                 posture=Posture.STALLED,
@@ -142,6 +154,14 @@ class Watchdog:
 
         age_s = (self._clock.now() - self._latest.assessed_at).total_seconds()
         if age_s <= self._policy.stall_threshold_s:
+            return self._latest
+
+        # Nothing was attached, so nothing was expected to arrive, and an assessment about no
+        # sources cannot go out of date. Saying STALLED here would raise a fault on an ordinary
+        # start — a deployment with no scenario and no hardware genuinely has no cycle to run —
+        # and BLIND is both true and the more actionable of the two. Staleness is a claim that
+        # observations *stopped*; it needs something to have been observing.
+        if not self._latest.sensors:
             return self._latest
 
         return self._latest.model_copy(
@@ -194,6 +214,11 @@ class Watchdog:
         Only the OK case is examined further, because it is the only one where the adapter's
         account and the data can disagree — and that disagreement is the whole point.
         """
+        if report.state is not SensorState.OK:
+            # Whatever recovery was under way has ended. Restarting the dwell here rather than
+            # letting it run is what makes it measure *sustained* health.
+            self._healthy_since.pop(report.sensor_id, None)
+
         if report.state is SensorState.OFFLINE:
             return SensorVerdict.OFFLINE, f"Not observing: {report.reason}"
         if report.state is SensorState.NOT_STARTED:
@@ -205,11 +230,13 @@ class Watchdog:
         within_grace = (now - first_seen).total_seconds() <= self._policy.startup_grace_s
         if silent_for is None:
             if within_grace:
-                return (
-                    SensorVerdict.OK,
+                return self._recovered_or_still(
+                    report,
+                    now,
                     "Started and reporting normally; nothing observed yet, still within the "
                     f"{self._policy.startup_grace_s:.0f}s startup grace window.",
                 )
+            self._healthy_since.pop(report.sensor_id, None)
             return (
                 SensorVerdict.QUIET,
                 "In contact and healthy by its own account, but has produced no detection "
@@ -218,13 +245,57 @@ class Watchdog:
             )
 
         if silent_for <= threshold:
-            return SensorVerdict.OK, f"Reporting normally; last detection {silent_for:.1f}s ago."
+            return self._recovered_or_still(
+                report,
+                now,
+                f"Reporting normally; last detection {silent_for:.1f}s ago.",
+            )
 
+        self._healthy_since.pop(report.sensor_id, None)
         return (
             SensorVerdict.QUIET,
             f"In contact and healthy by its own account, but silent for {silent_for:.1f}s "
             f"against a {threshold:.0f}s threshold for this sensor type. Silence is not "
             "evidence of failure — an empty sky produces it too.",
+        )
+
+    def _recovered_or_still(
+        self, report: SensorHealth, now: datetime, healthy_reason: str
+    ) -> tuple[SensorVerdict, str]:
+        """OK — but a QUIET verdict is withdrawn only once the recovery dwell has stood.
+
+        The hysteresis (ADR 0007, and `AlertPolicy.clear_dwell_s` for the same shape in
+        alerting). Silence is a sawtooth against a fixed threshold, so without a dwell a source
+        whose rate sits anywhere near its window alternates between two verdicts indefinitely —
+        a blinking display and hundreds of status events an hour, which bury the one transition
+        that mattered.
+
+        A source that never sustains the threshold therefore settles on its bad verdict and
+        stays there. That is the honest description of a marginal sensor, and it is what makes
+        this hysteresis rather than a delay: the verdict stops moving instead of moving slower.
+        """
+        previous = self._verdicts.get(report.sensor_id)
+        began = self._healthy_since.setdefault(report.sensor_id, now)
+
+        # The dwell guards the verdict this module *infers* — never the fact the adapter
+        # *reports*. A source coming back from OFFLINE or DEGRADED has withdrawn its own claim,
+        # which is new evidence of exactly the kind that produced the fault, and holding BLIND
+        # over a map that is visibly drawing tracks would be a lie in the other direction. If a
+        # driver's own state flaps, that is a defect in the driver and belongs in the driver:
+        # papering over it here would hide it from the one place it can be fixed.
+        if previous is not SensorVerdict.QUIET:
+            return SensorVerdict.OK, healthy_reason
+
+        dwell_s = self._policy.recovery_dwell_for(report.sensor_type)
+        held_s = (now - began).total_seconds()
+        if held_s >= dwell_s:
+            return SensorVerdict.OK, f"{healthy_reason} Recovered from {previous.value}."
+
+        return (
+            previous,
+            f"{healthy_reason} Holding the previous {previous.value} verdict until healthy "
+            f"reporting has stood for {dwell_s:.0f}s ({held_s:.1f}s so far) — a verdict that "
+            "flipped on the first good cycle would flap on every marginal sensor.",
         )
 
     def _posture_for(self, assessments: list[SensorAssessment], *, considered: int) -> Posture:
@@ -292,6 +363,7 @@ class Watchdog:
         for gone in set(self._verdicts) - present:
             del self._verdicts[gone]
             self._first_seen.pop(gone, None)
+            self._healthy_since.pop(gone, None)
 
     def _record_posture_transition(self, assessment: HealthAssessment) -> None:
         """Append DEGRADED_MODE_ENTERED / EXITED when the posture leaves or regains NOMINAL.

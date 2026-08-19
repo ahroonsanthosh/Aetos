@@ -45,6 +45,30 @@ class SystemHealthPolicy(BaseModel):
     """Per-sensor-type overrides, because the right window differs by an order of magnitude
     across the kinds of sensor this system is designed to accept."""
 
+    recovery_dwell_windows: float = Field(default=1.5, gt=1.0)
+    """How many silence windows a source must sustain before a bad verdict is withdrawn.
+
+    The hysteresis, and it is not optional. Silence is a sawtooth: a source producing one
+    detection every 35 seconds against a 30-second window crosses the threshold, gets a
+    detection, drops back under it, and crosses again — forever. Without a dwell that is a
+    verdict flapping twice a minute, a display blinking between OK and QUIET, and roughly two
+    hundred status events an hour per sensor burying the one transition that mattered.
+
+    **Expressed in windows rather than seconds, and required to exceed one.** A source flapping
+    across its threshold accumulates exactly one window of apparent health between crossings —
+    from its last detection to its next crossing — so any dwell of one window or less is
+    satisfied by the flap itself and buys nothing. That is not a tuning preference a deployment
+    should be free to get wrong, so the bound is on the field. Stating it in windows also makes
+    it scale with the sensor type for free: a 20-second imaging window and a 120-second
+    radio-frequency one get proportionate dwells from one number.
+
+    Asymmetric on purpose, exactly as `AlertPolicy.clear_dwell_s` is (ADR 0007): a bad verdict
+    is reached the instant the evidence supports it and withdrawn only once the source has
+    earned it back. A genuinely marginal sensor therefore settles on QUIET and stays there,
+    which is the true statement about it — rather than alternating between two verdicts of
+    which one is always wrong.
+    """
+
     startup_grace_s: float = Field(default=30.0, ge=0.0)
     """How long after a source starts before its silence is measured at all.
 
@@ -78,6 +102,14 @@ class SystemHealthPolicy(BaseModel):
     def threshold_for(self, sensor_type: SensorType) -> float:
         """The silence window for one kind of source."""
         return self.silence_threshold_s.get(sensor_type, self.default_silence_threshold_s)
+
+    def recovery_dwell_for(self, sensor_type: SensorType) -> float:
+        """How long this kind of source must sustain health before a bad verdict is withdrawn.
+
+        Derived from the silence window rather than configured beside it, so the two cannot be
+        set into the combination that makes the dwell useless. See `recovery_dwell_windows`.
+        """
+        return self.threshold_for(sensor_type) * self.recovery_dwell_windows
 
     def validate_against_tick(self, tick_s: float) -> None:
         """Refuse a stall threshold the pipeline cannot possibly satisfy.

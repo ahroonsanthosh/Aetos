@@ -57,7 +57,7 @@ from backend.auth.service import AuthService
 from backend.classification.classifier import build_default_classifier
 from backend.classification.service import ClassificationService, CycleEvidence
 from backend.common.clock import Clock, SystemClock
-from backend.common.config import ConfigPaths, RunMode
+from backend.common.config import ConfigError, ConfigPaths, RunMode
 from backend.database.projection import TrackProjection
 from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
@@ -882,6 +882,13 @@ def build_application(
     if scenario:
         pipeline.attach_scenario(scenario)
 
+    # One pass before the first request, so the health endpoint answers from a real assessment
+    # rather than from never having run. Without it a deployment with nothing attached — no
+    # scenario, no hardware, which is an ordinary way to start — reports STALLED, raising a
+    # fault over a system that is merely idle. The pipeline task does not step an empty
+    # adapter set, so this is the only pass such a run would ever get.
+    pipeline.watchdog.assess(pipeline.sensor_health())
+
     services = ApiServices(
         clock=clock,
         events=pipeline.events,
@@ -1039,6 +1046,13 @@ def main() -> None:
         )
     except (ModeRefused, StartupRefused) as refusal:
         raise SystemExit(f"\n  {refusal}\n") from refusal
+    except ConfigError as invalid:
+        # A configuration document this deployment ships is missing or wrong. That is an
+        # operator-facing problem with an operator-facing message already attached — it names
+        # the file and what is wrong with it — and it was reaching the terminal as a Python
+        # traceback with the useful line last. Every other refusal in this function prints
+        # cleanly; a config error is not less deserving of that for being raised deeper down.
+        raise SystemExit(f"\n  {invalid}\n") from invalid
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.

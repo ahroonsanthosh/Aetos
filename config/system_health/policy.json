@@ -1,5 +1,5 @@
 {
-  "notes": "Thresholds decide when silence is worth reporting, never what it means. A QUIET verdict is a statement about the data, not a fault claim: an empty sky produces one. Raise a threshold if operators start ignoring the row; lower it if a dead sensor went unnoticed. stall_threshold_s must stay well above the pipeline tick (default 0.5s).",
+  "notes": "Thresholds decide when silence is worth reporting, never what it means. A QUIET verdict is a statement about the data, not a fault claim: an empty sky produces one. Raise a threshold if operators start ignoring the row; lower it if a dead sensor went unnoticed. recovery_dwell_windows must stay above 1.0 or a marginal sensor flaps between OK and QUIET forever (it accumulates exactly one window of apparent health between crossings). stall_threshold_s must stay well above the pipeline tick (default 0.5s).",
   "default_silence_threshold_s": 60.0,
   "silence_threshold_s": {
     "simulated_radar": 20.0,
@@ -11,6 +11,7 @@
     "rf": 120.0,
     "acoustic": 120.0
   },
+  "recovery_dwell_windows": 1.5,
   "startup_grace_s": 30.0,
   "stall_threshold_s": 10.0,
   "assess_simulated_sensors": true

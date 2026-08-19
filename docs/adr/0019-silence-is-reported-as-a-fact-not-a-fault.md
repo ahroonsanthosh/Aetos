@@ -42,6 +42,29 @@ Three consequences follow.
    themselves. The judgement needs a window and a policy, neither of which an adapter has, and
    putting a threshold in a driver would scatter one decision across every sensor family.
 
+## The verdict settles rather than flaps
+
+Silence measured against a fixed threshold is a sawtooth, so a source whose rate sits anywhere
+near its window alternates between two verdicts indefinitely. Measured, before the hysteresis
+was added: 34 status transitions in twenty simulated minutes for one working sensor.
+
+A `QUIET` verdict is therefore withdrawn only once the source has sustained health for **more
+than one silence window** — the bound is on the field, because a flapping source accumulates
+exactly one window of apparent health between crossings and any smaller dwell is satisfied by
+the flap itself. The dwell is stated in windows rather than seconds so it scales across sensor
+types from one number.
+
+This is the same asymmetry as `AlertPolicy.clear_dwell_s` (ADR 0007) and is chosen for the same
+reason: a bad verdict is reached the instant the evidence supports it and withdrawn only once
+the source has earned it back. A marginal sensor settles on `QUIET`, which is true of it, rather
+than alternating between two verdicts of which one is always wrong.
+
+The dwell applies only to what this module infers. `OFFLINE` and `DEGRADED` are the adapter's
+own claims, and a source that has withdrawn its claim is reported back immediately — holding
+`BLIND` over a map that is visibly drawing tracks would be a lie in the other direction, and a
+driver whose state flaps is a defect that belongs in the driver rather than one to be masked
+here.
+
 ## Degraded mode declares; it does not act
 
 Entering degraded mode changes nothing about how tracks are assessed. No threshold moves, no
@@ -62,6 +85,17 @@ appends nothing. A pipeline that has stopped stepping surfaces as `STALLED`.
 Nothing reachable from the API may trigger an assessment. If a request could cause one, the
 health endpoint would lose the ability to distinguish a system that is stepping from one that is
 merely answering — which is the only thing this check is for.
+
+## An idle system is not a stalled one
+
+An assessment over no sources does not age into `STALLED`. A staleness claim says observations
+*stopped*, which needs something to have been observing; a deployment started with no scenario
+and no hardware — explicitly supported — never had any. It reports `BLIND`, which is both true
+and the more actionable statement, and the wiring assesses once at construction so the first
+request is answered from a real judgement rather than from never having run.
+
+Raising a red fault on an ordinary startup is how a watchdog gets muted in its first week, which
+would cost more than the check is worth.
 
 ## Consequences
 

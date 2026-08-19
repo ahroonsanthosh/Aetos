@@ -114,9 +114,7 @@ def test_a_quiet_sensor_reports_the_evidence_not_only_the_word(
 
 def test_recent_detections_keep_a_sensor_ok(watchdog: Watchdog, clock: SimClock) -> None:
     clock.advance(100.0)
-    assessment = watchdog.assess(
-        [health(last_detection_time=clock.now() - timedelta(seconds=5))]
-    )
+    assessment = watchdog.assess([health(last_detection_time=clock.now() - timedelta(seconds=5))])
     assert verdicts(assessment)["radar-1"] is SensorVerdict.OK
 
 
@@ -305,3 +303,118 @@ def test_thresholds_are_per_sensor_type() -> None:
     imaging sensor and a radio-frequency one."""
     loaded = load_system_health_policy()
     assert loaded.threshold_for(SensorType.RF) > loaded.threshold_for(SensorType.EO_IR)
+
+
+# --- hysteresis: a marginal sensor must settle, not flap ------------------------------------
+
+
+def marginal_run(watchdog: Watchdog, clock: SimClock, period_s: float, seconds: float) -> None:
+    """Drive a source that genuinely emits one detection every `period_s`."""
+    start = clock.now()
+    last = start
+    while (clock.now() - start).total_seconds() < seconds:
+        clock.advance(0.5)
+        if (clock.now() - last).total_seconds() >= period_s:
+            last = clock.now()
+        watchdog.assess([health(last_detection_time=last)])
+
+
+def test_a_sensor_on_the_threshold_settles_instead_of_flapping(
+    watchdog: Watchdog, clock: SimClock, store: SqliteEventStore
+) -> None:
+    """Silence is a sawtooth, and a bare threshold comparison on a sawtooth oscillates.
+
+    A source emitting once every 35s against a 30s window is genuinely marginal: it crosses the
+    threshold, gets a detection, drops under, and crosses again, forever. Without hysteresis
+    this produced 34 status transitions in twenty minutes for one working sensor — a display
+    blinking twice a minute and a log in which the one transition that mattered is buried.
+
+    The requirement is not "fewer events". It is that the verdict **stops moving** and settles
+    on the true description of the sensor, which is that it is marginal.
+    """
+    marginal_run(watchdog, clock, period_s=35.0, seconds=1200.0)
+
+    changes = events(store, EventType.SENSOR_STATUS_CHANGED)
+    assert len(changes) <= 2, [c.payload["verdict"] for c in changes]
+    assert watchdog.report().sensors[0].verdict is SensorVerdict.QUIET
+
+
+def test_hysteresis_does_not_delay_a_healthy_sensor(
+    watchdog: Watchdog, clock: SimClock, store: SqliteEventStore
+) -> None:
+    """The converse, and the thing a badly chosen dwell would break."""
+    marginal_run(watchdog, clock, period_s=1.0, seconds=1200.0)
+
+    assert len(events(store, EventType.SENSOR_STATUS_CHANGED)) == 1
+    assert watchdog.report().sensors[0].verdict is SensorVerdict.OK
+
+
+def test_the_dwell_cannot_be_configured_short_enough_to_be_useless() -> None:
+    """A flapping source accumulates exactly one window of apparent health between crossings,
+    so a dwell of one window or less is satisfied by the flap itself and buys nothing.
+
+    The bound is on the field rather than left to the deployment, because a setting whose only
+    effect is to silently re-enable the bug is not a tuning choice.
+    """
+    with pytest.raises(ValueError):
+        SystemHealthPolicy(recovery_dwell_windows=1.0)
+    with pytest.raises(ValueError):
+        SystemHealthPolicy(recovery_dwell_windows=0.5)
+
+
+def test_the_dwell_scales_with_each_sensor_types_window() -> None:
+    """One number, proportionate dwells. A 20s imaging window and a 120s radio-frequency one
+    must not share a dwell expressed in seconds."""
+    loaded = load_system_health_policy()
+    for sensor_type in SensorType:
+        assert loaded.recovery_dwell_for(sensor_type) > loaded.threshold_for(sensor_type)
+
+
+def test_a_source_returning_from_a_reported_fault_is_not_held(
+    watchdog: Watchdog, clock: SimClock
+) -> None:
+    """The dwell guards what this module infers, never what the adapter reports.
+
+    An adapter coming back from OFFLINE has withdrawn its own claim. Holding BLIND for another
+    dwell over a map that is visibly drawing tracks would be a lie in the other direction — and
+    a driver whose own state flaps is a defect in the driver, which papering over here would
+    hide from the only place it can be fixed.
+    """
+    watchdog.assess([health(SensorState.OFFLINE, reason="port closed")])
+    assert watchdog.latest.posture is Posture.BLIND
+
+    clock.advance(0.5)
+    assessment = watchdog.assess([health(last_detection_time=clock.now())])
+
+    assert verdicts(assessment)["radar-1"] is SensorVerdict.OK
+    assert assessment.posture is Posture.NOMINAL
+
+
+def test_an_idle_watchdog_does_not_age_into_a_stall(watchdog: Watchdog, clock: SimClock) -> None:
+    """With nothing attached, there is nothing for staleness to be about.
+
+    STALLED claims observations *stopped* arriving. A deployment with no sources never had any,
+    and `--no-scenario` with no hardware is an explicitly supported way to start
+    (`test_simulation_without_a_scenario_is_an_idle_system_not_a_refusal`). Ageing that into a
+    fault would raise a red light on an ordinary start, and a watchdog that does that is one
+    operators mute in the first week.
+
+    BLIND is the honest answer and stays the answer however long the process runs.
+    """
+    watchdog.assess([])
+    assert watchdog.report().posture is Posture.BLIND
+
+    clock.advance(3600.0)
+
+    assert watchdog.report().posture is Posture.BLIND
+
+
+def test_a_stall_is_still_detected_once_something_was_observing(
+    watchdog: Watchdog, clock: SimClock
+) -> None:
+    """The other side of it, so the exemption above cannot become a blanket suppression."""
+    watchdog.assess([health(last_detection_time=clock.now())])
+
+    clock.advance(3600.0)
+
+    assert watchdog.report().posture is Posture.STALLED

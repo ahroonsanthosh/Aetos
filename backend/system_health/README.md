@@ -27,6 +27,25 @@ separate all the way to the display.
 A `QUIET` verdict carries the number of seconds and the threshold it was compared against, so it
 can be argued with without opening the policy file.
 
+### The verdict must settle, not flap
+
+Silence is a sawtooth. A source producing one detection every 35 seconds against a 30-second
+window crosses the threshold, gets a detection, drops under it, and crosses again — forever.
+Compared naively that is a verdict flipping twice a minute, a blinking display, and some two
+hundred status events an hour per sensor burying the one transition that mattered.
+
+So a `QUIET` verdict is withdrawn only after the source sustains healthy reporting for
+`recovery_dwell_windows` of its own silence window. The bound is **greater than one window**,
+enforced on the field rather than left to the deployment: a flapping source accumulates exactly
+one window of apparent health between crossings, so any dwell of one or less is satisfied by the
+flap itself. A genuinely marginal sensor therefore settles on `QUIET` and stays there, which is
+the true description of it.
+
+The dwell guards the verdict this module *infers*. It is never applied to withdrawing `OFFLINE`
+or `DEGRADED`: those are the adapter's own claims, and a source that has withdrawn its claim is
+back. Holding `BLIND` over a map that is visibly drawing tracks would be a lie in the other
+direction, and a driver whose state flaps is a defect belonging in the driver.
+
 ## Posture
 
 Derived across all sources, and reported as a banner rather than a row because it is the one
@@ -38,7 +57,10 @@ line an operator reads before deciding whether to trust anything below it.
   radars and one dead cable is degraded, because the question is never "are most of mine fine".
 - `BLIND` — nothing is observing, or nothing is attached. The display is memory, and an empty
   one means nothing at all.
-- `STALLED` — see below.
+- `STALLED` — see below. Note that an assessment over **no** sources never ages into this: a
+  staleness claim says observations *stopped*, which needs something to have been observing. An
+  idle deployment stays `BLIND`, because raising a fault on an ordinary start is how a watchdog
+  gets muted.
 
 Transitions are appended to the log as `SENSOR_STATUS_CHANGED`, `DEGRADED_MODE_ENTERED` and
 `DEGRADED_MODE_EXITED`, on transition only. A log that recorded a healthy radar twice a second
@@ -58,6 +80,10 @@ nothing and mutates nothing, which is what makes it safe on the request path —
 why nothing reachable from the API may cause an assessment: a request that could trigger one
 would destroy the endpoint's ability to tell a system that is stepping from one that is only
 answering.
+
+The wiring assesses once during construction, so the first request is answered from a real
+judgement rather than from never having run — a deployment with no adapters is never stepped at
+all, and that one pass is the only one it would otherwise get.
 
 `stall_threshold_s` must exceed the pipeline tick, or the system would declare itself stalled on
 every healthy cycle. `SystemHealthPolicy.validate_against_tick` is checked at startup, where

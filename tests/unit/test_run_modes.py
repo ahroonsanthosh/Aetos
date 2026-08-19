@@ -195,3 +195,30 @@ def test_construction_touches_no_hardware(tmp_path: Path) -> None:
     adapter = build_hardware_adapter(SimClock(START), hardware_placement(), tmp_path)
 
     assert adapter.health().state.value == "not_started"
+
+
+def test_a_bad_configuration_document_refuses_cleanly_rather_than_as_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`main()` prints every other refusal as a message; a config error was the exception.
+
+    `ModeRefused` and `StartupRefused` both surface as a clean indented line. `ConfigError` was
+    caught nowhere, so a missing site file or an invalid policy reached the terminal as a Python
+    traceback with the one useful sentence last — which is exactly how it was first met during a
+    real deployment. The messages were always operator-facing; only the delivery was not.
+    """
+    from backend.common.config import ConfigError
+    from backend.main import build_application, main
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise ConfigError("config/sites/somewhere.json: configuration file not found")
+
+    monkeypatch.setattr("backend.main.build_application", refuse)
+    monkeypatch.setattr("sys.argv", ["aetos", "--no-auth"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+
+    assert "configuration file not found" in str(exit_info.value)
+    assert "Traceback" not in str(exit_info.value)
+    assert build_application is not refuse  # the monkeypatch is scoped, not permanent
