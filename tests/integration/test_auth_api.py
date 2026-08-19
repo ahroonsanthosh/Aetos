@@ -18,7 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 from backend.api.app import API_PREFIX, create_app
 from backend.api.identity import SessionIdentityProvider
 from backend.api.services import ApiServices
-from backend.api.stream import WS_UNAUTHENTICATED
+from backend.api.stream import SESSION_RECHECK_SECONDS, WS_UNAUTHENTICATED
 from backend.auth.models import Role
 from backend.auth.policy import SESSION_COOKIE_NAME, AuthPolicy
 from backend.auth.service import AuthService
@@ -464,3 +464,48 @@ def test_health_names_the_access_control_posture(client: TestClient, auth: AuthS
 
     assert posture["state"] == "ok"
     assert "NO authentication" not in posture["detail"]
+
+
+def test_a_revoked_session_ends_an_open_stream(
+    client: TestClient, auth: AuthService, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Authorisation has to hold for the life of the connection, not just its handshake.
+
+    Regression: the upgrade was gated and nothing was ever re-checked, so disabling an account
+    returned 401 to its next request while its already-open socket carried on delivering the
+    entire live picture. Every REST route re-resolves the operator on each request precisely so
+    that a disabled account takes effect immediately — the stream outlived all of it, which is
+    the gate being decorative in exactly the place this endpoint exists to defend.
+    """
+    user = auth.create_user("mallory", PASSWORD, Role.VIEWER)
+    login(client, "mallory")
+
+    with client.websocket_connect(f"{API_PREFIX}/stream") as socket:
+        events.append(EventType.TRACK_CREATED, "tracking", {}, track_id="TRK-00001")
+        assert socket.receive_json()["event_type"] == "TRACK_CREATED"
+
+        auth.set_enabled(user.user_id, False)
+        assert client.get(f"{API_PREFIX}/tracks").status_code == 401
+
+        clock.advance(SESSION_RECHECK_SECONDS * 2)
+        events.append(EventType.TRACK_CREATED, "tracking", {}, track_id="TRK-00002")
+
+        with pytest.raises(WebSocketDisconnect) as closed:
+            socket.receive_json()
+
+    assert closed.value.code == WS_UNAUTHENTICATED
+
+
+def test_a_live_session_keeps_its_stream_open(
+    client: TestClient, auth: AuthService, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """The recheck must not cost a working operator their stream — the failure mode of a guard
+    that is too eager is an operator dropped mid-incursion."""
+    auth.create_user("alice", PASSWORD, Role.VIEWER)
+    login(client, "alice")
+
+    with client.websocket_connect(f"{API_PREFIX}/stream") as socket:
+        for index in range(3):
+            clock.advance(SESSION_RECHECK_SECONDS * 2)
+            events.append(EventType.TRACK_CREATED, "tracking", {}, track_id=f"TRK-0000{index}")
+            assert socket.receive_json()["event_type"] == "TRACK_CREATED"

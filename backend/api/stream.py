@@ -30,6 +30,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from backend.api.schemas import StreamedEvent
 from backend.auth.policy import SESSION_COOKIE_NAME
+from backend.common.clock import Clock
 from backend.events.store import EventStore
 from backend.events.types import Event, EventType
 
@@ -70,6 +71,58 @@ that one demanding consumer degrades its own latency rather than everyone else's
 
 DEFAULT_IDLE_POLL_SECONDS = 0.25
 
+SESSION_RECHECK_SECONDS = 5.0
+"""How often an open stream re-checks the session behind it.
+
+Checking only at the upgrade is not enough, and the gap is not theoretical: every REST route
+re-resolves the operator on each request precisely so that disabling an account or changing a
+role takes effect immediately, and a stream that checked once outlived all of it. Disabling an
+account revoked its sessions and returned 401 to its next request while its open socket carried
+on delivering the whole live picture — which is the gate being decorative in exactly the place
+this endpoint's docstring says it must not be.
+
+Seconds rather than per-pass because the loop wakes on every commit and on a 0.25 s idle poll,
+and re-reading the session that often would put a database round-trip on the path of every
+event at sensor rate for no additional safety. Five seconds bounds how long a revoked operator
+keeps receiving, which is the number that matters.
+"""
+
+
+class SessionGuard:
+    """Re-checks the session behind an open stream, at most every `interval` seconds.
+
+    Holds the recheck policy rather than putting it in `EventBroadcaster`, which has no business
+    knowing what a session is — it reads a log and writes to a socket. The broadcaster asks
+    "may this client still be served"; what makes that true is the caller's problem.
+    """
+
+    __slots__ = ("_resolve", "_clock", "_interval", "_checked_at")
+
+    def __init__(
+        self,
+        resolve: Callable[[], object | None],
+        clock: Clock,
+        interval: float = SESSION_RECHECK_SECONDS,
+    ) -> None:
+        self._resolve = resolve
+        self._clock = clock
+        self._interval = interval
+        self._checked_at = clock.monotonic()
+
+    def still_valid(self) -> bool:
+        """Whether the stream may continue. Cheap between rechecks.
+
+        Uses `monotonic()` rather than `now()`: this is interval logic, and wall time stepping
+        backwards under an NTP correction must not postpone a revocation check indefinitely
+        (ADR 0003).
+        """
+        elapsed = self._clock.monotonic()
+        if elapsed - self._checked_at < self._interval:
+            return True
+
+        self._checked_at = elapsed
+        return self._resolve() is not None
+
 
 class EventBroadcaster:
     """Pushes committed events to connected clients by reading the log.
@@ -103,8 +156,17 @@ class EventBroadcaster:
         self._unsubscribe = None
         self._loop = None
 
-    async def stream(self, websocket: WebSocket, from_seq: int) -> None:
-        """Serve one client from `from_seq` onwards until it disconnects."""
+    async def stream(
+        self, websocket: WebSocket, from_seq: int, guard: SessionGuard | None = None
+    ) -> None:
+        """Serve one client from `from_seq` onwards until it disconnects.
+
+        `guard`, when supplied, is consulted before each pass and the stream is closed the
+        moment it stops vouching for the client. A session revoked mid-stream has to end the
+        stream: this connection carries the entire live picture, so an authorisation that only
+        held at the upgrade would be an authorisation that expires when the operator closes the
+        tab rather than when their access is withdrawn.
+        """
         await websocket.accept()
 
         cursor = max(from_seq, 1)
@@ -114,6 +176,12 @@ class EventBroadcaster:
 
         try:
             while not disconnected.done():
+                if guard is not None and not guard.still_valid():
+                    await websocket.close(
+                        code=WS_UNAUTHENTICATED, reason="Session is no longer valid."
+                    )
+                    return
+
                 # Cleared before the read, not after. An event committed while this pass is
                 # draining must leave the waiter set, or the client would sleep through it
                 # and only see it on the next idle poll.
@@ -229,7 +297,10 @@ async def stream_events(
     """
     services = websocket.app.state.services
 
-    if services.identity.resolve(websocket.cookies.get(SESSION_COOKIE_NAME)) is None:
+    def resolve() -> object | None:
+        return services.identity.resolve(websocket.cookies.get(SESSION_COOKIE_NAME))
+
+    if resolve() is None:
         # Refused before `accept()`, so no socket is ever established. The close code is in the
         # application range and distinct from anything emitted on a restart, because the
         # client's reconnect loop has to tell "not allowed, stop trying" from "gone away,
@@ -240,4 +311,4 @@ async def stream_events(
 
     broadcaster = websocket.app.state.broadcaster
     start = from_seq if from_seq is not None else services.events.latest_seq() + 1
-    await broadcaster.stream(websocket, start)
+    await broadcaster.stream(websocket, start, SessionGuard(resolve, services.clock))
