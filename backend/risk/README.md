@@ -101,7 +101,9 @@ the whole truth and therefore what makes the log replayable (ADR 0006, FM-025).
 ## Configuration
 
 `config/risk/policy.json` — factor weights, groups, per-factor thresholds, the mitigation floor,
-and the hysteresis bands. Deployment-specific judgements about what a particular site considers
+and the hysteresis bands. **This is the only file the engine reads.** `config/environments/*.json`
+also carries a `risk.hysteresis` block, in different units and with different values; it predates
+this module, nothing loads it, and editing it changes nothing (see that directory's README). Deployment-specific judgements about what a particular site considers
 dangerous; burying them in code makes them invisible to the people best placed to correct them,
 and unauditable by anyone asked to trust the output.
 

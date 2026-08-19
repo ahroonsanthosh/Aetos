@@ -286,9 +286,25 @@ class RiskHysteresisConfig(BaseModel):
 class RiskConfig(BaseModel):
     """Risk tuning that belongs to a deployment rather than to the code.
 
-    Only hysteresis is defined so far. Scoring weights will join it here when the risk engine
-    exists; keeping the block nested from the start means adding them is not a config schema
-    break for every environment.
+    **Not read by the risk engine. `config/risk/policy.json` is the live tuning.**
+
+    This block was written before `backend/risk` existed, against the expectation that the
+    engine would read its hysteresis from the environment document. It did not: the engine
+    loads `config/risk/policy.json` and takes its bands, thresholds and dwell times entirely
+    from there. Nothing at runtime constructs an `EnvironmentConfig` at all.
+
+    That leaves two documents describing the same tuning in different units — `rise_score` here
+    is a fraction, `rise` there is a score out of 100 — with different values and no error from
+    either. Editing this one changes nothing, silently, which is the failure `RiskPolicy`'s
+    strict validation exists to prevent for the file that *is* read: a config format that
+    quietly drops what it does not understand is how a site ends up running tuning nobody
+    applied. Validating cleanly while being ignored is a worse version of the same trap.
+
+    It is left in place rather than deleted because the schema, its validation and its tests are
+    sound, and reconciling the two representations is a deliberate decision about which units
+    the deployment surface should speak — not something to settle as a side effect of a
+    docstring correction. Until that decision is made, this is documentation of an intent, and
+    the docstring says so where someone reading the model will see it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

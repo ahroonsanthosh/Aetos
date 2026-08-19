@@ -89,6 +89,20 @@ count, so it is configuration.
 
 ### `risk.hysteresis` — level stability (ADR 0007)
 
+> **Not read by the risk engine.** The live hysteresis tuning is `config/risk/policy.json`.
+> Editing the block below changes nothing, and it validates cleanly, so nothing tells you.
+>
+> This block predates `backend/risk`. The engine, when it was built, took its bands and dwell
+> times from its own policy file instead, and nothing at runtime loads an environment document
+> at all. The two describe the same tuning in different units — `rise_score` here is a
+> fraction, `rise` there is a score out of 100 — and they currently hold different values:
+> `prod.json` puts CRITICAL at 0.8 and de-escalation at 45 s, while the file actually in force
+> uses 87 and 20 s.
+>
+> Reconciling them is a decision about which units the deployment surface should speak, and it
+> has not been taken. Until it is, **tune `config/risk/policy.json`**; treat what follows as a
+> description of intended shape rather than of running behaviour.
+
 Each boundary is a Schmitt trigger: the level is entered when the score rises through
 `rise_score` and left when it falls below `fall_score`. The gap is the hysteresis band.
 `escalation_dwell_s` and `de_escalation_dwell_s` are the minimum hold times after a change, and
@@ -97,8 +111,9 @@ de-escalation timer, but one noisy update must not promote a benign object eithe
 
 Boundaries are listed lowest first with strictly increasing `rise_score`, and `fall_score` must
 be strictly below `rise_score` on each. Level names are strings here rather than an enum:
-`backend/risk` owns the level vocabulary and `backend/common` may not import it (ADR 0009), so
-the risk engine checks these names against its own enum when it loads them.
+`backend/risk` owns the level vocabulary and `backend/common` may not import it (ADR 0009). The
+risk engine would check these names against its own enum — if it loaded them, which per the
+note above it does not.
 
 The score itself is never smoothed. Hysteresis applies to the discrete level, and therefore to
 alerting, only.
