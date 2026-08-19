@@ -663,3 +663,28 @@ def test_history_points_stay_oldest_first_when_truncated(client: TestClient) -> 
 
     seqs = [p["seq"] for p in limited["points"]]
     assert seqs == sorted(seqs)
+
+
+def test_acknowledgement_survives_a_rebuild_with_the_operator_intact(
+    clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Who acknowledged an alert must survive rebuilding from the log.
+
+    The alert state surviving is not enough: an alert that rebuilds as acknowledged *by nobody*
+    is a worse audit record than one that does not rebuild, because it reads as complete. This
+    is the claim ADR 0016 rests on, and it depends on one payload key written in one place and
+    read in another.
+    """
+    service = AlertService(load_alert_policy(), events)
+    service.review_cycle([_alerting_track()], clock.now())
+    (alert,) = service.active
+
+    service.acknowledge(alert.alert_id, "USR-00007", clock.now())
+    service.rebuild()
+
+    (rebuilt,) = service.active
+    assert str(rebuilt.state) == "acknowledged"
+    assert rebuilt.acknowledged_by == "USR-00007", (
+        "the alert rebuilt as acknowledged by nobody — the operator was lost between the "
+        "payload written and the payload read"
+    )
