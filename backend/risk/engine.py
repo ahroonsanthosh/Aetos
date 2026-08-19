@@ -293,6 +293,25 @@ def load_risk_policy(
             f"Known factors: {', '.join(sorted(_FACTOR_TYPES))}"
         )
 
+    # Factor *codes* were checked here from the beginning; the parameter names inside each
+    # factor were not. That asymmetry is the bug: a free-form dict cannot use `extra="forbid"`,
+    # so an unrecognised key fell through to the factor's default. Someone tuning `fast_mp`
+    # instead of `fast_mps` got no error and no effect — the file read as configured and the
+    # system behaved as though it were not.
+    for code, factor_policy in policy.factors.items():
+        supported = _FACTOR_TYPES[code].SUPPORTED_PARAMETERS
+        unrecognised = set(factor_policy.parameters) - supported
+        if unrecognised:
+            raise ConfigError(
+                f"{file}: risk factor {code!r} has no parameter "
+                f"{', '.join(repr(p) for p in sorted(unrecognised))}. "
+                + (
+                    f"It accepts: {', '.join(sorted(supported))}."
+                    if supported
+                    else "It takes no parameters."
+                )
+            )
+
     return policy
 
 

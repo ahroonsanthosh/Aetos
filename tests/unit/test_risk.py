@@ -9,11 +9,26 @@ when it should be loudest.
 
 from __future__ import annotations
 
+import ast
+import json
+from pathlib import Path
+
 import pytest
 
+import backend.risk.factors
+import backend.risk.service
+from backend.common.config import ConfigError, ConfigPaths
 from backend.risk.engine import RiskEngine, RiskPolicy, build_risk_engine, load_risk_policy
-from backend.risk.factors import ClosureFactor, FactorPolicy, LoiterFactor, TrackRisk
+from backend.risk.factors import (
+    ClosureFactor,
+    EscalationFactor,
+    FactorPolicy,
+    LoiterFactor,
+    LowAltitudePenetrationFactor,
+    TrackRisk,
+)
 from backend.zones.geometry import EnuPoint, EnuVelocity, SiteGeometry, load_site_geometry
+from backend.zones.site import GeodeticReference, Site
 from sensors.schemas.detection import ClassificationLabel
 
 SMALL_UAS = ClassificationLabel.SMALL_UAS
@@ -567,3 +582,127 @@ def test_a_zero_divisor_cannot_kill_the_cycle(
     contribution = factor.assess(inbound(400.0, **risk_overrides), geometry)
 
     assert 0.0 <= contribution.activation <= 1.0
+
+
+def test_a_misspelled_parameter_is_rejected_rather_than_ignored(tmp_path: Path) -> None:
+    """Tuning a parameter that does not exist must fail, not quietly do nothing.
+
+    `parameters` is a free-form dict, so `extra="forbid"` cannot police it and every
+    unrecognised key fell through to the factor's default. Someone setting `fast_mp` instead of
+    `fast_mps` left the closing-velocity factor on 25 m/s while the file said 100 — a four-fold
+    difference in a threat factor, with the policy reading as configured and the system
+    behaving as though it were not.
+
+    Factor *codes* were validated here from the beginning. This is the other half of the same
+    surface.
+    """
+    document = json.loads((ConfigPaths.default().config_root / "risk" / "policy.json").read_text())
+    document["factors"]["closing_velocity"]["parameters"]["fast_mp"] = 100.0
+
+    (tmp_path / "risk").mkdir()
+    (tmp_path / "risk" / "policy.json").write_text(json.dumps(document))
+    paths = ConfigPaths(repo_root=tmp_path, config_root=tmp_path)
+
+    with pytest.raises(ConfigError, match="has no parameter"):
+        load_risk_policy(paths=paths)
+
+
+def test_declared_parameters_match_what_each_factor_actually_reads() -> None:
+    """The declarations must not drift from the code they describe.
+
+    Derived from the source rather than maintained by hand on both sides: a parameter added to
+    a factor without being declared would otherwise become unconfigurable — rejected by the
+    loader the first time anyone tried to set it — and a declaration left behind after a
+    parameter was removed would advertise tuning that does nothing.
+    """
+    source = ast.parse((Path(backend.risk.factors.__file__)).read_text())
+
+    for node in source.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        factor = getattr(backend.risk.factors, node.name, None)
+        if not (isinstance(factor, type) and issubclass(factor, EscalationFactor)):
+            continue
+        if factor is EscalationFactor:
+            continue
+
+        read = {
+            call.args[0].value
+            for call in ast.walk(node)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "parameter"
+            and call.args
+            and isinstance(call.args[0], ast.Constant)
+        }
+
+        assert read == set(factor.SUPPORTED_PARAMETERS), (
+            f"{node.name}: SUPPORTED_PARAMETERS says {sorted(factor.SUPPORTED_PARAMETERS)} "
+            f"but the code reads {sorted(read)}"
+        )
+
+
+# --------------------------------------------------------------------------------------
+# One vertical datum, on every site
+# --------------------------------------------------------------------------------------
+
+
+def _site_at_elevation(elevation_m: float) -> SiteGeometry:
+    return SiteGeometry(
+        Site(
+            site_id="elevated",
+            name="Elevated site",
+            reference=GeodeticReference(
+                latitude=51.8971, longitude=-8.4697, altitude_m=elevation_m
+            ),
+            protected_radius_m=800.0,
+        )
+    )
+
+
+@pytest.mark.parametrize("site_elevation_m", [0.0, 5.0, 200.0, 500.0, 1_500.0])
+def test_low_altitude_is_judged_against_the_site_not_the_ellipsoid(
+    site_elevation_m: float,
+) -> None:
+    """The same approach must score the same at sea level and on a plateau.
+
+    `low_altitude_near_asset` compares against thresholds of 120 m and 30 m, which mean height
+    above the site. It used to be handed the track's *ellipsoidal* altitude, so the site's own
+    elevation was added to every track: at a site 500 m up, a drone 40 m over the fence read as
+    "540 m; not a low-altitude approach" and the factor could never fire at all.
+
+    The shipped site sits at 5 m, which is exactly why this looked correct.
+    """
+    factor = LowAltitudePenetrationFactor(
+        FactorPolicy(
+            weight=0.4,
+            parameters={"low_m": 120.0, "very_low_m": 30.0, "gate_range_m": 1_500.0},
+        )
+    )
+    # Forty metres above the site, three hundred metres out — a textbook low approach.
+    risk = track(
+        position=EnuPoint(0.0, 300.0, 40.0),
+        velocity=EnuVelocity(0.0, -15.0, 0.0),
+        speed_mps=15.0,
+        altitude_m=40.0,
+    )
+
+    contribution = factor.assess(risk, _site_at_elevation(site_elevation_m))
+
+    assert contribution.activation > 0.5, (
+        f"a low approach stopped being one at a site {site_elevation_m} m above the ellipsoid"
+    )
+
+
+def test_the_risk_view_of_altitude_is_site_relative() -> None:
+    """The seam itself: whatever the service hands the engine must be on the site's datum.
+
+    Asserted on the mapping rather than only on the factor, because the factor is correct in
+    isolation either way — it was the value flowing into it that carried the wrong datum.
+    """
+    source = Path(backend.risk.service.__file__).read_text()
+
+    assert "altitude_m=track.enu.up_m" in source, (
+        "risk is reading a vertical quantity that is not the site-relative one; "
+        "track.position.altitude_m is ellipsoidal and adds the site's elevation to every track"
+    )

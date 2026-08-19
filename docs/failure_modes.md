@@ -207,6 +207,34 @@ carry it.
 **What makes it stay closed.** `frontend/tests/unit/track.test.ts` asserts the reported value
 is taken as given and that a null stays null rather than collapsing to zero.
 
+### FM-0210 — Risk read an ellipsoidal altitude against site-relative thresholds
+**Status:** Closed · **Severity:** was High at any elevated site — a threat factor silently
+switched off
+
+**What it was.** Two vertical quantities travelled into the risk engine and the factors read
+the wrong one. `TrackRisk.position.up_m` is height above the site reference plane;
+`TrackRisk.altitude_m` was the track's **ellipsoidal** altitude, taken straight from the
+published `Track`. They differ by the site's own elevation.
+
+`low_altitude_near_asset` compares against `low_m: 120` and `very_low_m: 30` — thresholds that
+plainly mean height above the site. At a site 500 m above the ellipsoid, a drone forty metres
+over the fence was assessed as being at 540 m, and the factor reported "not a low-altitude
+approach". It could never fire at all above 120 m of site elevation.
+
+Nothing failed. The shipped fictional site sits at 5 m, so every test and every demonstration
+looked correct, and the defect was a property of *where the system was installed*.
+
+**Fix.** Risk carries one vertical quantity, on one datum: `TrackRisk.altitude_m` is height
+above the site reference and is populated from `track.enu.up_m`. `backend/zones` already worked
+this way — it converts the site document's ellipsoidal floors and ceilings into ENU at the
+boundary rather than carrying both — and risk now matches it. The published `Track` still
+reports ellipsoidal altitude, which is correct for display and for FM-004.
+
+**What makes it stay closed.** `tests/unit/test_risk.py` scores the same low approach at sites
+0, 5, 200, 500 and 1 500 m above the ellipsoid and requires the same answer, plus a test on the
+mapping itself — because the factor is correct in isolation either way, and it was the value
+flowing into it that carried the wrong datum.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 

@@ -64,7 +64,21 @@ class TrackRisk:
     velocity: EnuVelocity
 
     speed_mps: float
+
     altitude_m: float
+    """Height above the **site reference plane**, in metres — the same datum as
+    `position.up_m`, and the same one the zone floors and ceilings are converted into.
+
+    Not the ellipsoidal altitude the `Track` publishes. It used to be exactly that, and the
+    mismatch silently disabled a threat factor: `low_altitude_near_asset` compares this against
+    thresholds of 120 m and 30 m, which plainly mean height above the site, so at any site more
+    than 120 m above the ellipsoid the comparison could never succeed. A drone at 40 m over a
+    site 500 m up read as "540 m; not a low-altitude approach". The shipped site is at 5 m,
+    which is why it looked right.
+
+    One vertical quantity in this module, on one datum. `backend/zones` already worked this way
+    — it converts the site document's ellipsoidal bounds at the boundary rather than carrying
+    both — and this now matches it (FM-0210)."""
 
     detection_count: int
     track_age_s: float
@@ -171,6 +185,24 @@ class FactorPolicy(BaseModel):
 class EscalationFactor(ABC):
     """One reason a track might be more concerning than the ground state."""
 
+    SUPPORTED_PARAMETERS: frozenset[str] = frozenset()
+    """Every parameter name this factor reads.
+
+    Declared so that a name it does *not* read can be rejected when the policy loads. Without
+    it, `parameters` accepted anything and every unrecognised key fell through to the default:
+    tuning `fast_mp` instead of `fast_mps` left the factor on its default of 25 m/s while the
+    file said 100, and nothing anywhere reported it. The policy read as configured and the
+    system behaved as though it were not.
+
+    Every other configuration surface here rejects unknown fields — `extra="forbid"` on the
+    models, unknown factor codes refused by `build_risk_engine`. A free-form dict cannot use
+    `extra="forbid"`, so it declares its vocabulary instead.
+
+    `tests/unit/test_risk.py` derives these sets from the source and requires them to match
+    exactly, so a parameter added to a factor without being declared here fails the build
+    rather than becoming unconfigurable.
+    """
+
     def __init__(self, policy: FactorPolicy) -> None:
         self._policy = policy
 
@@ -250,6 +282,8 @@ class TimeToProtectedFactor(EscalationFactor):
     matters and the difference between 60 s and 20 s matters enormously.
     """
 
+    SUPPORTED_PARAMETERS = frozenset({"horizon_s", "urgent_s"})
+
     @property
     def code(self) -> str:
         return "closing_on_protected_area"
@@ -289,6 +323,8 @@ class ProximityFactor(EscalationFactor):
     model would score it at nothing.
     """
 
+    SUPPORTED_PARAMETERS = frozenset({"far_m", "near_m"})
+
     @property
     def code(self) -> str:
         return "proximity_to_protected_area"
@@ -318,6 +354,8 @@ class ClosureFactor(EscalationFactor):
     approach.
     """
 
+    SUPPORTED_PARAMETERS = frozenset({"fast_mps", "minimum_mps"})
+
     @property
     def code(self) -> str:
         return "closing_velocity"
@@ -343,6 +381,8 @@ class ApproachDirectnessFactor(EscalationFactor):
     that will pass by. The difference is intent-shaped, and it is the kind of thing an operator
     reads instantly off a display and a scalar closure rate throws away.
     """
+
+    SUPPORTED_PARAMETERS = frozenset({"minimum_speed_mps", "spread_deg", "tolerance_deg"})
 
     @property
     def code(self) -> str:
@@ -390,6 +430,10 @@ class LoiterFactor(EscalationFactor):
     pointed anywhere. Surveillance behaviour looks exactly like this.
     """
 
+    SUPPORTED_PARAMETERS = frozenset(
+        {"loiter_ratio", "minimum_path_m", "minimum_window_s", "relevant_range_m"}
+    )
+
     @property
     def code(self) -> str:
         return "loitering_near_asset"
@@ -435,6 +479,8 @@ class LowAltitudePenetrationFactor(EscalationFactor):
     terrain-following behaviour, and the combination is what carries the meaning rather than
     either half.
     """
+
+    SUPPORTED_PARAMETERS = frozenset({"gate_range_m", "low_m", "very_low_m"})
 
     @property
     def code(self) -> str:
@@ -503,6 +549,8 @@ class PersistenceFactor(EscalationFactor):
     for one update — and, equally, to let a contact that has been there for two minutes
     register as more than a blip.
     """
+
+    SUPPORTED_PARAMETERS = frozenset({"established_s", "minimum_detections"})
 
     @property
     def code(self) -> str:
