@@ -32,9 +32,10 @@ class SensorRecord(BaseModel):
     """A sensor as the system currently knows it: where it is and whether it is enabled.
 
     Detection characteristics — range, field of view, update rate, uncertainty, probability of
-    detection — are deliberately absent. They belong to the sensor registry, which does not
-    exist yet. Copying guesses of them here would make the API report capabilities nothing
-    has established.
+    detection — are deliberately absent. They belong to the sensor registry, and the registry
+    that exists (`config/sensor_registry/`) describes *simulated* sensors: it is a noise model
+    for the simulator, not a datasheet for a real unit. Copying its numbers here would make the
+    API report capabilities nothing has established about the hardware actually deployed.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -44,8 +45,11 @@ class SensorRecord(BaseModel):
     registry_key: str = Field(min_length=1, max_length=64)
 
     sensor_type: SensorType | None = None
-    """Left null rather than guessed. The registry entry that would state a sensor's type has
-    no loader yet, and inventing one would put a fact in the database that nothing asserted."""
+    """Left null rather than guessed. Site configuration names a registry key, not a type, and
+    resolving it would make this table depend on the *simulated* sensor registry — which says
+    what a simulator should pretend to be, not what is bolted to the mast. `GET /sensors` fills
+    the type in from a running adapter when one is attached, because that is a sensor reporting
+    what it is; nothing writes a guess here."""
 
     latitude: float = Field(ge=-90.0, le=90.0)
     longitude: float = Field(ge=-180.0, le=180.0)

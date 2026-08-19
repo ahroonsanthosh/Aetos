@@ -37,6 +37,7 @@ from backend.tracking.models import (
     EnuState,
     Track,
     TrackClassification,
+    TrackFusion,
     TrackKinematics,
     TrackMetadata,
     TrackPosition,
@@ -140,6 +141,14 @@ class _ActiveTrack:
     field it does not carry is a field the next `TRACK_UPDATED` silently erases (FM-025).
 
     Nothing in this module reads it. Written only through `apply_threat`."""
+
+    fusion: TrackFusion = field(default_factory=TrackFusion)
+    """Which physical object this track was reconciled to, held for the same reason as the two
+    fields around it: the tracker owns the Track objects and emits a full snapshot on every
+    event, so a field it does not carry is a field the next `TRACK_UPDATED` silently erases
+    (FM-025).
+
+    Nothing in this module reads it. Written only through `apply_fusion`."""
 
     classification: TrackClassification = field(default_factory=TrackClassification)
     """The most recent classification, held here but never produced or read by tracking.
@@ -277,6 +286,27 @@ class TrackManager:
             return None
 
         active.threat = threat
+        return self.to_track(active)
+
+    def apply_fusion(self, track_id: str, fusion: TrackFusion) -> Track | None:
+        """Store a fusion result against a track, returning the updated Track.
+
+        The third write-back on this class, and for the same reason as the other two: fusion
+        decides which observations are one object, the tracker owns the state that says so.
+        Returns None for a track retired in the same cycle, which is stale rather than an
+        error.
+
+        Note what this does *not* do. It does not merge tracks, retire them, or alter any
+        track's estimated state — `backend/fusion` must not re-run association
+        (`docs/architecture.md`, module map), and rewriting a track's position from another
+        track's would be exactly that by a different name. Every member keeps its own estimate
+        and its own history; fusion only records which object they belong to.
+        """
+        active = self._active.get(track_id)
+        if active is None:
+            return None
+
+        active.fusion = fusion
         return self.to_track(active)
 
     @property
@@ -532,6 +562,7 @@ class TrackManager:
             ),
             classification=active.classification,
             threat=active.threat,
+            fusion=active.fusion,
             updated_at=active.last_updated,
         )
 

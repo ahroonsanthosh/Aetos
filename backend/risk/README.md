@@ -123,11 +123,15 @@ score, which raises the count of alarming tracks. That is a feedback loop with n
 it, and there is a test that drives the real service with one track and then with a full
 coordinated approach and asserts the subject's score does not move.
 
-Because sensor fusion is not built, tracks are first clustered on a co-located **and**
-co-moving test, so one drone seen by four sensors is one object rather than a four-axis
-approach (FM-023). That is not fusion — nothing is merged, no track state changes — and the
-over-count is reported to the operator rather than quietly absorbed: *"8 tracks · likely 5
-objects"*.
+This pass used to cluster tracks itself, on a co-located and co-moving test, so that one drone
+seen by four sensors did not read as a four-axis coordinated approach. It no longer does.
+`backend/fusion` reconciles tracks into objects before risk runs (ADR 0017), so the situation
+pass sees one entry per object and has nothing to correct.
+
+The clustering was deleted rather than kept as a cross-check. Fusion holds a group together
+across a hysteresis band, so two objects it deliberately keeps apart can sit closer than a
+single-threshold test would merge them — two subsystems answering *"are these the same object"*
+differently, in front of the same operator, is worse than either answer alone.
 
 ## Calibrating it
 

@@ -32,7 +32,9 @@ from backend.database.repositories import (
     TrackRepository,
 )
 from backend.events.store import EventStore
+from backend.fusion.models import FusedObject
 from backend.risk.correlation import SituationAssessment
+from backend.system_health.models import SystemHealth
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,19 @@ class ApiServices:
     silently disappearing from the feed.
     """
 
+    fusion: FusionSource | None = None
+    """Where the track-to-object reconciliation is read from.
+
+    Optional on the same terms as the others. When it is absent the API reports objects as
+    unreconciled rather than claiming each track is its own object, because "nothing has
+    reconciled these" and "these are genuinely separate" are different statements (FM-023)."""
+
+    watchdog: HealthSource | None = None
+    """Where sensor conditions and degraded mode are read from.
+
+    Absent means no watchdog is running, which `GET /system/health` reports as exactly that —
+    not as healthy. A green light that nothing computes is worse than no light at all."""
+
     situation: SituationSource | None = None
     """Where `GET /situation` reads the cycle-level finding from.
 
@@ -141,6 +156,25 @@ class AlertSource(Protocol):
     def get(self, alert_id: str) -> Alert | None: ...
 
     def acknowledge(self, alert_id: str, operator_id: str, now: datetime) -> Alert | None: ...
+
+
+class FusionSource(Protocol):
+    """Anything that can report the current objects — in practice `FusionService`.
+
+    Note what is absent: no method changes a grouping. Which tracks are one object is decided
+    by the pipeline against a policy, and an API request that could regroup them would let a
+    reader manufacture an object with no observation underneath it.
+    """
+
+    @property
+    def objects(self) -> list[FusedObject]: ...
+
+
+class HealthSource(Protocol):
+    """Anything that can report the site's sensing posture — in practice `SensorWatchdog`."""
+
+    @property
+    def health(self) -> SystemHealth: ...
 
 
 class SituationSource(Protocol):

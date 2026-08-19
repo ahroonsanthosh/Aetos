@@ -224,6 +224,63 @@ class TrackThreat(BaseModel):
     same way (ADR 0011)."""
 
 
+class TrackFusion(BaseModel):
+    """Which physical object this track is believed to be an observation of.
+
+    Written by `backend/fusion` through the tracker, exactly as classification and risk are, so
+    the snapshot on every track event carries it and the log rebuilds into the same state
+    (ADR 0006, FM-025).
+
+    The distinction this block exists to draw: **a track is an observation, an object is a
+    thing.** Global nearest neighbour assigns at most one detection per track per cycle (ADR
+    0005), which is correct and must stay that way — but it means three sensors watching one
+    drone produce three tracks. Without something naming them as one object, an operator counts
+    three contacts (FM-023).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    assessed: bool = False
+    """Whether fusion has actually looked at this track.
+
+    False means "not reconciled", which is different from "reconciled and found to stand
+    alone". A track fusion has never seen must not be rendered as a confirmed single object
+    (ADR 0011)."""
+
+    object_id: str | None = None
+    """Stable identifier for the physical object, `OBJ-NNNNN`. Distinct from `track_id`, and
+    deliberately so: track identity belongs to the tracker and must not be rewritten by a
+    downstream module."""
+
+    is_primary: bool = True
+    """Whether this is the track presented for its object.
+
+    Every object has exactly one primary. The others are its supporting observations: still
+    tracked, still in the log, but not counted or alerted on a second time. Defaults True so a
+    track nothing has fused stands for itself rather than vanishing."""
+
+    member_track_ids: list[str] = Field(default_factory=list)
+    """Every track fused into this object, primary first. Populated on the primary only —
+    duplicating the roster onto each member would make the same fact correctable in several
+    places at once."""
+
+    corroborating_sensors: list[str] = Field(default_factory=list)
+    """Union of the contributing sensors across all members, sorted.
+
+    On the primary this is the honest corroboration figure for the *object*, which is what risk
+    should score. A member's own `tracking.contributing_sensors` describes only that one
+    observation of it."""
+
+    @property
+    def member_count(self) -> int:
+        return len(self.member_track_ids)
+
+    @property
+    def is_fused(self) -> bool:
+        """Whether more than one track was reconciled into this object."""
+        return len(self.member_track_ids) > 1
+
+
 class TrackMetadata(BaseModel):
     """Provenance and support for the track — how much it is believed and on what basis."""
 
@@ -271,6 +328,7 @@ class Track(BaseModel):
     kinematics: TrackKinematics
     classification: TrackClassification = Field(default_factory=TrackClassification)
     threat: TrackThreat = Field(default_factory=TrackThreat)
+    fusion: TrackFusion = Field(default_factory=TrackFusion)
     tracking: TrackMetadata
 
     updated_at: datetime

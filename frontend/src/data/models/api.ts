@@ -107,6 +107,24 @@ export interface TrackingView {
   contributing_sensors: string[]
 }
 
+/** Which physical object a track was reconciled to.
+ *
+ *  One drone seen by three sensors is three tracks and one object (FM-023). `GET /tracks`
+ *  returns one entry per object by default, and this is what explains the tracks that are not
+ *  in the list — ask for them with `?include_supporting=true`. */
+export interface FusionView {
+  /** False means fusion has not looked at this track, which is not the same as looking and
+   *  finding it stands alone. The two must never render the same way. */
+  assessed: boolean
+  object_id: string | null
+  is_primary: boolean
+  /** Every track making up this object, primary first. Populated on the primary only. */
+  member_track_ids: string[]
+  /** Every sensor that has observed the object, across all its members. Wider than the
+   *  primary's own `tracking.contributing_sensors`, which describes one observation of it. */
+  corroborating_sensors: string[]
+}
+
 export interface TrackView {
   track_id: string
   state: BackendTrackState
@@ -118,6 +136,7 @@ export interface TrackView {
   kinematics: KinematicsView
   classification: ClassificationView
   threat: ThreatView
+  fusion: FusionView
   tracking: TrackingView
   updated_at: string
   /** The log position this view was projected from. Lets the client hand off from REST to the
@@ -203,18 +222,36 @@ export interface GeoPointView {
   longitude: number
 }
 
+/** What the watchdog concludes about one sensor, with the facts it rests on.
+ *
+ *  Every field below the condition exists so an operator can disagree with the condition. A
+ *  sensor reported SILENT having never emitted anything is a very different situation from one
+ *  that was producing steadily a minute ago, and a bare status word hides which it is. */
+export interface SensorConditionView {
+  condition: 'not_started' | 'ok' | 'degraded' | 'silent' | 'offline'
+  reason: string
+  last_detection_time: string | null
+  detections_emitted: number
+  silent_for_s: number | null
+  expected_interval_s: number | null
+}
+
 export interface SensorView {
   sensor_id: string
   site_id: string
   registry_key: string
-  /** Null when the backend has not established the sensor's type. The registry entry that
-   *  would state it has no loader behind the repository layer, and the backend leaves the
-   *  field null rather than inventing one — so the interface must render its absence. */
+  /** Null when nothing has established the sensor's type. Site configuration names a registry
+   *  key rather than a type; the backend fills this in from a running adapter when one is
+   *  attached and leaves it null otherwise, so the interface must render its absence. */
   sensor_type: string | null
   position: GeoPointView
   height_m: number
   boresight_deg: number
   enabled: boolean
+  /** Null means **nothing has assessed this sensor** — no watchdog is running, or one is and
+   *  this sensor has no adapter behind it. That is not the same as assessed and healthy, and
+   *  rendering the two identically is the exact failure ADR 0011 exists to prevent. */
+  condition: SensorConditionView | null
 }
 
 export interface SensorListResponse {

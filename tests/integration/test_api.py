@@ -22,9 +22,15 @@ from backend.api.services import ApiServices
 from backend.common.clock import SimClock
 from backend.common.geodesy import GeodeticPoint, LocalFrame
 from backend.database.projection import TrackProjection
+from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
 from backend.risk.correlation import SituationAssessment
+from backend.system_health.models import (
+    SensorCondition,
+    SensorObservation,
+    SystemHealth,
+)
 from backend.tracking.filters.kalman import isotropic_covariance
 from backend.tracking.models import (
     EnuState,
@@ -38,6 +44,7 @@ from backend.tracking.models import (
 )
 from backend.tracking.track_manager.manager import IncomingDetection, TrackManager
 from backend.zones.geometry import load_site_geometry
+from sensors.schemas.detection import SensorType
 
 EPOCH = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
 R = isotropic_covariance(10.0)
@@ -293,20 +300,33 @@ def test_mode_reports_simulation_as_a_backend_fact(client: TestClient) -> None:
     assert body["real_adapters_connected"] == 0
 
 
-def test_health_reports_unbuilt_modules_as_unbuilt(client: TestClient) -> None:
+def test_health_reports_detached_modules_as_detached(client: TestClient) -> None:
     """A green light nothing computes is worse than no light.
 
-    Fusion and the health watchdog do not exist at all. Classification, risk and alerting do,
-    but this fixture builds an API over a bare projection with no pipeline behind it, so from
-    this endpoint's point of view they are equally absent — and it must say so rather than
-    reporting a module it has no handle to as healthy.
+    This fixture builds an API over a bare projection with no pipeline behind it, so every one
+    of these modules exists in the codebase and none of them is attached here. The endpoint must
+    say so rather than reporting a module it has no handle to as healthy.
     """
     body = client.get(f"{API_PREFIX}/system/health").json()
     components = {c["component"]: c for c in body["components"]}
 
     for absent in ("fusion", "classification", "risk", "alerts", "system_health"):
-        assert components[absent]["state"] == "not_built"
+        assert components[absent]["state"] in ("not_built", "not_connected"), absent
         assert components[absent]["detail"]
+
+
+def test_health_names_the_consequence_of_a_missing_watchdog(client: TestClient) -> None:
+    """Absent is not the same as fine, and the detail has to say which.
+
+    A site running without a watchdog cannot notice a sensor going quiet, which is the whole of
+    FM-010 — and an operator reading the dashboard is entitled to know that is the state they
+    are in rather than inferring it from an empty row.
+    """
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert "FM-010" in components["system_health"]["detail"]
+    assert "several times" in components["fusion"]["detail"]
 
 
 def test_health_reports_attached_modules_as_running(
@@ -334,6 +354,8 @@ def test_health_reports_attached_modules_as_running(
         identity=LocalOperatorIdentityProvider(clock),
         alerts=AlertService(load_alert_policy(), events),
         situation=_SituationStub(),
+        fusion=_FusionStub(),
+        watchdog=_WatchdogStub(),
         classification_running=True,
     )
     client = TestClient(create_app(services))
@@ -341,13 +363,63 @@ def test_health_reports_attached_modules_as_running(
     body = client.get(f"{API_PREFIX}/system/health").json()
     components = {c["component"]: c for c in body["components"]}
 
-    for present in ("classification", "risk", "alerts"):
+    for present in ("classification", "risk", "alerts", "fusion", "system_health"):
         assert components[present]["state"] == "ok", present
         assert "not running" not in components[present]["detail"]
 
-    # Still absent, and must not have been swept along by the same change.
-    assert components["fusion"]["state"] == "not_built"
-    assert components["system_health"]["state"] == "not_built"
+
+def test_health_reports_a_degraded_site_as_degraded(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """A thinned picture has to be visible without reading the detail — that is the whole of
+    FM-010. Reporting it as OK-with-a-note would bury it."""
+    services = ApiServices(
+        clock=clock,
+        events=events,
+        sites=repositories.sites,
+        sensors=repositories.sensors,
+        scenarios=repositories.scenarios,
+        tracks=repositories.tracks,
+        track_history=repositories.track_history,
+        projection=projection,
+        identity=LocalOperatorIdentityProvider(clock),
+        watchdog=_WatchdogStub(degraded=True),
+    )
+    client = TestClient(create_app(services))
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["system_health"]["state"] == "degraded"
+
+
+class _FusionStub:
+    """Stands in for `FusionService`. Only the presence of the handle is under test."""
+
+    @property
+    def objects(self) -> list:
+        return []
+
+
+class _WatchdogStub:
+    """Stands in for `SensorWatchdog`."""
+
+    def __init__(self, degraded: bool = False) -> None:
+        self._degraded = degraded
+
+    @property
+    def health(self) -> SystemHealth:
+        return SystemHealth(
+            assessed=True,
+            degraded=self._degraded,
+            reason="stub",
+            sensors=[],
+            contributing_sensors=0 if self._degraded else 2,
+            configured_sensors=2,
+        )
 
 
 class _SituationStub:
@@ -510,3 +582,186 @@ def test_health_warns_when_no_authentication_is_configured(client: TestClient) -
 
     assert posture["state"] == "not_connected"
     assert "NO authentication" in posture["detail"]
+
+
+# --------------------------------------------------------------------------------------
+# GET /sensors — placement is configuration; condition is the watchdog's, or absent
+# --------------------------------------------------------------------------------------
+
+
+def _seed_sensors(repositories: SqliteRepositories) -> None:
+    repositories.sensors.replace_for_site(
+        "site-test",
+        [
+            SensorRecord(
+                sensor_id="radar_north",
+                site_id="site-test",
+                registry_key="sim_radar_medium",
+                latitude=53.35,
+                longitude=-6.26,
+            ),
+            SensorRecord(
+                sensor_id="sensor_with_no_adapter",
+                site_id="site-test",
+                registry_key="sim_rf_wide",
+                latitude=53.36,
+                longitude=-6.27,
+            ),
+        ],
+    )
+
+
+def _sensor_services(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+    watchdog: object | None,
+) -> ApiServices:
+    return ApiServices(
+        clock=clock,
+        events=events,
+        sites=repositories.sites,
+        sensors=repositories.sensors,
+        scenarios=repositories.scenarios,
+        tracks=repositories.tracks,
+        track_history=repositories.track_history,
+        projection=projection,
+        identity=LocalOperatorIdentityProvider(clock),
+        watchdog=watchdog,
+    )
+
+
+def test_sensors_carry_no_condition_when_nothing_is_watching(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """No watchdog means no condition — not a healthy one.
+
+    A green light nothing computes is worse than no light, and this endpoint reported no health
+    field at all for exactly as long as nothing computed it."""
+    _seed_sensors(repositories)
+    client = TestClient(
+        create_app(_sensor_services(clock, events, repositories, projection, None))
+    )
+
+    body = client.get(f"{API_PREFIX}/sensors").json()
+
+    assert body["count"] == 2
+    assert all(s["condition"] is None for s in body["sensors"])
+
+
+def test_sensors_report_the_watchdogs_condition_and_only_for_sensors_it_watches(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """The registry lists what a site declares; the watchdog reports the adapters attached.
+
+    Those two sets overlap and neither contains the other, so a declared sensor with nothing
+    behind it must come back unassessed rather than defaulting to OK. That is the case that
+    would otherwise show a green light for a sensor no process is even listening to."""
+    _seed_sensors(repositories)
+    client = TestClient(
+        create_app(
+            _sensor_services(
+                clock, events, repositories, projection, _ObservingWatchdogStub()
+            )
+        )
+    )
+
+    sensors = {s["sensor_id"]: s for s in client.get(f"{API_PREFIX}/sensors").json()["sensors"]}
+
+    watched = sensors["radar_north"]
+    assert watched["condition"]["condition"] == "silent"
+    assert watched["condition"]["detections_emitted"] == 41
+    assert watched["condition"]["silent_for_s"] == 300.0
+    assert "quiet" in watched["condition"]["reason"]
+
+    # Declared in configuration, no adapter behind it. Unassessed, not healthy.
+    assert sensors["sensor_with_no_adapter"]["condition"] is None
+
+
+def test_sensors_take_their_type_from_a_running_adapter_when_config_has_none(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """`SensorRecord.sensor_type` is null because site configuration names a registry key, not
+    a type. An attached adapter reporting what it is settles the question with a fact, so the
+    column is filled from there rather than left blank or guessed from the registry key."""
+    _seed_sensors(repositories)
+    client = TestClient(
+        create_app(
+            _sensor_services(
+                clock, events, repositories, projection, _ObservingWatchdogStub()
+            )
+        )
+    )
+
+    sensors = {s["sensor_id"]: s for s in client.get(f"{API_PREFIX}/sensors").json()["sensors"]}
+
+    assert sensors["radar_north"]["sensor_type"] == "simulated_radar"
+    assert sensors["sensor_with_no_adapter"]["sensor_type"] is None
+
+
+def test_sensors_stay_unassessed_until_the_watchdog_has_actually_run(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """A watchdog that exists but has not completed a pass has concluded nothing.
+
+    `SystemHealth.assessed` is the flag that separates "nobody has looked" from "looked and
+    found nothing wrong" (ADR 0011), and the endpoint has to honour it or the first cycle after
+    startup renders as a clean bill of health."""
+    _seed_sensors(repositories)
+    client = TestClient(
+        create_app(
+            _sensor_services(
+                clock, events, repositories, projection, _UnassessedWatchdogStub()
+            )
+        )
+    )
+
+    body = client.get(f"{API_PREFIX}/sensors").json()
+
+    assert all(s["condition"] is None for s in body["sensors"])
+
+
+class _ObservingWatchdogStub:
+    """A watchdog that has run and holds an observation for one of the two seeded sensors."""
+
+    @property
+    def health(self) -> SystemHealth:
+        return SystemHealth(
+            assessed=True,
+            degraded=False,
+            reason="1 of 2 sensors contributing; 1 required.",
+            sensors=[
+                SensorObservation(
+                    sensor_id="radar_north",
+                    sensor_type=SensorType.SIMULATED_RADAR,
+                    condition=SensorCondition.SILENT,
+                    reason="Nothing for 300s while other sensors are producing; not a quiet sky.",
+                    detections_emitted=41,
+                    silent_for_s=300.0,
+                    expected_interval_s=0.25,
+                )
+            ],
+            contributing_sensors=1,
+            configured_sensors=2,
+        )
+
+
+class _UnassessedWatchdogStub:
+    """Constructed, never polled. Holds no conclusions and must not imply any."""
+
+    @property
+    def health(self) -> SystemHealth:
+        return SystemHealth(assessed=False)

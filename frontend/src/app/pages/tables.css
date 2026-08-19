@@ -154,3 +154,13 @@
   color: var(--status-warning);
   border-left: 3px solid var(--status-warning);
 }
+
+/* Sensor condition. `unassessed` and `inert` are deliberately the disabled colour rather than
+   any status colour: neither is a judgement about the sensor, and giving either a status tone
+   would turn "nobody looked" into a verdict. */
+.sensor-table .condition--unassessed { color: var(--text-disabled); }
+.sensor-table .condition--inert      { color: var(--status-inert); }
+.sensor-table .condition--ok         { color: var(--status-nominal); }
+.sensor-table .condition--degraded   { color: var(--status-warning); }
+.sensor-table .condition--silent     { color: var(--status-elevated); }
+.sensor-table .condition--offline    { color: var(--status-critical); }

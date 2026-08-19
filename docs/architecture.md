@@ -105,7 +105,7 @@ makes backend restart recoverable.
 | `backend/ingestion` | Validate, deduplicate, normalise, append to log | Make tracking decisions |
 | `backend/events` | Append-only log, sequence ordering, replay reads | Interpret payload meaning |
 | `backend/tracking` | Where things are: association, filtering, lifecycle, prediction | Decide what things are, or how dangerous |
-| `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
+| `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association, or alter any track's estimate |
 | `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
 | `backend/risk` | Score + confidence + reason codes + hysteresis; cycle-level situation findings | Recommend an action, or hold track state |
@@ -151,17 +151,21 @@ Per spec §20. Status updated as stages complete.
 | 7 | Risk scoring with reason codes | **done** — ten factors, grouped combination, hysteresis, reason codes (ADR 0013) |
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
-| 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
+| 10 | Multi-sensor simulation and fusion | **done** — track-level reconciliation into objects, with hysteresis and an extent ceiling (ADR 0017) |
 | 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
-| 12 | Chaos hardening, degraded-mode UI states | not started |
+| 12 | Chaos hardening, degraded-mode UI states | partial — sensor watchdog and degraded mode built (ADR 0018); chaos hardening not started |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
 through ingestion into tracking, classification assesses each track from pooled evidence, risk
-scores it from nine factors and hysteresis turns that into a level, decision turns the level
+scores it from ten factors and hysteresis turns that into a level, decision turns the level
 into a recommendation for a human, alerting promotes the levels that warrant interrupting
 someone into alerts an operator can acknowledge, everything is recorded in the event log and
-projected into the database, and the API serves it to an interface that draws it. What is
-missing between here and a usable operator system is fusion.
+projected into the database, and the API serves it to an interface that draws it.
+
+Fusion sits between tracking and classification, so everything downstream counts objects rather
+than observations: one drone seen by three sensors is classified once, scored once and alerted on
+once (ADR 0017). A watchdog polls every adapter's health and reports degraded mode when the
+picture thins (ADR 0018).
 
 Two of those stages produce values they do not own. Classification and risk each write their
 result back through the tracker, which holds it and carries it in the snapshot on every track

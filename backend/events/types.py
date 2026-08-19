@@ -41,6 +41,12 @@ class EventType(StrEnum):
     TRACK_LOST = "TRACK_LOST"
 
     # Assessment
+    TRACKS_FUSED = "TRACKS_FUSED"
+    """Two or more tracks were reconciled as observations of one object, or that roster
+    changed. Recorded on membership change rather than every cycle: the fusion state travels on
+    every track snapshot anyway, and what deserves its own entry is the moment the system
+    decided two contacts were one (FM-023)."""
+
     CLASSIFICATION_CHANGED = "CLASSIFICATION_CHANGED"
     RISK_CHANGED = "RISK_CHANGED"
 

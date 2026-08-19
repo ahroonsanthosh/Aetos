@@ -128,7 +128,24 @@ export interface DisplayTrack {
   readonly coasting: boolean
   readonly trackConfidence: number
   readonly contributingSensors: readonly string[]
+  readonly fusion: TrackFusion
   readonly lastAppliedSeq: number
+}
+
+/** How this track relates to the physical object it observes.
+ *
+ *  `assessed: false` means fusion never looked — no fusion service is attached — and is not the
+ *  same as looking and finding the track stands alone. The interface renders those differently
+ *  because the backend distinguishes them (ADR 0011, ADR 0017). */
+export interface TrackFusion {
+  readonly assessed: boolean
+  readonly objectId: string | null
+  readonly isPrimary: boolean
+  /** Every track observing this object, primary first. Populated on the primary only. */
+  readonly memberTrackIds: readonly string[]
+  /** Every sensor that has observed the object, across all its members. Wider than this
+   *  track's own `contributingSensors`, which describes one observation of it. */
+  readonly corroboratingSensors: readonly string[]
 }
 
 export function toDisplayTrack(view: TrackView, frame: LocalFrame): DisplayTrack {
@@ -163,6 +180,13 @@ export function toDisplayTrack(view: TrackView, frame: LocalFrame): DisplayTrack
     coasting: view.tracking.coasting,
     trackConfidence: view.tracking.track_confidence,
     contributingSensors: view.tracking.contributing_sensors,
+    fusion: {
+      assessed: view.fusion.assessed,
+      objectId: view.fusion.object_id,
+      isPrimary: view.fusion.is_primary,
+      memberTrackIds: view.fusion.member_track_ids,
+      corroboratingSensors: view.fusion.corroborating_sensors,
+    },
     lastAppliedSeq: view.last_applied_seq,
   }
 }

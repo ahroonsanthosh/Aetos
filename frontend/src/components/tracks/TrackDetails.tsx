@@ -87,15 +87,92 @@ export function TrackDetails({ track }: Props) {
         ) : (
           <Row label="Sensors" value="—" />
         )}
-        {/* Which sensor is primary and which supporting is a fusion judgement, and fusion is
-            not implemented. Listing them flat is the honest presentation. */}
+        {/* Listed flat, and deliberately so. Which sensor contributed *most* is a weighting no
+            stage computes — fusion reconciles tracks, not measurements, and refuses to merge
+            estimates (ADR 0017) — so ranking them here would be inventing an order. */}
         <p className="details__note">
-          Contribution weighting requires the fusion module, which is not implemented.
+          Sensors that have held this track, unranked. No stage computes a contribution weight.
         </p>
       </Section>
 
+      <FusionSection track={track} />
+
       <AssessmentPanel track={track} />
     </aside>
+  )
+}
+
+/** What fusion made of this track: one object, or several tracks observing one.
+ *
+ *  Three states, rendered differently on purpose. Fusion never ran; fusion ran and this track
+ *  stands alone; fusion ran and this track is one of several observing one object. The first
+ *  two are the pair ADR 0011 exists to keep apart — "nobody looked" must not render as "looked
+ *  and found nothing".
+ *
+ *  A supporting track is reached only through `?include_supporting=true`, so seeing one here at
+ *  all means somebody went looking for it; it is told plainly which object it belongs to rather
+ *  than being shown as though it were the contact itself. */
+function FusionSection({ track }: { track: DisplayTrack }) {
+  const fusion = track.fusion
+
+  if (!fusion.assessed) {
+    return (
+      <Section title="Object">
+        <p className="details__note">
+          No fusion service is attached, so nothing has judged whether this track and others are
+          the same object. Not the same as having judged that it stands alone.
+        </p>
+      </Section>
+    )
+  }
+
+  if (!fusion.isPrimary) {
+    return (
+      <Section title="Object">
+        <Row label="Object" value={fusion.objectId ?? '—'} />
+        <p className="details__note">
+          A supporting observation of that object. Another track is presented for it; this one
+          is still tracked and still logged, and is shown here because it was asked for
+          explicitly.
+        </p>
+      </Section>
+    )
+  }
+
+  if (fusion.memberTrackIds.length <= 1) {
+    return (
+      <Section title="Object">
+        <Row label="Object" value={fusion.objectId ?? '—'} />
+        <p className="details__note">
+          Assessed and found to stand alone — no other track is an observation of this object.
+        </p>
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Object">
+      <Row label="Object" value={fusion.objectId ?? '—'} />
+      <Row label="Observed by" value={`${fusion.memberTrackIds.length} tracks`} />
+      <ul className="details__sensors">
+        {fusion.memberTrackIds.map((id) => (
+          <li key={id} className="numeric">
+            {id}
+            {id === track.id ? ' (presented)' : ''}
+          </li>
+        ))}
+      </ul>
+      <p className="details__note">
+        These tracks are reconciled as one object. Their estimates are not combined — the
+        position shown is this track&apos;s own, as the tracker produced it.
+      </p>
+      {fusion.corroboratingSensors.length > 0 && (
+        <Row
+          label="Corroborated by"
+          value={`${fusion.corroboratingSensors.length} sensors across the object`}
+        />
+      )}
+    </Section>
   )
 }
 

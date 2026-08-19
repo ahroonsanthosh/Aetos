@@ -1,0 +1,12 @@
+{
+  "notes": "Watchdog policy (FM-010). Silence thresholds are declared per sensor rather than derived from update rate, because update rate is how often an adapter polls and has almost nothing to do with how often a target is in its coverage. Measured across all nine scenarios with no fault present, the narrow-field EO/IR sensor's longest legitimate quiet spell was 81 s against the wide radars' 10.5 s — so one number cannot serve both, and a number derived from poll rate flagged the healthiest sensor on the site continuously. Resolution is most-specific-first: sensor id, then sensor type, then the default.",
+  "default_silence_s": 120.0,
+  "silence_by_sensor_type": {
+    "simulated_eo_ir": 300.0,
+    "eo_ir": 300.0,
+    "simulated_acoustic": 300.0,
+    "acoustic": 300.0
+  },
+  "silence_by_sensor_id": {},
+  "minimum_contributing_sensors": 1
+}

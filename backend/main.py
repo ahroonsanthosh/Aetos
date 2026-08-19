@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import uvicorn
@@ -41,14 +42,20 @@ from backend.database.projection import TrackProjection
 from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
+from backend.fusion.policy import load_fusion_policy
+from backend.fusion.service import FusionService
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
+from backend.system_health.policy import load_health_policy
+from backend.system_health.watchdog import SensorWatchdog
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
+from scenarios.schema import AvailabilityState, Scenario
 from scenarios.world import ScenarioWorld
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
+from sensors.adapters.simulated.degradation import NOMINAL, SensorDegradation
 from sensors.adapters.simulated.registry import load_sensor_registry
 from sensors.schemas.detection import Detection
 
@@ -116,6 +123,15 @@ class Pipeline:
             self.repositories.sessions,
             self.events,
         )
+        # Between tracking and classification, per docs/architecture.md. Everything downstream
+        # of here sees objects rather than tracks, which is the whole of FM-023.
+        self.fusion = FusionService(load_fusion_policy(), self.events, sink=self.tracker)
+
+        # Reads the adapters' own health reports and decides what they mean. Given the sensor
+        # registry's update rates below, so silence is judged against what each sensor was
+        # configured to do rather than against one global number (FM-010).
+        self.watchdog = SensorWatchdog(load_health_policy(), clock, self.events)
+
         self.alerting = AlertService(load_alert_policy(), self.events)
 
         # Alerts outlive the process that raised them. Rebuilding from the log before the
@@ -124,6 +140,8 @@ class Pipeline:
         self.alerting.rebuild()
 
         self._adapters: list[SimulatedSensorAdapter] = []
+        self._scenario: Scenario | None = None
+        self._scenario_started_at: datetime | None = None
 
         self._last_session_purge_monotonic: float | None = None
         """None until the first sweep, so one runs on the first cycle — a restart is exactly
@@ -161,6 +179,8 @@ class Pipeline:
     def attach_scenario(self, scenario_id: str) -> None:
         """Point the simulated sensors at a scenario's world."""
         scenario = load_all()[scenario_id]
+        self._scenario = scenario
+        self._scenario_started_at = self.clock.now()
         registry = load_sensor_registry()
         world = ScenarioWorld(scenario, self.clock.now())
         positions = self.geometry.site.sensor_positions_enu()
@@ -181,6 +201,69 @@ class Pipeline:
         ]
         for adapter in self._adapters:
             adapter.start()
+            # The watchdog does not read the sensor registry itself — it would then only work
+            # for sensors that have registry entries, which real hardware may not. Whatever
+            # assembles the adapters knows the rate, so it tells the watchdog.
+            self.watchdog.set_expected_interval(
+                adapter.sensor_id, adapter.model.update_period_s
+            )
+
+        self._check_availability_targets(scenario)
+        self._apply_availability()
+
+    def _check_availability_targets(self, scenario: Scenario) -> None:
+        """Refuse a scenario that scripts a sensor this site does not have.
+
+        Silently doing nothing is the failure this exists to prevent, and it is not
+        hypothetical: `e_sensor_degradation` scripted a radar going offline at 200 s against a
+        sensor id no site defines, so the one scenario written to exercise sensor failure
+        exercised nothing, and did so without a word. A scenario that names a sensor which is
+        not there is a configuration mistake, and a loud one is cheaper than a quiet one.
+        """
+        # Every placement the site declares, not only the enabled ones: a window naming a
+        # sensor that exists but is switched off is inert by design and not a mistake, while a
+        # window naming a sensor that does not exist anywhere is always one.
+        known = {placement.sensor_id for placement in self.geometry.site.sensors}
+        unknown = sorted({w.sensor_id for w in scenario.sensor_availability} - known)
+        if unknown:
+            raise ValueError(
+                f"scenario {scenario.scenario_id} scripts availability for sensors this site "
+                f"does not have: {', '.join(unknown)}. Site sensors are: "
+                f"{', '.join(sorted(known))}."
+            )
+
+    def _apply_availability(self) -> None:
+        """Put each adapter into the performance its scenario scripts for right now.
+
+        Recomputed from the windows every cycle rather than applied on transitions, so a window
+        that opens and closes between two cycles cannot be missed and the adapter's state is
+        always a pure function of elapsed scenario time — which is what keeps a replay of the
+        same scenario identical to the original run (ADR 0008).
+        """
+        if self._scenario is None or self._scenario_started_at is None:
+            return
+
+        elapsed = (self.clock.now() - self._scenario_started_at).total_seconds()
+
+        for adapter in self._adapters:
+            degradation = NOMINAL
+            for window in self._scenario.sensor_availability:
+                if window.sensor_id != adapter.sensor_id:
+                    continue
+                if elapsed < window.from_s:
+                    continue
+                if window.to_s is not None and elapsed >= window.to_s:
+                    continue
+                # Later windows win, so a scenario can script recovery by declaring an online
+                # window after an offline one.
+                degradation = SensorDegradation(
+                    offline=window.state is AvailabilityState.OFFLINE,
+                    detection_probability_scale=window.detection_probability_scale,
+                    noise_scale=window.noise_scale,
+                    false_alarm_rate_scale=window.false_alarm_rate_scale,
+                    reason=window.reason,
+                )
+            adapter.apply_degradation(degradation)
 
     def step(self) -> int:
         """Run one cycle. Returns how many detections were accepted.
@@ -191,6 +274,10 @@ class Pipeline:
         and a track assessed before it was classified would be scored on geometry alone for
         one cycle longer than necessary.
         """
+        # Before polling: a scripted outage has to be in force for the cycle it covers, not the
+        # one after it.
+        self._apply_availability()
+
         detections: list[Detection] = []
         for adapter in self._adapters:
             detections.extend(adapter.get_detections())
@@ -202,8 +289,14 @@ class Pipeline:
 
         tracks = self.tracker.process(ingested.for_tracking)
 
+        # Reconcile multi-sensor observations before anything downstream counts them. One drone
+        # seen by three sensors is three tracks and one object; classification, risk and
+        # alerting all see the object, so it is classified once, scored once and alerted on
+        # once (FM-023). The supporting tracks stay tracked and stay in the log.
+        objects = self.fusion.fuse_cycle(tracks)
+
         classified = self.classification.classify_cycle(
-            tracks,
+            objects,
             CycleEvidence.from_assignments(
                 self.tracker.last_assignments, ingested.hints, ingested.quality
             ),
@@ -221,6 +314,10 @@ class Pipeline:
         # Catch the projection up after tracking, never before: the projection reads the log,
         # and reading it before this cycle's events are appended would leave the API serving a
         # picture one cycle stale for no reason.
+        # Polled every cycle rather than on a timer: sensor health is cheap to read, and a
+        # watchdog that sampled would report a gap it happened to look through.
+        self.watchdog.poll([adapter.health() for adapter in self._adapters])
+
         self.projection.catch_up()
         self._purge_sessions_if_due()
         return ingested.accepted
@@ -346,6 +443,8 @@ def build_application(
         auth=pipeline.auth if authenticated else None,
         alerts=pipeline.alerting,
         classification_running=True,
+        fusion=pipeline.fusion,
+        watchdog=pipeline.watchdog,
         situation=pipeline.risk,
         run_mode=RunMode.SIMULATION,
     )

@@ -20,7 +20,11 @@
     {
       "object_id": "disagreement-1",
       "description": "Small aircraft loitering slowly north-east of the site, inside the coverage of the radar, the imaging sensor and the radio-frequency sensor at once.",
-      "start": { "east_m": 1550.0, "north_m": 1550.0, "altitude_m": 130.0 },
+      "start": {
+        "east_m": 1550.0,
+        "north_m": 1550.0,
+        "altitude_m": 130.0
+      },
       "motion": {
         "speed_mps": 6.0,
         "heading_deg": 200.0,
@@ -34,7 +38,7 @@
   ],
   "sensor_availability": [
     {
-      "sensor_id": "SIM-RF-01",
+      "sensor_id": "rf_central",
       "state": "degraded",
       "from_s": 60.0,
       "to_s": 180.0,

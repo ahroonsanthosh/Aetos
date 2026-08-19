@@ -34,6 +34,13 @@ function view(overrides: Partial<TrackView> = {}): TrackView {
     kinematics: { speed_mps: 20, heading_deg: 90, vertical_rate_mps: 0 },
     classification: { label: 'unknown', confidence: 0, distribution: {}, reasons: [], assessed: false },
     threat: threatView(),
+    fusion: {
+      assessed: false,
+      object_id: null,
+      is_primary: true,
+      member_track_ids: [],
+      corroborating_sensors: [],
+    },
     tracking: {
       first_seen: '2026-08-08T12:00:00Z',
       last_seen: '2026-08-08T12:01:00Z',
@@ -256,5 +263,52 @@ describe('history point conversion', () => {
 
     expect(point.timestamp).toBeInstanceOf(Date)
     expect(point.timestamp.toISOString()).toBe('2026-08-08T12:00:30.000Z')
+  })
+})
+
+describe('fusion on a display track', () => {
+  const frame = new LocalFrame({ latitude: 53.35, longitude: -6.26, altitude_m: 0 })
+
+  it('carries the object roster through without reshaping it', () => {
+    const track = toDisplayTrack(
+      view({
+        fusion: {
+          assessed: true,
+          object_id: 'OBJ-0007',
+          is_primary: true,
+          member_track_ids: ['TRK-0001', 'TRK-0004'],
+          corroborating_sensors: ['radar_north', 'rf_central'],
+        },
+      }),
+      frame,
+    )
+
+    expect(track.fusion.assessed).toBe(true)
+    expect(track.fusion.objectId).toBe('OBJ-0007')
+    expect(track.fusion.isPrimary).toBe(true)
+    expect(track.fusion.memberTrackIds).toEqual(['TRK-0001', 'TRK-0004'])
+    expect(track.fusion.corroboratingSensors).toEqual(['radar_north', 'rf_central'])
+  })
+
+  it('keeps "not assessed" distinct from "assessed and standing alone"', () => {
+    // The two render differently and must therefore stay distinguishable in the model. Nothing
+    // may collapse `assessed: false` into an empty roster — "nobody looked" is not a finding.
+    const unassessed = toDisplayTrack(view(), frame)
+    const alone = toDisplayTrack(
+      view({
+        fusion: {
+          assessed: true,
+          object_id: 'OBJ-0001',
+          is_primary: true,
+          member_track_ids: ['TRK-0001'],
+          corroborating_sensors: ['radar_north'],
+        },
+      }),
+      frame,
+    )
+
+    expect(unassessed.fusion.assessed).toBe(false)
+    expect(alone.fusion.assessed).toBe(true)
+    expect(alone.fusion.memberTrackIds).toHaveLength(1)
   })
 })

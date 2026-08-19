@@ -12,30 +12,27 @@ any track's score. That separation is the whole design: counting nearby tracks i
 per-track factor would make each track's score depend on how many other tracks exist, which is
 exactly the coupling the narrow input exists to prevent.
 
-## The duplicate-track problem, and why this can run before fusion exists
+## Its input is objects, not tracks
 
-`backend/fusion` is not built, so one physical object observed by four sensors becomes up to
-four tracks (FM-023). Counting tracks naively would report a single drone as a coordinated
-four-axis approach — confident nonsense, and worse than saying nothing.
+This module used to cluster its own input, because `backend/fusion` did not exist and counting
+raw tracks would have reported one drone seen by four sensors as a four-axis coordinated
+approach — confident nonsense (FM-023). That clustering was always described as a stand-in, to
+be deleted the moment fusion supplied the answer properly. Fusion exists now, so it is gone.
 
-Fragments of one object and genuinely distinct contacts are separable, though, without doing
-fusion's job. Fragments are **co-located and co-moving**: within sensor error of each other,
-with near-identical velocity, because they are observations of the same thing. Distinct
-contacts converging on an asset are the opposite — hundreds of metres apart, approaching along
-different bearings. So tracks are clustered on that test, and the situation is assessed over
-clusters rather than tracks.
+Everything reaching this module has already been reconciled: `backend/fusion` runs between
+tracking and classification, and what arrives here is one track per physical object. Clustering
+again would not merely be redundant, it would **disagree** — fusion holds a group together
+across a hysteresis band (`split_separation_m`) precisely so the grouping does not chatter, so
+two objects it has deliberately kept apart can sit closer than a single-threshold test would
+merge them. Two subsystems answering "are these the same object" differently, in front of the
+same operator, is worse than either answer alone.
 
-This is **not fusion** and does not pretend to be. It merges nothing, changes no track state,
-re-runs no association, and its output is scoped entirely to risk. It answers one question —
-*how many distinct objects are these tracks likely to be* — because the situation assessment
-cannot ask anything sensible without an answer to it. When `backend/fusion` exists it supplies
-that answer properly and this clustering is deleted.
+So there is one authority on that question and this is not it.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,60 +48,25 @@ class SituationPolicy(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    duplicate_separation_m: float = Field(default=150.0, gt=0.0)
-    """Horizontal separation below which two tracks may be the same object.
-
-    Sized to sensor error rather than to object size. Two radars observing one drone at 4 km
-    can disagree by a hundred metres or more in cross-range; two genuinely distinct drones
-    flying that close together are, for the purposes of an approach assessment, one arrival
-    from one bearing anyway — so the failure mode of an over-generous threshold is mild."""
-
-    duplicate_velocity_mps: float = Field(default=6.0, gt=0.0)
-    """Velocity difference below which two co-located tracks may be the same object. This is
-    the discriminating half of the test: two distinct aircraft can pass within 150 m, but not
-    while matching course and speed to within a few m/s."""
-
     distinct_bearing_deg: float = Field(default=35.0, gt=0.0)
     """How far apart two approach bearings must be to count as different axes. Below this,
     two contacts are arriving down the same corridor — which is a formation, not an
     envelopment, and reads very differently to an operator."""
 
     approach_bearing_tolerance_deg: float = Field(default=55.0, gt=0.0)
-    """How closely a cluster's course must point at the site to count as approaching."""
+    """How closely an object's course must point at the site to count as approaching."""
 
     minimum_closure_mps: float = Field(default=2.0, ge=0.0)
-    """Below this a cluster is not meaningfully closing, whatever its heading says."""
+    """Below this an object is not meaningfully closing, whatever its heading says."""
 
     coordinated_axes: int = Field(default=2, ge=2)
     """Distinct approach axes that constitute a coordinated approach."""
 
-    saturation_clusters: int = Field(default=4, ge=2)
+    saturation_objects: int = Field(default=4, ge=2)
     """Simultaneous engaged objects past which operator attention itself is the concern."""
 
     engagement_range_m: float = Field(default=5_000.0, gt=0.0)
-    """Distance from the protected area within which a cluster counts as engaged."""
-
-
-@dataclass(slots=True)
-class TrackCluster:
-    """One or more tracks judged likely to be a single physical object."""
-
-    track_ids: list[str] = field(default_factory=list)
-    members: list[TrackRisk] = field(default_factory=list)
-
-    @property
-    def representative(self) -> TrackRisk:
-        """The best-supported member, used wherever one position or velocity is needed.
-
-        Best-supported rather than an average: averaging two tracks of one object produces a
-        position no sensor reported, which is precisely the kind of invented measurement the
-        rest of this system refuses to display.
-        """
-        return max(self.members, key=lambda member: member.detection_count)
-
-    @property
-    def is_fragmented(self) -> bool:
-        return len(self.members) > 1
+    """Distance from the protected area within which an object counts as engaged."""
 
 
 class SituationFinding(BaseModel):
@@ -117,8 +79,8 @@ class SituationFinding(BaseModel):
     detail: str
     track_ids: list[str] = Field(default_factory=list)
     """Every track involved, so an operator can select them and the interface can highlight
-    them. Tracks, not clusters — clusters are this module's working representation and mean
-    nothing outside it."""
+    them. Track identifiers rather than object identifiers, because the interface selects and
+    highlights tracks — and after fusion each of these is the presented track of one object."""
 
 
 class SituationAssessment(BaseModel):
@@ -150,83 +112,23 @@ class SituationAssessment(BaseModel):
         return [finding.code for finding in self.findings]
 
 
-def cluster_tracks(tracks: list[TrackRisk], policy: SituationPolicy) -> list[TrackCluster]:
-    """Group tracks that are probably the same physical object.
-
-    Single-link agglomeration: a track joins a cluster if it is co-located and co-moving with
-    *any* member. Single-link rather than complete-link because fragments of one object form a
-    chain — sensor A and sensor C may each agree with B while disagreeing with each other by
-    more than the threshold — and requiring every pair to agree would split that chain back
-    into the fragments this exists to reconcile.
-
-    A track matching several existing clusters therefore **merges** them rather than picking
-    one. Without that, the chain above survives only when its bridging member happens to be
-    processed in the middle: with A and C seen first they open two clusters, and B arriving
-    later joins whichever it is compared against first, leaving the other stranded. The result
-    would depend on the order tracks were created in — which, since acquisition order is
-    whatever the sensors happened to do, means the same three fragments could be reported as
-    one object or two on different runs of the same situation.
-
-    Merging makes this the connected components of the "probably the same object" relation,
-    which is order-independent by construction.
-    """
-    clusters: list[TrackCluster] = []
-
-    for track in tracks:
-        matching = [
-            cluster
-            for cluster in clusters
-            if any(_probably_same_object(track, member, policy) for member in cluster.members)
-        ]
-
-        if not matching:
-            clusters.append(TrackCluster(track_ids=[track.track_id], members=[track]))
-            continue
-
-        # Fold every cluster this track bridges into the first, then add the track itself.
-        primary, *bridged = matching
-        for other in bridged:
-            primary.track_ids.extend(other.track_ids)
-            primary.members.extend(other.members)
-            clusters.remove(other)
-
-        primary.track_ids.append(track.track_id)
-        primary.members.append(track)
-
-    return clusters
-
-
-def _probably_same_object(a: TrackRisk, b: TrackRisk, policy: SituationPolicy) -> bool:
-    separation = math.dist(
-        (a.position.east_m, a.position.north_m, a.position.up_m),
-        (b.position.east_m, b.position.north_m, b.position.up_m),
-    )
-    if separation > policy.duplicate_separation_m:
-        return False
-
-    velocity_difference = math.dist(
-        (a.velocity.east_mps, a.velocity.north_mps, a.velocity.up_mps),
-        (b.velocity.east_mps, b.velocity.north_mps, b.velocity.up_mps),
-    )
-    return velocity_difference <= policy.duplicate_velocity_mps
-
-
 def assess_situation(
     tracks: list[TrackRisk], geometry: SiteGeometry, policy: SituationPolicy
 ) -> SituationAssessment:
-    """What this set of tracks means together."""
+    """What this set of objects means together.
+
+    `tracks` is one entry per physical object — `backend/fusion` guarantees it. The parameter
+    keeps its name because a `TrackRisk` is still what arrives; what changed is that there is
+    now exactly one of them per thing in the air.
+    """
     if not tracks:
         return SituationAssessment(assessed=False)
 
-    clusters = cluster_tracks(tracks, policy)
-    approaching = [
-        cluster for cluster in clusters if _is_approaching(cluster.representative, policy)
-    ]
+    approaching = [track for track in tracks if _is_approaching(track, policy)]
     engaged = [
-        cluster
-        for cluster in clusters
-        if geometry.distance_to_protected_area_m(cluster.representative.position)
-        <= policy.engagement_range_m
+        track
+        for track in tracks
+        if geometry.distance_to_protected_area_m(track.position) <= policy.engagement_range_m
     ]
 
     findings: list[SituationFinding] = []
@@ -234,7 +136,6 @@ def assess_situation(
     axes = _distinct_axes(approaching, policy)
     if len(axes) >= policy.coordinated_axes:
         bearings = ", ".join(f"{bearing:03.0f}°" for bearing in sorted(axes))
-        involved = [track_id for cluster in approaching for track_id in cluster.track_ids]
         findings.append(
             SituationFinding(
                 code="coordinated_approach",
@@ -245,11 +146,11 @@ def assess_situation(
                     f"{_plural(len(axes), 'contact')} converging on the site from separate "
                     f"bearings ({bearings}). No single track shows this."
                 ),
-                track_ids=involved,
+                track_ids=[track.track_id for track in approaching],
             )
         )
 
-    if len(engaged) >= policy.saturation_clusters:
+    if len(engaged) >= policy.saturation_objects:
         findings.append(
             SituationFinding(
                 code="simultaneous_engagement",
@@ -258,26 +159,7 @@ def assess_situation(
                     f"{_plural(len(engaged), 'distinct object')} within "
                     f"{policy.engagement_range_m / 1000:.0f} km of the protected area at once."
                 ),
-                track_ids=[track_id for cluster in engaged for track_id in cluster.track_ids],
-            )
-        )
-
-    fragmented = [cluster for cluster in clusters if cluster.is_fragmented]
-    if fragmented:
-        # Not a threat finding. An operator counting contacts off the display is entitled to
-        # know the display is over-counting, and saying so is cheaper than letting them
-        # discover it. Level NONE keeps it out of the situation's severity.
-        findings.append(
-            SituationFinding(
-                code="duplicate_tracks_suspected",
-                level=RiskLevel.NONE,
-                detail=(
-                    f"{_plural(len(tracks), 'track')} appear to be "
-                    f"{_plural(len(clusters), 'object')} — "
-                    f"{_plural(len(fragmented), 'set')} co-located and co-moving. "
-                    "Sensor fusion is not built (FM-023)."
-                ),
-                track_ids=[track_id for cluster in fragmented for track_id in cluster.track_ids],
+                track_ids=[track.track_id for track in engaged],
             )
         )
 
@@ -289,7 +171,7 @@ def assess_situation(
         ),
         findings=findings,
         track_count=len(tracks),
-        object_count=len(clusters),
+        object_count=len(tracks),
         assessed=True,
     )
 
@@ -301,7 +183,7 @@ def _is_approaching(track: TrackRisk, policy: SituationPolicy) -> bool:
     return offset is not None and offset <= policy.approach_bearing_tolerance_deg
 
 
-def _distinct_axes(clusters: list[TrackCluster], policy: SituationPolicy) -> list[float]:
+def _distinct_axes(tracks: list[TrackRisk], policy: SituationPolicy) -> list[float]:
     """Approach bearings that are far enough apart to count as separate axes.
 
     Two contacts arriving down the same corridor are a formation, not an envelopment, and the
@@ -309,8 +191,7 @@ def _distinct_axes(clusters: list[TrackCluster], policy: SituationPolicy) -> lis
     """
     axes: list[float] = []
 
-    for cluster in clusters:
-        track = cluster.representative
+    for track in tracks:
         # Bearing *from* the site to the contact: the direction the threat is coming from,
         # which is what an operator orients on.
         bearing = math.degrees(math.atan2(track.position.east_m, track.position.north_m)) % 360.0

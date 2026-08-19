@@ -59,6 +59,7 @@ from backend.api.services import ApiServices
 from backend.auth.models import Role
 from backend.database.records import ScenarioDefinition
 from backend.events.types import Event, EventType
+from backend.system_health.models import SensorObservation
 from backend.tracking.models import TrackState
 from sensors.schemas.detection import Detection
 
@@ -100,11 +101,30 @@ async def list_tracks(
         Query(description="Filter by lifecycle state. Repeatable. Default excludes LOST."),
     ] = None,
     limit: Annotated[int | None, Query(ge=1, le=1000)] = None,
+    include_supporting: Annotated[
+        bool,
+        Query(
+            description=(
+                "Include tracks fusion reconciled into another object. Off by default: the "
+                "list is the air picture, and one object should appear once."
+            )
+        ),
+    ] = False,
 ) -> TrackListResponse:
-    """Current tracks.
+    """Current tracks — one per object unless `include_supporting` says otherwise.
 
     LOST tracks are excluded by default because they are history rather than the current air
     picture; ask for them explicitly with `?state=lost`. They are never deleted (spec §5).
+
+    **Supporting observations are excluded by default.** One drone seen by three sensors is
+    three tracks and one object (FM-023); `backend/fusion` marks two of those three as
+    supporting, and listing them would put the same aircraft on the operator's display three
+    times. They are excluded rather than deleted, and `?include_supporting=true` returns them —
+    an operator asking why an object shows three tracks is entitled to all three.
+
+    A track fusion has not assessed is always listed. "Not reconciled" and "reconciled and found
+    to be a duplicate" are different statements, and only the second is a reason to withhold a
+    contact from the picture (ADR 0011).
 
     The response carries `as_of_seq`, the log position the projection was current to. Opening
     the WebSocket stream at `as_of_seq + 1` hands over from this snapshot to the live stream
@@ -112,6 +132,16 @@ async def list_tracks(
     """
     states = set(state) if state else {s for s in TrackState if s is not TrackState.LOST}
     projected = services.tracks.list_all(states=states, limit=limit)
+
+    if not include_supporting:
+        # Filtered here rather than in the repository: `is_primary` lives inside the stored
+        # Track document, and teaching the storage layer to read into it would put a
+        # fusion-shaped assumption in the one place that is meant to know nothing about what a
+        # track means.
+        projected = [
+            p for p in projected if p.track.fusion.is_primary or not p.track.fusion.assessed
+        ]
+
     return TrackListResponse(
         tracks=[TrackView.from_projection(p) for p in projected],
         count=len(projected),
@@ -124,8 +154,12 @@ async def get_situation(services: ServicesDep) -> SituationView:
     """What the current set of tracks means together.
 
     Findings no single track can produce: several contacts converging from separate bearings,
-    more objects engaged at once than an operator can reasonably attend to, and — honestly
-    reported — the display over-counting one object as several while sensor fusion is not built.
+    and more objects engaged at once than an operator can reasonably attend to.
+
+    It used to also report the display over-counting one object as several. It no longer does,
+    because fusion reconciles the tracks before risk runs and there is nothing left to confess
+    (ADR 0017). The track-to-object ratio is still reported below, as a fact rather than as a
+    finding.
 
     This never modifies any track's risk score. Per-track scoring is a pure function of one
     track, and letting a cycle-level view adjust it would make every score depend on how many
@@ -141,6 +175,17 @@ async def get_situation(services: ServicesDep) -> SituationView:
         )
 
     situation = source.situation
+
+    # The situation pass sees one entry per object, because fusion reconciled them before risk
+    # ran — so it cannot report how many tracks that was. Fusion owns that relationship and is
+    # asked for it directly, rather than having correlation carry a number it no longer knows.
+    track_count = situation.track_count
+    object_count = situation.object_count
+    if services.fusion is not None:
+        objects = services.fusion.objects
+        track_count = sum(len(obj.members) for obj in objects)
+        object_count = len(objects)
+
     return SituationView(
         level=str(situation.level),
         findings=[
@@ -152,8 +197,8 @@ async def get_situation(services: ServicesDep) -> SituationView:
             )
             for finding in situation.findings
         ],
-        track_count=situation.track_count,
-        object_count=situation.object_count,
+        track_count=track_count,
+        object_count=object_count,
         assessed=situation.assessed,
     )
 
@@ -326,15 +371,28 @@ async def list_sensors(
     services: ServicesDep,
     site_id: Annotated[str | None, Query()] = None,
 ) -> SensorListResponse:
-    """Configured sensors and where they are.
+    """Configured sensors, where they are, and what the watchdog makes of them.
 
-    Placement only. Whether a sensor is currently healthy, degraded or silent is
-    `backend/system_health`'s answer and that module does not exist, so no health field is
-    reported — a green light nothing computes is worse than no light.
+    Placement comes from configuration; `condition` comes from `backend/system_health` and is
+    **omitted rather than guessed**. A sensor carries no condition when no watchdog is running,
+    or when one is running and this sensor has no adapter behind it — a configured placement is
+    not evidence that anything is listening on it. A green light nothing computes is worse than
+    no light, which is why this field did not exist at all until the watchdog did.
     """
     records = services.sensors.list_all(site_id=site_id)
+
+    # Keyed by sensor id, because the watchdog reports on the adapters that were attached and
+    # the registry lists what the site declares. Those two sets overlap; neither contains the
+    # other. A sensor in one and not the other is a real condition to show, not an error.
+    observations: dict[str, SensorObservation] = {}
+    if services.watchdog is not None:
+        health = services.watchdog.health
+        if health.assessed:
+            observations = {s.sensor_id: s for s in health.sensors}
+
     return SensorListResponse(
-        sensors=[SensorView.from_record(r) for r in records], count=len(records)
+        sensors=[SensorView.from_record(r, observations.get(r.sensor_id)) for r in records],
+        count=len(records),
     )
 
 

@@ -87,9 +87,9 @@ export function TopBar({ streamStatus, trackCount }: Props) {
         <Chip label="Tracks" value={String(trackCount)} tone="info" />
         <Chip
           label="Fusion"
-          value="NOT BUILT"
-          tone="inert"
-          title="Multi-sensor fusion is not implemented in this build."
+          value={fusionChip(health).value}
+          tone={fusionChip(health).tone}
+          title={fusionChip(health).title}
         />
       </div>
 
@@ -165,6 +165,33 @@ function Chip({
       <span className="chip__value numeric">{value}</span>
     </span>
   )
+}
+
+/** What the fusion chip should say, read from the backend rather than asserted here.
+ *
+ *  This chip was hardcoded to NOT BUILT and stayed that way after fusion landed, so the shell
+ *  denied the existence of the reconciliation the track list was already showing. Deriving it
+ *  from the health response means the next module to land cannot repeat that. */
+function fusionChip(health: SystemHealthView | null): {
+  value: string
+  tone: Tone
+  title: string
+} {
+  const component = health?.components.find((c) => c.component === 'fusion')
+  if (!component) {
+    return {
+      value: 'UNKNOWN',
+      tone: 'unknown',
+      title: 'The health endpoint has not reported on fusion.',
+    }
+  }
+  if (component.state === 'ok') {
+    return { value: 'ACTIVE', tone: 'nominal', title: component.detail }
+  }
+  if (component.state === 'degraded') {
+    return { value: 'DEGRADED', tone: 'warning', title: component.detail }
+  }
+  return { value: 'INACTIVE', tone: 'inert', title: component.detail }
 }
 
 function systemLabel(health: SystemHealthView | null, degraded: number): string {

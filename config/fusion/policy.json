@@ -1,0 +1,11 @@
+{
+  "notes": "Fusion policy: when two tracks are judged to be observations of one object (FM-023). separation_m/velocity_mps are the thresholds to MERGE; split_separation_m/split_velocity_mps are the wider thresholds to SPLIT again. The gap between them is a hysteresis band, and it is load-bearing rather than a refinement: fragments of one drone sit near the merge threshold and drift across it constantly, so a single threshold makes the grouping chatter and every re-form clears and re-raises the object's alert. Same Schmitt trigger as ADR 0007 applies to risk levels, against the same failure — an operator interrupted repeatedly by one object stops reading the feed. separation is the permissive half of the merge test and velocity the strict half: two aircraft can pass within 150 m, but not while also matching course and speed.",
+  "separation_m": 150.0,
+  "velocity_mps": 6.0,
+  "minimum_detections": 2,
+  "require_both_moving": true,
+  "stationary_speed_mps": 1.5,
+  "split_separation_m": 320.0,
+  "split_velocity_mps": 14.0,
+  "max_object_extent_m": 400.0
+}

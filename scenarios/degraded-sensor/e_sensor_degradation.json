@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "scenario_id": "e_sensor_degradation",
   "name": "E — Sensor degradation",
-  "description": "One aircraft approaches steadily from the north while the radar's performance falls away underneath it: nominal for the first hundred seconds, then a third of its detections with two and a half times the error, then silent from two hundred seconds onward. The other sensors are unaffected throughout.",
+  "description": "One aircraft approaches steadily from the north while the northern radar's performance falls away underneath it: nominal for the first hundred seconds, then a third of its detections with two and a half times the error, then silent from two hundred seconds onward. The other sensors are unaffected throughout.",
   "purpose": "To make sensor failure a visible, tested state rather than something the system quietly absorbs. The dangerous outcome is not losing the track — it is continuing to render a confident-looking picture built on data that has stopped arriving (FM-010).",
   "expected_behaviour": [
     "must mark the radar degraded, and then offline, in system health and in the operator interface",
@@ -19,7 +19,11 @@
     {
       "object_id": "degraded-inbound",
       "description": "Medium aircraft approaching from due north at a steady 24 m/s.",
-      "start": { "east_m": 0.0, "north_m": 6000.0, "altitude_m": 140.0 },
+      "start": {
+        "east_m": 0.0,
+        "north_m": 6000.0,
+        "altitude_m": 140.0
+      },
       "motion": {
         "speed_mps": 24.0,
         "heading_deg": 180.0,
@@ -32,7 +36,7 @@
   ],
   "sensor_availability": [
     {
-      "sensor_id": "SIM-RADAR-01",
+      "sensor_id": "radar_north",
       "state": "degraded",
       "from_s": 100.0,
       "to_s": 200.0,
@@ -41,7 +45,7 @@
       "reason": "Radar returns intermittent and noisy — antenna drive fault developing"
     },
     {
-      "sensor_id": "SIM-RADAR-01",
+      "sensor_id": "radar_north",
       "state": "offline",
       "from_s": 200.0,
       "reason": "Radar has stopped reporting entirely"

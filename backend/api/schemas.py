@@ -30,6 +30,7 @@ from backend.alerting.models import Alert, AlertState
 from backend.database.projection import TRACK_SNAPSHOT_KEY
 from backend.database.records import ProjectedTrack, ScenarioRecord, SensorRecord
 from backend.events.types import Event, EventType
+from backend.system_health.models import SensorObservation
 from backend.tracking.models import RiskLevel, Track
 from backend.zones.site import Site, Zone
 from sensors.schemas.detection import Detection
@@ -171,6 +172,31 @@ class TrackingView(BaseModel):
     contributing_sensors: list[str]
 
 
+class FusionView(BaseModel):
+    """Which physical object this track was reconciled to.
+
+    Present so an operator can ask why an object shows more than one track and get an answer.
+    One drone seen by three sensors is three tracks and one object (FM-023); the list is
+    filtered to objects by default, and this is what explains the tracks that are missing from
+    it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    assessed: bool
+    """False means fusion has not looked at this track — not that it examined it and found it
+    to stand alone. The two must never render the same way (ADR 0011)."""
+
+    object_id: str | None
+    is_primary: bool
+    member_track_ids: list[str]
+    """Every track making up this object, primary first. Populated on the primary only."""
+
+    corroborating_sensors: list[str]
+    """Every sensor that has observed the object, across all its member tracks. Wider than the
+    primary's own `tracking.contributing_sensors`, which describes one observation of it."""
+
+
 class TrackView(BaseModel):
     """One track as the operator interface sees it."""
 
@@ -188,6 +214,7 @@ class TrackView(BaseModel):
     kinematics: KinematicsView
     classification: ClassificationView
     threat: ThreatView
+    fusion: FusionView
     tracking: TrackingView
     updated_at: datetime
 
@@ -243,6 +270,13 @@ class TrackView(BaseModel):
                 ],
                 recommendation=str(track.threat.recommendation),
                 assessed=track.threat.assessed,
+            ),
+            fusion=FusionView(
+                assessed=track.fusion.assessed,
+                object_id=track.fusion.object_id,
+                is_primary=track.fusion.is_primary,
+                member_track_ids=list(track.fusion.member_track_ids),
+                corroborating_sensors=list(track.fusion.corroborating_sensors),
             ),
             tracking=TrackingView(
                 first_seen=track.tracking.first_seen,
@@ -418,12 +452,44 @@ class AlertListResponse(BaseModel):
     assessing: bool
 
 
-class SensorView(BaseModel):
-    """A sensor's placement and whether it is enabled.
+class SensorConditionView(BaseModel):
+    """What the watchdog currently concludes about one sensor, with the facts behind it.
 
-    Note what is missing: operational health. Whether a sensor has gone silent belongs to
-    `backend/system_health`, which does not exist. Reporting a health field here would report
-    a status nothing computes.
+    The facts travel with the conclusion on purpose. A condition an operator cannot interrogate
+    has to be taken on trust, and these numbers are what let them disagree with it — a sensor
+    reported SILENT with a detection count of zero is a very different situation from one that
+    was producing steadily a minute ago.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    condition: str
+    reason: str
+    last_detection_time: datetime | None = None
+    detections_emitted: int = 0
+    silent_for_s: float | None = None
+    expected_interval_s: float | None = None
+
+    @classmethod
+    def from_observation(cls, observation: SensorObservation) -> SensorConditionView:
+        return cls(
+            condition=str(observation.condition),
+            reason=observation.reason,
+            last_detection_time=observation.last_detection_time,
+            detections_emitted=observation.detections_emitted,
+            silent_for_s=observation.silent_for_s,
+            expected_interval_s=observation.expected_interval_s,
+        )
+
+
+class SensorView(BaseModel):
+    """A sensor's placement, whether it is enabled, and — if anything is watching — its condition.
+
+    `condition` is `None` when **nothing has assessed this sensor**: no watchdog is running, or
+    one is running and this sensor has no adapter behind it. That is not the same as a sensor
+    assessed and found healthy, and a client must not render them the same way (ADR 0011). The
+    field was absent entirely until the watchdog landed, on the same reasoning: a green light
+    nothing computes is worse than no light.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -436,18 +502,34 @@ class SensorView(BaseModel):
     height_m: float
     boresight_deg: float
     enabled: bool
+    condition: SensorConditionView | None = None
 
     @classmethod
-    def from_record(cls, record: SensorRecord) -> SensorView:
+    def from_record(
+        cls, record: SensorRecord, observation: SensorObservation | None = None
+    ) -> SensorView:
         return cls(
             sensor_id=record.sensor_id,
             site_id=record.site_id,
             registry_key=record.registry_key,
-            sensor_type=str(record.sensor_type) if record.sensor_type else None,
+            # The record's type is null unless something established it, and the running
+            # adapter is exactly such a something: it reports the type it actually is. Falling
+            # back to it fills the column with a fact rather than leaving a blank next to a
+            # sensor whose type the system demonstrably knows.
+            sensor_type=(
+                str(record.sensor_type)
+                if record.sensor_type
+                else (str(observation.sensor_type) if observation is not None else None)
+            ),
             position=GeoPointView(latitude=record.latitude, longitude=record.longitude),
             height_m=record.height_m,
             boresight_deg=record.boresight_deg,
             enabled=record.enabled,
+            condition=(
+                SensorConditionView.from_observation(observation)
+                if observation is not None
+                else None
+            ),
         )
 
 

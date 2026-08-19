@@ -36,11 +36,18 @@ const SECTIONS: Section[] = [
     title: 'Intelligence',
     items: [
       { label: 'Track History', path: '/history' },
-      { label: 'Sensor Fusion', path: '/fusion', unavailable: 'Fusion module not implemented' },
-      // Both modules are built and running; what these two lack is a dedicated page. Say
+      // All three of these are built and running; what they lack is a dedicated page. Say
       // that, rather than "not implemented" — the module claim was true when written and
       // silently became false, leaving the sidebar denying the existence of scores the
-      // Tracks page was displaying at the same moment.
+      // Tracks page was displaying at the same moment. Fusion repeated it exactly: the entry
+      // still read "not implemented" while the track list was already showing one row per
+      // object because fusion had reconciled them.
+      {
+        label: 'Sensor Fusion',
+        path: '/fusion',
+        unavailable:
+          'No dedicated page yet — tracks are reconciled into objects and the roster is shown per track on Live Tracks',
+      },
       {
         label: 'Classification',
         path: '/classification',

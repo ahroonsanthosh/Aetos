@@ -1,19 +1,18 @@
-"""Situation assessment: what several tracks mean together, and what they do not.
+"""Situation assessment: what several objects mean together, and what they do not.
 
-Two properties matter more than the rest, and most of this file is about them.
+Its input is one entry per physical object — `backend/fusion` guarantees that, and the
+clustering this module used to do as a stand-in has been deleted rather than left to disagree
+with the module that now owns the question. The reconciliation tests live in
+`tests/unit/test_fusion.py`.
 
-**It must not cry wolf on duplicate tracks.** Sensor fusion is not built, so one object seen by
-four sensors becomes up to four tracks (FM-023). Counting tracks naively would report a single
-drone as a four-axis coordinated approach — confident nonsense, and worse than saying nothing.
-
-**It must not touch per-track scores.** Letting a cycle-level view adjust individual scores
-would make every score depend on how many other tracks happen to exist, which is the
-self-reinforcing coupling the narrow per-track input exists to prevent.
+What remains here is the property that matters most: **it must not touch per-track scores.**
+Letting a cycle-level view adjust individual scores would make every score depend on how many
+other objects happen to exist, which is the self-reinforcing coupling the narrow per-track
+input exists to prevent.
 """
 
 from __future__ import annotations
 
-import itertools
 import math
 from datetime import UTC, datetime
 
@@ -21,11 +20,7 @@ import pytest
 
 from backend.common.clock import SimClock
 from backend.events.store import SqliteEventStore
-from backend.risk.correlation import (
-    SituationPolicy,
-    assess_situation,
-    cluster_tracks,
-)
+from backend.risk.correlation import SituationPolicy, assess_situation
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.factors import TrackRisk
 from backend.risk.service import RiskService
@@ -92,91 +87,6 @@ def codes(situation) -> set[str]:
 # --------------------------------------------------------------------------------------
 # The duplicate-track problem: the reason this can run before fusion exists
 # --------------------------------------------------------------------------------------
-
-
-def test_one_object_seen_by_four_sensors_is_one_object(policy: SituationPolicy) -> None:
-    """Four tracks of the same drone, disagreeing by sensor error, are not four contacts."""
-    fragments = [
-        contact("TRK-1", 45.0),
-        contact("TRK-2", 45.0, offset_m=(60.0, -40.0, 5.0), velocity_offset=(1.5, 0.8, 0.0)),
-        contact("TRK-3", 45.0, offset_m=(-70.0, 30.0, -8.0), velocity_offset=(-2.0, 1.1, 0.0)),
-        contact("TRK-4", 45.0, offset_m=(20.0, 90.0, 2.0), velocity_offset=(0.5, -1.9, 0.0)),
-    ]
-
-    clusters = cluster_tracks(fragments, policy)
-
-    assert len(clusters) == 1
-    assert set(clusters[0].track_ids) == {"TRK-1", "TRK-2", "TRK-3", "TRK-4"}
-
-
-def test_fragments_of_one_object_raise_no_coordinated_approach(
-    geometry: SiteGeometry, policy: SituationPolicy
-) -> None:
-    """The failure this module would be worthless without avoiding."""
-    fragments = [
-        contact("TRK-1", 45.0),
-        contact("TRK-2", 45.0, offset_m=(60.0, -40.0, 0.0), velocity_offset=(1.5, 0.8, 0.0)),
-        contact("TRK-3", 45.0, offset_m=(-70.0, 30.0, 0.0), velocity_offset=(-2.0, 1.1, 0.0)),
-    ]
-
-    situation = assess_situation(fragments, geometry, policy)
-
-    assert "coordinated_approach" not in codes(situation)
-    assert situation.object_count == 1
-    assert situation.track_count == 3
-
-
-def test_over_counting_is_reported_rather_than_hidden(
-    geometry: SiteGeometry, policy: SituationPolicy
-) -> None:
-    """An operator counting contacts off the display is entitled to know it over-counts."""
-    fragments = [
-        contact("TRK-1", 45.0),
-        contact("TRK-2", 45.0, offset_m=(60.0, -40.0, 0.0), velocity_offset=(1.0, 0.5, 0.0)),
-    ]
-
-    situation = assess_situation(fragments, geometry, policy)
-
-    assert "duplicate_tracks_suspected" in codes(situation)
-    # Reported, but not as a threat: it says nothing about danger.
-    finding = next(f for f in situation.findings if f.code == "duplicate_tracks_suspected")
-    assert finding.level.severity == 0
-
-
-def test_co_located_but_diverging_tracks_stay_separate(policy: SituationPolicy) -> None:
-    """Position alone is not enough. Two aircraft can pass within 150 m; they cannot do it
-    while matching course and speed, and velocity is the discriminating half of the test."""
-    crossing = [
-        contact("TRK-1", 45.0),
-        contact("TRK-2", 45.0, offset_m=(50.0, 0.0, 0.0), velocity_offset=(0.0, 40.0, 0.0)),
-    ]
-
-    assert len(cluster_tracks(crossing, policy)) == 2
-
-
-def test_far_apart_tracks_stay_separate_however_similar_their_motion(
-    policy: SituationPolicy,
-) -> None:
-    """Two drones flying the same course a kilometre apart are two drones."""
-    parallel = [contact("TRK-1", 45.0), contact("TRK-2", 45.0, offset_m=(1_000.0, 0.0, 0.0))]
-
-    assert len(cluster_tracks(parallel, policy)) == 2
-
-
-def test_clustering_chains_through_a_common_member(policy: SituationPolicy) -> None:
-    """Single-link on purpose: fragments of one object form a chain, where the outermost two
-    disagree by more than the threshold while each agrees with the middle. Requiring every
-    pair to agree would split the chain back into the fragments this exists to reconcile."""
-    chain = [
-        contact("TRK-1", 45.0),
-        contact("TRK-2", 45.0, offset_m=(140.0, 0.0, 0.0)),
-        contact("TRK-3", 45.0, offset_m=(280.0, 0.0, 0.0)),
-    ]
-
-    clusters = cluster_tracks(chain, policy)
-
-    assert len(clusters) == 1
-    assert len(clusters[0].track_ids) == 3
 
 
 # --------------------------------------------------------------------------------------
@@ -419,96 +329,8 @@ class _Holder:
 # --------------------------------------------------------------------------------------
 
 
-def test_a_chain_of_fragments_clusters_the_same_whatever_the_acquisition_order(
-    policy: SituationPolicy,
-) -> None:
-    """The exact case single-link agglomeration is chosen for, from every direction.
-
-    Regression: a track was joined to the *first* cluster it matched and never merged the
-    others, so the chain the docstring describes — sensor A and sensor C each agreeing with B
-    while disagreeing with each other — survived only when B happened to be processed between
-    them. With A and C acquired first they opened two clusters, and B arriving later joined one
-    and left the other stranded.
-
-    Acquisition order is whatever the sensors happened to do, so the same three fragments of
-    one drone were reported as one object or two depending on nothing meaningful. Being the
-    connected components of the relation, the answer must not move.
-    """
-    separation = policy.duplicate_separation_m * 0.9
-    chain = [
-        contact("TRK-A", bearing_deg=0.0, offset_m=(0.0, 0.0, 0.0)),
-        contact("TRK-B", bearing_deg=0.0, offset_m=(separation, 0.0, 0.0)),
-        contact("TRK-C", bearing_deg=0.0, offset_m=(2 * separation, 0.0, 0.0)),
-    ]
-
-    for ordering in itertools.permutations(chain):
-        clusters = cluster_tracks(list(ordering), policy)
-        acquired = [track.track_id for track in ordering]
-
-        assert len(clusters) == 1, (
-            f"acquisition order {acquired} split one chain of fragments into "
-            f"{len(clusters)} objects"
-        )
-        assert sorted(clusters[0].track_ids) == ["TRK-A", "TRK-B", "TRK-C"]
-
-
-def test_merging_a_chain_does_not_swallow_genuinely_distinct_contacts(
-    policy: SituationPolicy,
-) -> None:
-    """The merge must stay bounded by the relation — two contacts far apart are two objects,
-    however the clusters were built up around them."""
-    far_apart = [
-        contact("TRK-A", bearing_deg=0.0, range_m=2_000.0),
-        contact("TRK-B", bearing_deg=180.0, range_m=2_000.0),
-    ]
-
-    for ordering in itertools.permutations(far_apart):
-        clusters = cluster_tracks(list(ordering), policy)
-        assert len(clusters) == 2
-
-
 # --------------------------------------------------------------------------------------
 # Operator-facing wording
 # --------------------------------------------------------------------------------------
 
 
-def test_findings_read_as_english_in_the_singular(
-    geometry: SiteGeometry, policy: SituationPolicy
-) -> None:
-    """These strings reach an operator, and "1 objects" tells them the system was assembled
-    carelessly — a bad impression for a display whose whole job is to be believed.
-
-    Regression: the duplicate-track advisory read "3 tracks appear to be 1 objects — 1 set(s)
-    are co-located and co-moving", visible on the overview banner whenever fusion's absence was
-    being reported, which is most of the time.
-    """
-    fragments = [
-        contact("TRK-A", bearing_deg=0.0),
-        contact("TRK-B", bearing_deg=0.0, offset_m=(30.0, 0.0, 0.0)),
-    ]
-
-    situation = assess_situation(fragments, geometry, policy)
-    detail = next(f.detail for f in situation.findings if f.code == "duplicate_tracks_suspected")
-
-    assert "1 object " in detail or detail.endswith("1 object")
-    assert "1 objects" not in detail
-    assert "1 sets" not in detail
-    assert "(s)" not in detail
-
-
-def test_findings_read_as_english_in_the_plural(
-    geometry: SiteGeometry, policy: SituationPolicy
-) -> None:
-    tracks = [
-        contact("TRK-A", bearing_deg=0.0),
-        contact("TRK-B", bearing_deg=0.0, offset_m=(30.0, 0.0, 0.0)),
-        contact("TRK-C", bearing_deg=90.0),
-        contact("TRK-D", bearing_deg=90.0, offset_m=(0.0, 30.0, 0.0)),
-    ]
-
-    situation = assess_situation(tracks, geometry, policy)
-    detail = next(f.detail for f in situation.findings if f.code == "duplicate_tracks_suspected")
-
-    assert "4 tracks" in detail
-    assert "2 objects" in detail
-    assert "2 sets" in detail

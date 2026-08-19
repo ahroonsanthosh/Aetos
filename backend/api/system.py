@@ -199,17 +199,8 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
         running="Risk levels are being promoted to alerts against the alerting policy.",
         absent="Alert generation is not running; the alert feed is empty."))
 
-    # Genuinely absent. Listed explicitly so the dashboard shows the shape of the finished
-    # system and where the gaps still are.
-    for component, detail in (
-        ("fusion", "Multi-sensor reconciliation is not implemented."),
-        ("system_health", "The watchdog and degraded-mode controller are not implemented."),
-    ):
-        components.append(
-            ComponentHealth(
-                component=component, state=ComponentState.NOT_BUILT, detail=detail
-            )
-        )
+    components.append(_fusion_health(services))
+    components.append(_watchdog_health(services))
 
     components.append(
         ComponentHealth(
@@ -227,6 +218,78 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
         latest_event_seq=latest_seq,
         projection_seq=projection_seq,
         projection_lag=max(0, latest_seq - projection_seq),
+    )
+
+
+def _plural(count: int, singular: str) -> str:
+    """`count` and its noun, agreeing in number. These strings reach an operator."""
+    return f"{count} {singular if count == 1 else singular + 's'}"
+
+
+def _fusion_health(services: ApiServices) -> ComponentHealth:
+    """What multi-sensor reconciliation is currently doing.
+
+    Reports the gap between tracks and objects rather than a bare "running", because that gap
+    is the whole of what this component is for: an operator seeing "9 tracks reconciled to 5
+    objects" knows not to count aircraft off the display (FM-023).
+    """
+    if services.fusion is None:
+        return ComponentHealth(
+            component="fusion",
+            state=ComponentState.NOT_CONNECTED,
+            detail=(
+                "Multi-sensor reconciliation is not running. Tracks are presented as observed, "
+                "so one object seen by several sensors appears several times."
+            ),
+        )
+
+    objects = services.fusion.objects
+    tracks = sum(len(obj.members) for obj in objects)
+    fused = sum(1 for obj in objects if obj.is_fused)
+    return ComponentHealth(
+        component="fusion",
+        state=ComponentState.OK,
+        detail=(
+            f"{_plural(tracks, 'track')} reconciled to {_plural(len(objects), 'object')}; "
+            f"{fused} {'carries' if fused == 1 else 'carry'} more than one observation."
+        ),
+    )
+
+
+def _watchdog_health(services: ApiServices) -> ComponentHealth:
+    """The sensing posture, and whether anything is watching it.
+
+    Degraded is reported as DEGRADED rather than OK-with-a-note: the whole point of FM-010 is
+    that a thinned picture must be visible without reading the detail.
+    """
+    if services.watchdog is None:
+        return ComponentHealth(
+            component="system_health",
+            state=ComponentState.NOT_CONNECTED,
+            detail=(
+                "No watchdog is running. A sensor going silent would not be noticed, and "
+                "tracks could coast on data that has stopped arriving (FM-010)."
+            ),
+        )
+
+    health = services.watchdog.health
+    if not health.assessed:
+        return ComponentHealth(
+            component="system_health",
+            state=ComponentState.NOT_CONNECTED,
+            detail="The watchdog has not completed a pass yet.",
+        )
+
+    anomalous = health.anomalous
+    detail = health.reason
+    if anomalous:
+        detail += " " + "; ".join(
+            f"{s.sensor_id} {s.condition.value}" for s in anomalous[:4]
+        ) + "."
+    return ComponentHealth(
+        component="system_health",
+        state=ComponentState.DEGRADED if health.degraded else ComponentState.OK,
+        detail=detail,
     )
 
 

@@ -79,15 +79,34 @@ the adapter's documented obligation.
 ## Sensor and input failures
 
 ### FM-010 — Sensor goes silent
-**Status:** Open — target of build stage 12
+**Status:** Closed — `backend/system_health` (ADR 0018)
 
 A sensor stops producing detections. Tracks that depended on it coast, then go STALE, then
 LOST. The hazard is that the system keeps rendering confident-looking tracks on data that no
 longer exists.
 
-**Intended handling:** watchdog detects sensor silence past a configured threshold; sensor
-health is marked degraded; if sensor count or aggregate confidence drops below the usable
-threshold, degraded mode activates and is stated visibly in the UI.
+**Fix.** `SensorWatchdog` polls every adapter's health record each cycle and reports a condition
+per sensor, with degraded mode when contributing sensors fall below the configured floor.
+`GET /system/health` shows it, and `SENSOR_STATUS_CHANGED` / `DEGRADED_MODE_ENTERED` record every
+transition.
+
+The difficulty was never the polling. **A sensor producing nothing may be broken, or may be
+looking at an empty sky**, and one sensor watched alone cannot tell those apart — guess "broken"
+and the indicator fires through every quiet minute until it is ignored, guess "empty sky" and it
+stays quiet through the event it exists to catch. Silence is therefore judged against *the other
+sensors*: anomalous while neighbours are producing, an empty sky when nothing anywhere is. A
+single-sensor site can never call its sensor silent and says so, rather than implying a check it
+cannot perform.
+
+Thresholds are declared per sensor rather than derived from update rate. Deriving them flagged
+the healthiest sensor on the site continuously: poll rate is not detection rate, and the
+narrow-field EO/IR's longest *legitimate* quiet spell across all nine scenarios was 81 s against
+a derived threshold of 5 s.
+
+**What is still not detectable:** a sensor whose link is healthy and whose hardware is blind, at
+a site where nothing else covers its volume. No evidence in the system separates that from an
+empty sky, so the facts are reported — including a detection count of zero — and the conclusion
+is left to the operator.
 
 ### FM-011 — Malformed detection data
 **Status:** Open — target of build stage 12
@@ -148,7 +167,7 @@ consuming information the simulator has and real sensors do not.
 stripped must produce identical track states.
 
 ### FM-023 — One object becomes several tracks under multi-sensor observation
-**Status:** Open — target of build stage 10 (fusion) · **Severity:** High for operator trust
+**Status:** Closed — `backend/fusion` (ADR 0017) · **Severity:** was High for operator trust
 
 **Observed**, not theorised: running `b_approaching_threat` against the shipped test site,
 one drone produced three concurrent CONFIRMED tracks (TRK-00002, TRK-00009, TRK-00018), all
@@ -164,14 +183,30 @@ object across sensors.
 **Consequence.** An operator sees three contacts where there is one. Under a swarm scenario
 the multiplier is the sensor count, which also brings the saturation ceiling forward.
 
-**Intended handling:** `backend/fusion`, which is not built. Note that the fix belongs there
-and not in association — loosening the association gate to absorb the extra detections would
-merge genuinely distinct objects, which is a far worse failure and is precisely what scenario
-H tests against.
+**Fix.** `backend/fusion` runs between tracking and classification and groups tracks that are
+co-located *and* co-moving into objects. Everything downstream — classification, risk, alerting,
+the API — counts objects rather than observations, so one drone is classified once, scored once
+and alerted on once. `GET /tracks` returns one entry per object; `?include_supporting=true`
+returns the members, which are withheld rather than deleted.
 
-**Interim mitigation:** none. A single-sensor site does not exhibit it. The operator interface
-does not hide or de-duplicate the tracks, because suppressing them in the display would
-conceal a real limitation of the current build.
+The fix is downstream of association on purpose, exactly as this entry originally argued:
+loosening the gate would merge genuinely distinct objects, which is worse and is what scenario H
+tests against. Fusion changes no estimate, so being wrong costs a display grouping rather than a
+corrupted track.
+
+Measured against the declared truth of all nine scenarios, object counts now match. Alert volume
+fell *below* the pre-fusion baseline — 3 → 1 on `b_approaching_threat`, 54 → 28 on
+`i_swarm_saturation` — because one object no longer raises one alert per sensor that can see it.
+
+Two defects found during the build are worth recording, because both were invisible to reasoning
+and obvious to measurement: identity had to be resolved across the whole cycle rather than per
+group (320 of 640 cycles otherwise held a duplicated object id, flipping the presented track 708
+times and thrashing alerts), and single-link grouping needed a hard extent ceiling (400 tracks
+spaced 10 m apart otherwise chained into one object spanning 4 km).
+
+**What is still not fixed:** the presented position is one member's estimate rather than a
+combination of them, so it is as good as the best single observation and no better. Estimate-level
+fusion is a deliberate future step behind its own decision record.
 
 ### FM-026 — Risk could not see relationships between tracks
 **Status:** Closed, with an interim mechanism · **Severity:** was Medium
@@ -190,28 +225,21 @@ alternative is a feedback loop with no evidence in it: a busy sky raises every s
 raises the count of alarming tracks, which raises every score.
 
 Findings: `coordinated_approach` (contacts closing from bearings far enough apart to be
-separate axes), `simultaneous_engagement` (more objects engaged at once than an operator can
-reasonably attend to), and `duplicate_tracks_suspected` — see below.
+separate axes) and `simultaneous_engagement` (more objects engaged at once than an operator can
+reasonably attend to).
 
-**The FM-023 problem, and why this did not have to wait for fusion.** Counting *tracks* would
-have reported one drone seen by four sensors as a four-axis coordinated approach. Fragments of
-one object and genuinely distinct contacts are separable without doing fusion's job, though:
-fragments are co-located **and** co-moving, because they are observations of the same thing,
-while contacts converging on an asset are hundreds of metres apart on different bearings. So
-tracks are clustered on that test and the situation is assessed over clusters. Verified live:
-on `d_multiple_simultaneous` the pass resolved 8 tracks to 5 objects and counted objects, not
-tracks, when deciding whether the picture was saturated.
+**It used to carry its own clustering, and no longer does.** While `backend/fusion` did not
+exist, counting *tracks* would have reported one drone seen by four sensors as a four-axis
+coordinated approach, so this module grouped co-located and co-moving tracks itself — described
+throughout as a stand-in to be deleted once fusion answered the question properly. Fusion landed
+(ADR 0017) and the clustering was deleted.
 
-**This is not fusion and does not claim to be.** It merges nothing, changes no track state,
-re-runs no association, and its output is scoped to risk. It answers one question — how many
-distinct objects are these tracks likely to be — because the situation assessment cannot ask
-anything sensible without it. When `backend/fusion` exists it answers that question properly
-and the clustering here is deleted.
-
-**Remaining, and deliberately visible.** The over-count is now *reported* rather than silently
-absorbed: `duplicate_tracks_suspected` states plainly that the display is showing more tracks
-than there are objects, and the banner carries "8 tracks · likely 5 objects". That is FM-023
-made visible to the operator instead of left for them to discover.
+Leaving it would have been worse than redundant. Fusion holds a group together across a
+hysteresis band, so two objects it deliberately keeps apart can sit closer than a
+single-threshold test would merge them — and two subsystems answering "are these the same
+object" differently, in front of the same operator, is worse than either answer alone. Its input
+is now one entry per object, and the track-versus-object counts on the banner come from fusion,
+which owns that relationship.
 
 ### FM-025 — Classification was overwritten by the next tracking update
 **Status:** Closed · **Severity:** High while open — the interface stated the opposite of what the system had concluded
@@ -256,9 +284,12 @@ correctly so). Classification therefore receives the hint from whichever single 
 that assignment. At the shipped test site, two of four active sensors are radar profiles that
 report no classification at all, so a track whose assigned detection came from a radar gets no
 sensor evidence that cycle — even though an EO/IR or RF sensor observed the same object and
-did report one. Compounded by FM-023: because one object becomes several tracks, each track
-tends to be dominated by a single sensor, so a radar-formed track may *never* see the EO/IR
-hint for the same physical object.
+did report one. This was compounded by FM-023 while that was open: one object became several
+tracks, each tending to be dominated by a single sensor, so a radar-formed track might *never*
+see the EO/IR hint for the same physical object. Fusion (ADR 0017) reconciles those tracks into
+one object, but does **not** pool their classification evidence — the hint still reaches only
+the track whose detection carried it, and only the presented member's classification is shown.
+Pooling evidence across an object's members is the obvious next step and is not built.
 
 **Consequence.** Classification is weaker than the available evidence justifies, and leans on
 kinematic envelopes, which overlap heavily between classes and discriminate poorly on their
