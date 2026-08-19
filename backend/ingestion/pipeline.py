@@ -32,6 +32,7 @@ from backend.api.schemas import DETECTION_SNAPSHOT_KEY
 from backend.common.clock import Clock
 from backend.events.store import EventStore
 from backend.events.types import EventType
+from backend.tracking.filters.kalman import isotropic_covariance
 from backend.tracking.track_manager.manager import IncomingDetection
 from backend.zones.geometry import SiteGeometry
 from sensors.schemas.detection import ClassificationHint, Detection
@@ -134,6 +135,18 @@ class IngestionPipeline:
         if -skew > self._max_skew:
             return "timestamp_too_old"
 
+        if not _has_usable_uncertainty(detection):
+            # A sensor claiming perfect (or degenerate) positional knowledge is not reporting
+            # a precise measurement, it is reporting a broken one. The schema permits it —
+            # `position_uncertainty_m` is `ge=0.0` and the covariance validator only rejects
+            # negative variances — and the filter cannot survive it: the innovation covariance
+            # becomes singular and both the association gate and the update raise
+            # `LinAlgError`, taking down the whole tracking cycle rather than one detection.
+            #
+            # Rejected here, where rejections are counted and recorded, so one malformed
+            # sensor costs its own detections and nothing else (FM-011).
+            return "unusable_position_uncertainty"
+
         return None
 
     def _reject(self, detection: Detection, reason: str) -> None:
@@ -158,21 +171,54 @@ class IngestionPipeline:
             detection.position.altitude_m,
         )
 
-        covariance = (
-            np.array(detection.measurement.position_covariance_enu)
-            if detection.measurement.position_covariance_enu is not None
-            else np.eye(3) * (detection.measurement.position_uncertainty_m**2)
-        )
-
         return IncomingDetection(
             detection_id=detection.detection_id,
             sensor_id=detection.sensor.sensor_id,
             timestamp=detection.timestamp,
             position_enu=np.array([enu.east_m, enu.north_m, enu.up_m]),
-            covariance=covariance,
+            covariance=_stated_covariance(detection),
         )
 
     def _remember(self, detection_id: str) -> None:
         self._seen[detection_id] = None
         while len(self._seen) > self._dedupe_window:
             self._seen.popitem(last=False)
+
+
+def _stated_covariance(detection: Detection) -> np.ndarray:
+    """The measurement covariance this detection asserts, full matrix or isotropic fallback.
+
+    One implementation, used by both validation and reduction. It used to be written inline in
+    `_reduce`, which meant the scalar path never went through `isotropic_covariance` and its
+    positivity check never ran — a second copy of a conversion that already existed, differing
+    from the original in exactly the check that mattered.
+
+    Raises on a scalar it cannot represent. Callers reach it only through
+    `_has_usable_uncertainty`, which turns that into a rejection instead of a crash.
+    """
+    stated = detection.measurement.position_covariance_enu
+    if stated is not None:
+        return np.array(stated, dtype=float)
+    return isotropic_covariance(detection.measurement.position_uncertainty_m)
+
+
+def _has_usable_uncertainty(detection: Detection) -> bool:
+    """Whether this detection's stated uncertainty can actually be used as a covariance.
+
+    Positive-definiteness by Cholesky rather than a check on the diagonal: a matrix can have a
+    positive variance on every axis and still be singular if two of them are perfectly
+    correlated, and it is singularity — not smallness — that makes the filter raise.
+
+    Total by construction: a value `isotropic_covariance` refuses to build is unusable by
+    definition, so the exception is classified here rather than propagating out of validation.
+    """
+    try:
+        covariance = _stated_covariance(detection)
+    except ValueError:
+        return False
+
+    try:
+        np.linalg.cholesky(covariance)
+    except np.linalg.LinAlgError:
+        return False
+    return True
