@@ -497,7 +497,12 @@ class TrackManager:
         return self.to_track(active).model_dump(mode="json")
 
     def to_track(self, active: _ActiveTrack) -> Track:
-        """Project internal state into the immutable published Track."""
+        """Project internal state into the immutable published Track.
+
+        Staleness is computed here, on the pipeline clock, rather than left for a consumer to
+        derive from `last_seen` — which is the sensor's clock and would hand every consumer the
+        skew between the two (FM-012a).
+        """
         position = active.filter_state.position
         velocity = active.filter_state.velocity
 
@@ -532,6 +537,9 @@ class TrackManager:
             tracking=TrackMetadata(
                 first_seen=active.first_seen,
                 last_seen=active.last_seen,
+                seconds_since_detection=round(
+                    active.seconds_since_detection(self._clock.now()), 3
+                ),
                 detection_count=active.detection_count,
                 missed_updates=active.consecutive_misses,
                 track_confidence=self._confidence(active),

@@ -185,6 +185,28 @@ bounded, that a truncated one reports `truncated` with the true `total`, that th
 returned are the most recent ones rather than the first, and that they remain oldest-first so
 the trail is still drawn in the right direction.
 
+### FM-029 — "Last observed" was measured across two unsynchronised clocks
+**Status:** Closed · **Severity:** was Medium — a healthy sensor displayed as long-dead
+
+**What it was.** The track detail panel computed staleness as `Date.now() - last_seen`: the
+**browser's** clock minus the **sensor's** observation timestamp. Neither machine is one this
+system controls, and the drift between them landed directly in the figure an operator reads as
+"Last observed N s ago".
+
+An operator laptop a minute out of sync — routine — displayed every track as a minute stale,
+including ones being updated twice a second. A sensor clock running fast produced a negative
+age. The same mistake as FM-012a, one layer further out and with a third clock involved.
+
+**Fix.** The backend reports the figure. `TrackMetadata.seconds_since_detection` is computed by
+the tracker on the pipeline clock — the same measurement that drives demotion — and served
+through the API, so every consumer displays one number computed once by the component that
+knows. The field is nullable and rendered as "—" when absent, because a missing figure must
+never read as "seen just now", and snapshots written before the field exists genuinely do not
+carry it.
+
+**What makes it stay closed.** `frontend/tests/unit/track.test.ts` asserts the reported value
+is taken as given and that a null stays null rather than collapsing to zero.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 

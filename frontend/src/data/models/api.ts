@@ -100,6 +100,13 @@ export interface TrackingView {
    *  prediction without being seen, and conflating the two makes a coasted position look
    *  freshly observed. */
   last_seen: string
+  /** How long the track had gone without a detection when the backend took this snapshot,
+   *  measured on the backend's clock. Null on snapshots predating the field.
+   *
+   *  Reported by the backend rather than derived here. Computing `Date.now() - last_seen`
+   *  subtracts the browser's clock from the *sensor's*, so the answer carries the drift
+   *  between two machines neither of which this interface controls. */
+  seconds_since_detection: number | null
   detection_count: number
   missed_updates: number
   coasting: boolean

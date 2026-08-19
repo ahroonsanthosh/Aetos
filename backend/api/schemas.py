@@ -164,6 +164,14 @@ class TrackingView(BaseModel):
 
     first_seen: datetime
     last_seen: datetime
+    """When the most recent detection was *observed*, on the sensor's clock."""
+
+    seconds_since_detection: float | None
+    """How long the track had gone without a detection when this snapshot was taken, measured
+    on the pipeline's clock. Null on snapshots predating the field.
+
+    Reported rather than left to the client, which would otherwise subtract `last_seen` from
+    its own clock and get the drift between the two along with the answer."""
     detection_count: int
     missed_updates: int
     coasting: bool
@@ -247,6 +255,7 @@ class TrackView(BaseModel):
             tracking=TrackingView(
                 first_seen=track.tracking.first_seen,
                 last_seen=track.tracking.last_seen,
+                seconds_since_detection=track.tracking.seconds_since_detection,
                 detection_count=track.tracking.detection_count,
                 missed_updates=track.tracking.missed_updates,
                 coasting=track.tracking.is_coasting,
