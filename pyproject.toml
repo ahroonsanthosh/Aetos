@@ -30,7 +30,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["backend*", "sensors*"]
+# Every top-level package the application imports must be listed here.
+#
+# `scenarios` was missing, and `backend.main` imports it at module level — so the process
+# started only when the working directory happened to be the repository root, and failed
+# anywhere else with a bare ModuleNotFoundError before argparse or any message of ours ran.
+# `tests/unit/test_packaging.py` now derives this list from the imports themselves.
+include = ["backend*", "sensors*", "scenarios*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
