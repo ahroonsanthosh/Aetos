@@ -590,21 +590,26 @@ the display is exactly as it would otherwise be.
 
 ---
 
-### FM-040 — Docker image is unverified
-**Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
+### FM-040 — There is no container path
+**Status:** Closed by correction · **Severity:** Low — affects setup only, not runtime behaviour
 
-`Dockerfile` and `docker-compose.yml` were written but **never built or run**: the environment
-they were authored in had no Docker daemon. `start.sh` and the single-process serving it
-relies on are verified end to end in a browser; the container path is not.
+This entry used to say a `Dockerfile` and `docker-compose.yml` had been written but never built
+or run, and the README told people to run `docker compose up`. Neither file has ever existed in
+this repository — `git log --all` finds no commit that added or removed them.
 
-One issue was caught by inspection rather than by testing and is already fixed: a regular
-`pip install .` places `backend/` in site-packages, and `ConfigPaths.default()` derives the
-repository root from its own `__file__` — so configuration loading would have looked beside
-site-packages and failed. The image installs editable for that reason. Other issues of the
-same kind may remain.
+So two documents asserted a capability the software does not have, and the instruction in the
+README could not work for anybody who followed it: `docker compose up` fails with *no
+configuration file provided*. That is the failure this project is written against, in
+documentation rather than in code — a green light nothing computes.
 
-**Mitigation:** `./start.sh` is the verified path. Anyone using the container should expect to
-debug the first build.
+**Resolution:** the README's Docker section is removed and this entry now says what is true.
+`./start.sh` is the only supported way to run Aetos, and it is verified end to end.
+
+**If a container path is wanted**, it is a piece of work, not a missing file: an image that
+installs editable (a plain `pip install .` puts `backend/` in site-packages, and
+`ConfigPaths.default()` derives the repository root from its own `__file__`, so configuration
+loading would look beside site-packages and fail), builds the interface, and carries `config/`
+and `scenarios/`. It must be built and run before it is documented, not after.
 
 ---
 

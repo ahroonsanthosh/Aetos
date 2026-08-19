@@ -94,12 +94,6 @@ There is no native PowerShell equivalent yet. If you'd rather not install or use
 so and one can be added — but treat that as untested until it has actually been run on
 Windows, the same way the Docker path below is flagged.
 
-### Or with Docker, if you would rather not install either
-
-```bash
-docker compose up      # then http://localhost:8000
-```
-
 ### Tests
 
 ```bash
