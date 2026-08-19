@@ -393,3 +393,45 @@ def test_clock_advances_by_the_scenario_duration(geometry: SiteGeometry, registr
     outcome = run_scenario("a_benign_transit", geometry, registry, duration_s=60.0, step_s=0.5)
 
     assert outcome["clock"].now() == EPOCH + timedelta(seconds=60.0)
+
+
+# --------------------------------------------------------------------------------------
+# Housekeeping wired into the cycle
+# --------------------------------------------------------------------------------------
+
+
+def test_a_cycle_sweeps_expired_sessions(tmp_path) -> None:
+    """Expired session rows must actually be deleted by a running system.
+
+    Regression: `AuthService.purge_expired_sessions` existed, was correct, and had no caller
+    anywhere. `validate` revokes a session only when its holder presents the token, so a
+    session whose owner simply closed the browser outlived its own expiry for good. The rows
+    were unusable — expiry is enforced on read — so this was unbounded table growth rather than
+    an authentication hole, but nothing ever reclaimed it.
+    """
+    from backend.auth.models import Role
+    from backend.auth.policy import load_auth_policy
+    from backend.auth.service import hash_token
+    from backend.main import Pipeline
+
+    clock = SimClock(EPOCH)
+    pipeline = Pipeline(clock, load_site_geometry(SITE_NAME), tmp_path)
+    try:
+        pipeline.auth.create_user("sweeper", "correct-horse-battery", Role.OPERATOR)
+        result = pipeline.auth.authenticate("sweeper", "correct-horse-battery")
+        assert result.succeeded and result.token is not None
+        token_hash = hash_token(result.token)
+
+        # The row exists and survives a cycle while the session is still live.
+        pipeline.step()
+        assert pipeline.repositories.sessions.by_token_hash(token_hash) is not None
+
+        # Past the absolute ceiling, which no amount of activity can extend. The row is still
+        # there — expiry is enforced on read — until a sweep reclaims it.
+        clock.advance(load_auth_policy().absolute_timeout_s + 1.0)
+        assert pipeline.repositories.sessions.by_token_hash(token_hash) is not None
+
+        pipeline.step()
+        assert pipeline.repositories.sessions.by_token_hash(token_hash) is None
+    finally:
+        pipeline.close()

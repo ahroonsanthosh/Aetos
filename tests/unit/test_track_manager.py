@@ -155,6 +155,55 @@ def test_unsupported_tentative_tracks_are_retired_quickly(
     assert manager.active_tracks() == []
 
 
+def test_a_retired_tentative_track_is_never_recorded_as_confirmed(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Clutter must not be confirmed on its way out.
+
+    Regression: demotion walked the *promotion* order to reach LOST, so a track that failed to
+    corroborate passed through CONFIRMED and STALE and emitted a `TRACK_CONFIRMED` carrying a
+    snapshot with one detection behind it. The log is the source of truth (ADR 0006), so that
+    fabricated confirmation reached the projection and the operator's history — exactly the
+    claim `confirm_after_detections` exists to withhold, and the failure scenario F is for.
+    """
+    manager.process([detection(clock, [0.0, 0.0, 100.0])])
+
+    for _ in range(manager.config.tentative_max_misses + 1):
+        clock.advance(1.0)
+        manager.process([])
+
+    recorded = [e.event_type for e in events.read_from(1)]
+
+    assert EventType.TRACK_LOST in recorded
+    assert EventType.TRACK_CONFIRMED not in recorded
+    assert EventType.TRACK_STALE not in recorded
+
+    states = {
+        snapshot["state"]
+        for e in events.read_from(1)
+        if isinstance(snapshot := e.payload.get("track"), dict)
+    }
+    assert "confirmed" not in states
+    assert "stale" not in states
+
+
+def test_a_confirmed_track_still_passes_through_stale_on_its_way_out(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """The counterpart to the regression above: a track that genuinely earned CONFIRMED must
+    still show its passage through STALE even when one cycle spans both thresholds, which is
+    what the stepped demotion was introduced for."""
+    feed(manager, clock, cycles=8)
+    clock.advance(manager.config.coast_seconds + manager.config.stale_seconds + 1.0)
+    manager.process([])
+
+    recorded = [e.event_type for e in events.read_from(1)]
+
+    assert EventType.TRACK_STALE in recorded
+    assert EventType.TRACK_LOST in recorded
+    assert recorded.index(EventType.TRACK_STALE) < recorded.index(EventType.TRACK_LOST)
+
+
 # --------------------------------------------------------------------------------------
 # Coasting, demotion and reacquisition
 # --------------------------------------------------------------------------------------

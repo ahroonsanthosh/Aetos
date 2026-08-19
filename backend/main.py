@@ -57,6 +57,20 @@ _LOG = logging.getLogger("aetos.pipeline")
 DEFAULT_SITE = "fictional_test_range"
 DEFAULT_TICK_S = 0.5
 
+SESSION_PURGE_INTERVAL_S = 900.0
+"""How often expired sessions are swept from the database.
+
+Sessions are the one kind of row that is genuinely deleted, but nothing deleted them: `validate`
+revokes a session only when its holder presents the token, so a session whose owner never
+returns — the ordinary case for a closed browser — outlived its own expiry indefinitely. The
+rows were unusable (expiry is enforced on read), so this is table growth rather than an
+authentication hole, but on a console left running for months it is unbounded growth.
+
+Fifteen minutes rather than every cycle: the sweep is a `DELETE` over an indexed column and the
+shortest expiry in play is measured in hours, so running it at the pipeline's 2 Hz would be
+pure overhead.
+"""
+
 
 class Pipeline:
     """Simulator to tracker to event log, stepped on a fixed cadence.
@@ -110,6 +124,10 @@ class Pipeline:
         self.alerting.rebuild()
 
         self._adapters: list[SimulatedSensorAdapter] = []
+
+        self._last_session_purge_monotonic: float | None = None
+        """None until the first sweep, so one runs on the first cycle — a restart is exactly
+        when a backlog of sessions abandoned by the previous run is waiting."""
 
         # The site and its sensors are configuration the API reads back, so they are persisted
         # once at startup rather than being loaded independently by every request.
@@ -204,7 +222,27 @@ class Pipeline:
         # and reading it before this cycle's events are appended would leave the API serving a
         # picture one cycle stale for no reason.
         self.projection.catch_up()
+        self._purge_sessions_if_due()
         return ingested.accepted
+
+    def _purge_sessions_if_due(self) -> None:
+        """Sweep expired sessions on a slow timer. See `SESSION_PURGE_INTERVAL_S`.
+
+        Uses `monotonic()` rather than `now()` because this is interval logic: wall time can
+        step backwards under clock correction, and a sweep that then stopped running until wall
+        time caught up would be a leak visible only after an NTP adjustment (ADR 0003).
+        """
+        elapsed = self.clock.monotonic()
+        if (
+            self._last_session_purge_monotonic is not None
+            and elapsed - self._last_session_purge_monotonic < SESSION_PURGE_INTERVAL_S
+        ):
+            return
+
+        self._last_session_purge_monotonic = elapsed
+        purged = self.auth.purge_expired_sessions()
+        if purged:
+            _LOG.info("purged %d expired session(s)", purged)
 
     def close(self) -> None:
         for adapter in self._adapters:

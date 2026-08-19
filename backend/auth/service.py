@@ -20,7 +20,6 @@ stating up front because they are easy to lose in a later edit:
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -446,8 +445,3 @@ def hash_token(token: str) -> str:
     usable session.
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def tokens_match(candidate: str, stored_hash: str) -> bool:
-    """Constant-time comparison of a token against a stored hash."""
-    return hmac.compare_digest(hash_token(candidate), stored_hash)

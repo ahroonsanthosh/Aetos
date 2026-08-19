@@ -97,6 +97,24 @@ class TrackManagerConfig:
     exhaust memory (ADR 0008)."""
 
 
+_DEMOTION_PATH: dict[TrackState, TrackState] = {
+    # Never confirmed, so there is nothing to go stale from: an unsupported track that failed
+    # to corroborate is simply lost.
+    TrackState.NEW: TrackState.LOST,
+    TrackState.TENTATIVE: TrackState.LOST,
+    # A confirmed track degrades through STALE, where it stays visible and explicitly marked,
+    # before being declared lost.
+    TrackState.CONFIRMED: TrackState.STALE,
+    TrackState.STALE: TrackState.LOST,
+}
+"""What a track demotes to next, one step at a time.
+
+Deliberately its own mapping rather than the promotion order walked in reverse. Demotion and
+promotion are not symmetric: CONFIRMED is reached only by accumulating detections, so it must
+never appear on a path a track takes on its way *out*. See `_next_state_towards`.
+"""
+
+
 @dataclass(slots=True)
 class _ActiveTrack:
     """A track together with the filter state the published Track does not expose.
@@ -375,19 +393,24 @@ class TrackManager:
 
     @staticmethod
     def _next_state_towards(current: TrackState, target: TrackState) -> TrackState:
-        """One step along the lifecycle towards `target`.
+        """One step along the *demotion* path towards `target`.
 
         Stepping rather than jumping keeps every transition observable in the log, which is
         what lets replay reconstruct exactly how a track ended.
+
+        The path followed here is demotion's, not the promotion order reversed, and the
+        difference is load-bearing. An unsupported NEW or TENTATIVE track goes straight to
+        LOST: it never earned CONFIRMED, and walking it up the promotion order to reach LOST
+        would emit a `TRACK_CONFIRMED` for a track with a single detection behind it. That is
+        precisely the claim `confirm_after_detections` exists to withhold — and because the
+        log is the source of truth (ADR 0006), a fabricated confirmation there becomes a
+        confirmed track in the projection and in the operator's history.
+
+        A CONFIRMED track still passes through STALE on its way out, which is the case the
+        stepping was introduced for: that passage genuinely happened, one cycle simply spanned
+        it.
         """
-        order = [
-            TrackState.NEW,
-            TrackState.TENTATIVE,
-            TrackState.CONFIRMED,
-            TrackState.STALE,
-            TrackState.LOST,
-        ]
-        return order[min(order.index(current) + 1, order.index(target))]
+        return _DEMOTION_PATH.get(current, target)
 
     def _initiate(self, detection: IncomingDetection, now: datetime) -> None:
         """Start a new track from an unassociated detection."""
