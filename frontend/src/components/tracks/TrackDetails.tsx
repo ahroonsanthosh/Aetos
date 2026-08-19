@@ -27,8 +27,15 @@ export function TrackDetails({ track }: Props) {
     )
   }
 
+  // Both figures come from the backend's own clock. `age` is a difference between two
+  // backend timestamps; staleness is reported by the backend outright.
+  //
+  // It used to be `Date.now() - track.lastSeen`, which subtracts this browser's clock from the
+  // *sensor's* — two machines this interface does not control, and whose drift landed in the
+  // number an operator reads as "last observed". A laptop a minute out of sync showed every
+  // track, however healthy, as a minute stale.
   const age = (track.updatedAt.getTime() - track.firstSeen.getTime()) / 1000
-  const sinceSeen = (Date.now() - track.lastSeen.getTime()) / 1000
+  const sinceSeen = track.secondsSinceDetection
 
   return (
     <aside className="details">
@@ -71,7 +78,11 @@ export function TrackDetails({ track }: Props) {
         <Row label="Confidence" value={`${(track.trackConfidence * 100).toFixed(0)}%`} />
         <Row label="Observations" value={String(track.detectionCount)} />
         <Row label="Missed updates" value={String(track.missedUpdates)} />
-        <Row label="Last observed" value={`${sinceSeen.toFixed(0)} s ago`} />
+        <Row
+          label="Last observed"
+          value={sinceSeen === null ? '—' : `${sinceSeen.toFixed(0)} s ago`}
+          note={sinceSeen === null ? 'not reported' : undefined}
+        />
         <Row label="Coasting" value={track.coasting ? 'Yes — position predicted' : 'No'} />
       </Section>
 

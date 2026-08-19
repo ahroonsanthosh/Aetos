@@ -51,7 +51,7 @@ a single combined pipeline function.
 | `backend/risk/` | Threat scoring with reason codes |
 | `backend/decision/` | Recommendation category only — never execution |
 | `backend/events/` | Append-only durable event store; replay |
-| `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
+| `backend/system_health/` | Watchdog: judges sensor silence, declares the posture, detects a stalled pipeline |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
 | `sensors/` | `SensorAdapter` contract, simulated adapter, testbed radar driver |
@@ -93,12 +93,6 @@ browser itself.
 There is no native PowerShell equivalent yet. If you'd rather not install or use Git Bash, say
 so and one can be added — but treat that as untested until it has actually been run on
 Windows, the same way the Docker path below is flagged.
-
-### Or with Docker, if you would rather not install either
-
-```bash
-docker compose up      # then http://localhost:8000
-```
 
 ### Tests
 

@@ -235,6 +235,19 @@ class TrackMetadata(BaseModel):
     updated by prediction without being seen, and conflating the two would let a coasted
     position look freshly observed."""
 
+    seconds_since_detection: float | None = Field(default=None, ge=0.0)
+    """How long this track has gone without a detection, measured by the pipeline clock at the
+    moment this snapshot was taken.
+
+    Carried rather than left for a reader to derive. `last_seen` is stamped by the *sensor*,
+    so anyone computing `now - last_seen` is subtracting two different clocks and getting the
+    skew between them along with the answer — which is precisely the bug FM-012a fixed inside
+    tracking, and precisely what the operator interface was doing with its own third clock:
+    the browser's. A laptop a minute out of sync showed every track as a minute stale.
+
+    `None` means the snapshot predates this field. Rendered as unknown, never as zero — a
+    missing figure must not read as "seen just now"."""
+
     detection_count: int = Field(default=0, ge=0)
     missed_updates: int = Field(default=0, ge=0)
     """Consecutive cycles with no associated detection. Drives coasting and demotion."""

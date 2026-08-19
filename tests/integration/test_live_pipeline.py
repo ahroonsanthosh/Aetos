@@ -20,7 +20,9 @@ import pytest
 
 from backend.common.clock import SimClock
 from backend.common.config import RunMode
-from backend.main import Pipeline, resolve_sources
+from backend.events.types import EventType
+from backend.main import Pipeline, build_hardware_adapter, resolve_sources
+from backend.system_health.models import Posture, SensorVerdict
 from backend.zones.geometry import load_site_geometry
 from sensors.adapters.uart_fmcw_radar.config import UartLinkConfig
 from sensors.adapters.uart_fmcw_radar.link import LinkError
@@ -315,3 +317,197 @@ def test_the_shipped_hardware_site_is_refused_in_simulation_with_a_scenario() ->
 
     with pytest.raises(ModeRefused):
         resolve_sources(RunMode.SIMULATION, site, "a_benign_transit")
+
+
+# --------------------------------------------------------------------------------------
+# One sensor's failure is not every sensor's failure
+# --------------------------------------------------------------------------------------
+
+
+class _ExplodingLink(ScriptedLink):
+    """A link whose reads raise something the driver does not expect.
+
+    Not a `LinkError` — the driver handles those. This stands in for a genuine defect in a
+    driver, which is the case the pipeline has to survive without taking the site down.
+    """
+
+    def read(self, max_bytes: int) -> bytes:
+        raise RuntimeError("driver defect")
+
+
+def test_one_failing_sensor_does_not_cost_the_others_their_cycle(tmp_path: Path) -> None:
+    """Start-up already tolerates a broken sensor; the running cycle must agree with it.
+
+    Before this, `step()` polled adapters in a bare loop, so one driver raising cost *every*
+    sensor its cycle. The run survived — the task-level guard caught it — but the operator
+    picture stopped advancing on every sensor because one was faulty.
+    """
+    clock = SimClock(START)
+    geometry = load_site_geometry(SITE)
+    pipeline = Pipeline(clock, geometry, tmp_path)
+
+    healthy: list[ScriptedLink] = []
+
+    def factory(config: UartLinkConfig) -> ScriptedLink:
+        link = ScriptedLink(config)
+        healthy.append(link)
+        return link
+
+    try:
+        pipeline.attach_hardware(link_factory=factory)
+        # A second adapter on the same pipeline, whose driver is broken.
+        broken = build_hardware_adapter(
+            clock,
+            geometry.site.sensors[0].model_copy(update={"sensor_id": "radar_broken"}),
+            tmp_path,
+            geometry.site.reference.altitude_m,
+            link_factory=_ExplodingLink,
+        )
+        broken.start()
+        pipeline._attach([broken])  # noqa: SLF001 — attaching a second adapter is the setup
+
+        healthy[0].chunks.append(approaching_target(50))
+
+        assert pipeline.step() == 1, "the healthy sensor's detection was lost to the broken one"
+
+        states = {h.sensor_id: h.state.value for h in pipeline.sensor_health()}
+        assert states["radar_testbed_01"] == "ok"
+        assert states["radar_broken"] == "degraded", (
+            "a driver that raised must not be able to report itself healthy"
+        )
+    finally:
+        pipeline.close()
+
+
+def test_a_sensor_that_recovers_stops_being_reported_as_degraded(tmp_path: Path) -> None:
+    """Otherwise a single transient fault marks a sensor bad for the life of the process."""
+    clock = SimClock(START)
+    geometry = load_site_geometry(SITE)
+    pipeline = Pipeline(clock, geometry, tmp_path)
+
+    class Flaky(ScriptedLink):
+        fail = True
+
+        def read(self, max_bytes: int) -> bytes:
+            if Flaky.fail:
+                raise RuntimeError("driver defect")
+            return super().read(max_bytes)
+
+    links: list[Flaky] = []
+
+    def factory(config: UartLinkConfig) -> Flaky:
+        link = Flaky(config)
+        links.append(link)
+        return link
+
+    try:
+        pipeline.attach_hardware(link_factory=factory)
+        pipeline.step()
+        assert pipeline.sensor_health()[0].state.value == "degraded"
+
+        Flaky.fail = False
+        links[0].chunks.append(approaching_target(50))
+        clock.advance(0.5)
+
+        assert pipeline.step() == 1
+        assert pipeline.sensor_health()[0].state.value == "ok"
+    finally:
+        Flaky.fail = True
+        pipeline.close()
+
+
+# -- the watchdog, over a real cycle ---------------------------------------------------------
+
+
+def test_the_watchdog_tells_a_dead_link_from_a_quiet_sky(live_system) -> None:
+    """FM-010, end to end, and the reason this module exists.
+
+    Two runs of the same length with the same output — no detections — and the watchdog must
+    reach different conclusions, because the *evidence* differs: one sensor is in contact and
+    seeing nothing, the other cannot be reached at all. Anything that reported these the same
+    way would be exactly the green light this system is written against.
+    """
+    pipeline, link, clock = live_system
+    threshold = pipeline.watchdog.policy.threshold_for(pipeline.adapters[0].sensor_type)
+
+    # A quiet sky: frames keep arriving, and every one of them reports zero targets. That is
+    # what this radar does over an empty sky — it does not stop transmitting — which is exactly
+    # why the adapter can be sure it is still in contact while having nothing to report.
+    # Past the startup grace window as well as the silence threshold — the two are separate
+    # numbers and a run shorter than both would prove nothing about either.
+    grace = pipeline.watchdog.policy.startup_grace_s
+    while (clock.now() - START).total_seconds() <= max(threshold, grace) + 1.0:
+        link.chunks.append(frame())
+        pipeline.step()
+        clock.advance(threshold / 4)
+
+    link.chunks.append(frame())
+    pipeline.step()
+
+    quiet = pipeline.watchdog.report()
+    assert [s.verdict for s in quiet.sensors] == [SensorVerdict.QUIET]
+    assert quiet.posture is Posture.NOMINAL, "an empty sky is not a fault"
+
+    # The same silence, with the adapter unplugged underneath it.
+    link.vanish()
+    pipeline.step()
+
+    dead = pipeline.watchdog.report()
+    assert [s.verdict for s in dead.sensors] == [SensorVerdict.OFFLINE]
+    assert dead.posture is Posture.BLIND
+
+
+def test_detections_keep_the_posture_nominal(live_system) -> None:
+    """The converse. A sensor producing data must never drift into a quiet verdict."""
+    pipeline, link, clock = live_system
+
+    for range_m in (90, 80, 70, 60):
+        link.chunks.append(approaching_target(range_m))
+        pipeline.step()
+        clock.advance(0.5)
+
+    report = pipeline.watchdog.report()
+    assert [s.verdict for s in report.sensors] == [SensorVerdict.OK]
+    assert report.posture is Posture.NOMINAL
+
+
+def test_a_pipeline_that_stops_stepping_is_visible_as_stalled(live_system) -> None:
+    """The self-test, against a real pipeline rather than a stub.
+
+    Nothing inside the pipeline can report this: a cycle that is not running executes no code
+    that could raise. The posture ages out on its own because it is evaluated against the clock
+    at the moment somebody asks, which is the only place the check survives.
+    """
+    pipeline, link, clock = live_system
+    link.chunks.append(approaching_target(50))
+    pipeline.step()
+    assert pipeline.watchdog.report().posture is Posture.NOMINAL
+
+    clock.advance(pipeline.watchdog.policy.stall_threshold_s + 1.0)
+
+    assert pipeline.watchdog.report().posture is Posture.STALLED
+
+
+def test_losing_and_regaining_a_sensor_is_recorded_in_the_log(live_system) -> None:
+    """An operator reconstructing the incident afterwards reads the log, not the display."""
+    pipeline, link, clock = live_system
+    link.chunks.append(approaching_target(50))
+    pipeline.step()
+    clock.advance(0.5)
+
+    link.vanish()
+    pipeline.step()
+    clock.advance(0.5)
+
+    # Plugged back in, and past the adapter's reconnect backoff.
+    link.gone = False
+    clock.advance(5.0)
+    link.chunks.append(approaching_target(50))
+    assert pipeline.step() == 1, "the adapter did not reacquire a port that came back"
+
+    recorded = [
+        e.event_type
+        for e in pipeline.events.read_from(1)
+        if e.event_type in {EventType.DEGRADED_MODE_ENTERED, EventType.DEGRADED_MODE_EXITED}
+    ]
+    assert recorded == [EventType.DEGRADED_MODE_ENTERED, EventType.DEGRADED_MODE_EXITED]

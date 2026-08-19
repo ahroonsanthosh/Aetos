@@ -122,6 +122,10 @@ export interface DisplayTrack {
 
   readonly firstSeen: Date
   readonly lastSeen: Date
+  /** Seconds without a detection, as measured by the backend. Null when the backend did not
+   *  report it, and rendered as unknown rather than as zero — a missing figure must never
+   *  read as "seen just now". */
+  readonly secondsSinceDetection: number | null
   readonly updatedAt: Date
   readonly detectionCount: number
   readonly missedUpdates: number
@@ -157,6 +161,7 @@ export function toDisplayTrack(view: TrackView, frame: LocalFrame): DisplayTrack
 
     firstSeen: new Date(view.tracking.first_seen),
     lastSeen: new Date(view.tracking.last_seen),
+    secondsSinceDetection: view.tracking.seconds_since_detection,
     updatedAt: new Date(view.updated_at),
     detectionCount: view.tracking.detection_count,
     missedUpdates: view.tracking.missed_updates,

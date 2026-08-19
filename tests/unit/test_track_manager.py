@@ -437,3 +437,76 @@ def test_timestamps_come_from_the_injected_clock(
     feed(manager, clock, cycles=3, dt=2.0)
 
     assert manager.active_tracks()[0].updated_at == START + timedelta(seconds=4)
+
+
+# --------------------------------------------------------------------------------------
+# Staleness is a duration, not a duration plus the sensor's clock offset
+# --------------------------------------------------------------------------------------
+
+
+def lagging_detection(
+    clock: SimClock, position: list[float], detection_id: str, lag_s: float
+) -> IncomingDetection:
+    """A detection from a sensor whose clock reads `lag_s` behind the pipeline's."""
+    return IncomingDetection(
+        detection_id=detection_id,
+        sensor_id="SIM-RADAR-01",
+        timestamp=clock.now() - timedelta(seconds=lag_s),
+        position_enu=np.array(position),
+        covariance=np.eye(3) * 25.0,
+    )
+
+
+@pytest.mark.parametrize("sensor_lag_s", [0.0, 3.0, 10.0, 25.0])
+def test_a_lagging_sensor_clock_does_not_shorten_the_coast(
+    sensor_lag_s: float, manager: TrackManager, clock: SimClock
+) -> None:
+    """A confirmed track must coast for `coast_seconds` whatever its sensor's clock reads.
+
+    Staleness used to be measured as `now - last_seen`: a pipeline instant minus a *sensor*
+    instant, so the difference carried the skew between them. Ingestion accepts up to 30 s of
+    skew (FM-012), so a sensor lagging 25 s produced confirmed tracks that were retired on
+    their first missed cycle instead of coasting — the object reappeared as a new track with a
+    new identity and a split history, which is the fragmentation `coast_seconds` exists to
+    prevent (FM-022).
+
+    The failure was silent and depended only on how well someone's sensors were synchronised.
+    """
+    for i in range(5):
+        manager.process(
+            [lagging_detection(clock, [i * 20.0, 0.0, 100.0], f"det-{i}", sensor_lag_s)]
+        )
+        clock.advance(1.0)
+
+    assert manager.active_tracks()[0].state is TrackState.CONFIRMED
+
+    manager.process([])  # one missed cycle, well inside the six-second coast budget
+
+    surviving = manager.active_tracks()
+    assert surviving, f"a track from a sensor lagging {sensor_lag_s}s was retired immediately"
+    assert surviving[0].state is TrackState.CONFIRMED
+
+
+def test_the_coast_budget_still_expires_on_its_own_terms(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """The converse, so the fix cannot become "tracks never go stale": real elapsed time must
+    still demote a track that has stopped being supported."""
+    feed(manager, clock, cycles=5)
+
+    clock.advance(manager.config.coast_seconds + 1.0)
+    manager.process([])
+
+    assert manager.active_tracks()[0].state is TrackState.STALE
+
+
+def test_observation_time_is_still_reported_from_the_sensor(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """The fix must not quietly restamp detections with receipt time: when the object was
+    observed remains the sensor's answer, and only staleness moved to the pipeline clock."""
+    observed_at = clock.now() - timedelta(seconds=8.0)
+
+    manager.process([lagging_detection(clock, [0.0, 0.0, 100.0], "det-0", 8.0)])
+
+    assert manager.active_tracks()[0].tracking.last_seen == observed_at

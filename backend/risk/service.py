@@ -194,7 +194,10 @@ class RiskService:
                 track.enu.velocity_up_mps,
             ),
             speed_mps=track.kinematics.speed_mps,
-            altitude_m=track.position.altitude_m,
+            # Height above the site reference, not the published ellipsoidal altitude. Risk
+            # thresholds and zone floors are both site-relative; feeding this the ellipsoidal
+            # figure added the site's own elevation to every track (FM-0210).
+            altitude_m=track.enu.up_m,
             detection_count=track.tracking.detection_count,
             track_age_s=(now - track.tracking.first_seen).total_seconds(),
             coasting=track.tracking.is_coasting,

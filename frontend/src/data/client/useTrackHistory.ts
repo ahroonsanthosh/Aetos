@@ -20,9 +20,22 @@ export interface TrackHistory {
   readonly points: readonly TrackHistoryPoint[]
   readonly loading: boolean
   readonly error: string | null
+  /** True when the server returned only part of this track's route. Carried through so the
+   *  interface can say so: a trail drawn from a truncated history looks exactly like a
+   *  complete one, and an operator reading it as the whole route would be reading it wrong. */
+  readonly truncated: boolean
+  /** How many points the track actually has, truncated or not. */
+  readonly total: number
 }
 
-const EMPTY: TrackHistory = { trackId: null, points: [], loading: false, error: null }
+const EMPTY: TrackHistory = {
+  trackId: null,
+  points: [],
+  loading: false,
+  error: null,
+  truncated: false,
+  total: 0,
+}
 
 /** How often the trail is refetched while a track stays selected, so it keeps growing as new
  *  detections arrive rather than freezing at whatever it looked like the moment it was
@@ -63,6 +76,8 @@ export function useTrackHistory(trackId: string | null, frame: LocalFrame | null
           points: response.points.map((point) => toHistoryPoint(point, localFrame)),
           loading: false,
           error: null,
+          truncated: response.truncated,
+          total: response.total,
         })
       } catch (cause) {
         if (cancelled) return
@@ -75,6 +90,8 @@ export function useTrackHistory(trackId: string | null, frame: LocalFrame | null
           points: [],
           loading: false,
           error: cause instanceof ApiError ? cause.message : `Could not load history: ${cause}`,
+          truncated: false,
+          total: 0,
         })
       }
     }

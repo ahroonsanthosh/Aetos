@@ -177,7 +177,20 @@ class TrackHistoryRepository(ABC):
 
     @abstractmethod
     def for_track(self, track_id: str, limit: int | None = None) -> list[TrackHistoryEntry]:
-        """One track's history in sequence order, oldest first."""
+        """One track's history in sequence order, oldest first.
+
+        `limit` keeps the **most recent** entries, not the first ones. Where a track has been,
+        lately, is the operationally useful half of a long history; returning the oldest N of a
+        fifty-thousand-point history would hand an operator a stale partial route with nothing
+        saying it was partial. The result is still ordered oldest first.
+        """
+
+    @abstractmethod
+    def count_for_track(self, track_id: str) -> int:
+        """How many entries that track actually has, regardless of any limit.
+
+        Exposed so a truncated response can say it was truncated. A short list that looks
+        complete is the failure this whole system is written against."""
 
     @abstractmethod
     def discard_all(self) -> None:
