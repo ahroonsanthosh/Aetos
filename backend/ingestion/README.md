@@ -13,10 +13,19 @@ Every detection passes through these in order, and nothing downstream repeats an
    reached the filter would double-weight one observation and make the estimate falsely
    confident (FM-013). The window is bounded (`DEFAULT_DEDUPE_WINDOW`); a duplicate arriving
    later than that is a different problem from a retransmission.
-2. **Validate.** Bounds and timestamp sanity beyond what the schema enforces, including a
-   clock-skew limit. A rejection is *recorded* as an event with its reason, never dropped
-   silently — a sensor producing bad data is itself a fact worth being able to reconstruct
-   (FM-011).
+2. **Validate.** Bounds and timestamp sanity beyond what the schema enforces: a clock-skew
+   limit, and a check that the reported uncertainty is one a measurement could actually have.
+   A rejection is *recorded* as an event with its reason, never dropped silently — a sensor
+   producing bad data is itself a fact worth being able to reconstruct (FM-011).
+
+   The uncertainty check earns its place. The schema admits `position_uncertainty_m = 0.0`,
+   and zero is not a very precise measurement — it is a sensor reporting a fault. Measurement
+   covariance reaches the filter as `R`, and the association gate solves `S = H P Hᵀ + R`; with
+   `R` zero and a track whose own covariance has not yet been grown by process noise, `S` is
+   singular and the solve raises. That took the whole pipeline down, three modules away from
+   the sensor that caused it. It is also a lie the filter believes: `SensorAdapter`'s contract
+   is explicit that understating uncertainty is worse than reporting none, because nothing
+   downstream can discover it was misled.
 3. **Record.** A `DETECTION_RECEIVED` event carrying the whole detection, appended **before**
    anything acts on it. This is what makes the log the source of truth rather than a summary
    of conclusions (ADR 0006), and it is what `GET /detections` reads.

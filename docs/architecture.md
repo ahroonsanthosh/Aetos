@@ -148,7 +148,7 @@ Per spec §20. Status updated as stages complete.
 | 4 | Map: tracks → visualisation (vertical slice complete) | **done** |
 | 5 | Track history | **done** — projected, served, and shown on the map and history page |
 | 6 | Classification | **done** — weighted evidence pooling, distribution output, reason codes (ADR 0012) |
-| 7 | Risk scoring with reason codes | **done** — nine factors, grouped combination, hysteresis, reason codes (ADR 0013) |
+| 7 | Risk scoring with reason codes | **done** — ten factors, grouped combination, hysteresis, reason codes (ADR 0013) |
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |

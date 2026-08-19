@@ -48,7 +48,9 @@ def pipeline(clock: SimClock, events: SqliteEventStore, geometry) -> IngestionPi
     return IngestionPipeline(clock, events, geometry)
 
 
-def detection(detection_id: str = "det-1", *, timestamp=None, classification=None) -> Detection:
+def detection(
+    detection_id: str = "det-1", *, timestamp=None, classification=None, measurement=None
+) -> Detection:
     site = load_site_geometry("fictional_test_range").site
     return Detection(
         detection_id=detection_id,
@@ -59,7 +61,7 @@ def detection(detection_id: str = "det-1", *, timestamp=None, classification=Non
             longitude=site.reference.longitude,
             altitude_m=120.0,
         ),
-        measurement=Measurement(position_uncertainty_m=15.0),
+        measurement=measurement or Measurement(position_uncertainty_m=15.0),
         quality=Quality(confidence=0.87),
         classification=classification,
     )
@@ -227,3 +229,76 @@ def test_scalar_uncertainty_becomes_an_isotropic_covariance(
     covariance = result.for_tracking[0].covariance
     assert covariance.shape == (3, 3)
     assert covariance[0][0] == pytest.approx(15.0**2)
+
+
+# --------------------------------------------------------------------------------------
+# Uncertainty that no measurement could have
+# --------------------------------------------------------------------------------------
+
+
+def test_zero_position_uncertainty_is_rejected_with_a_reason(
+    pipeline: IngestionPipeline, events: SqliteEventStore
+) -> None:
+    """A sensor claiming perfect precision is reporting a fault, not a measurement.
+
+    Regression: the schema admits `position_uncertainty_m = 0.0`, and `_reduce` built the
+    covariance inline rather than through `isotropic_covariance`, which refuses it. The zero
+    matrix then reached the filter as `R`, and the association gate's solve for
+    `S = H P Hᵀ + R` raised `LinAlgError` on any cycle where the track's own covariance had not
+    yet been grown by process noise — a track initiated this cycle, or any cycle where no time
+    passed, which is every replayed cycle on a paused clock. The whole pipeline went down with
+    it, three modules away from the sensor that caused it.
+    """
+    result = pipeline.ingest(
+        [detection("det-bad", measurement=Measurement(position_uncertainty_m=0.0))]
+    )
+
+    assert result.accepted == 0
+    assert result.rejected == 1
+    assert result.for_tracking == []
+
+    rejections = [
+        event for event in events.read_from(1) if event.event_type is EventType.DETECTION_REJECTED
+    ]
+    assert len(rejections) == 1
+    assert rejections[0].payload["reason"] == "non_positive_position_uncertainty"
+    assert rejections[0].payload["sensor_id"] == "radar_north"
+
+
+def test_a_covariance_singular_on_one_axis_is_rejected(pipeline: IngestionPipeline) -> None:
+    """Shape, symmetry and non-negativity all pass on a zero-variance axis, and it is still
+    singular — so the schema's checks cannot be the last word on it."""
+    flat = Measurement(
+        position_uncertainty_m=15.0,
+        position_covariance_enu=[[225.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 225.0]],
+    )
+
+    result = pipeline.ingest([detection("det-flat", measurement=flat)])
+
+    assert result.rejected == 1
+    assert result.for_tracking == []
+
+
+def test_an_honest_uncertainty_is_still_accepted(pipeline: IngestionPipeline) -> None:
+    """The guard must reject degenerate uncertainty without rejecting imprecise sensors — a
+    wide error bar is exactly what an honest one reports."""
+    vague = Measurement(position_uncertainty_m=250.0)
+
+    result = pipeline.ingest([detection("det-vague", measurement=vague)])
+
+    assert result.accepted == 1
+    assert result.rejected == 0
+
+
+def test_a_bad_sensor_does_not_stop_the_good_ones(pipeline: IngestionPipeline) -> None:
+    """One misconfigured sensor must cost its own detections and nothing else."""
+    result = pipeline.ingest(
+        [
+            detection("det-bad", measurement=Measurement(position_uncertainty_m=0.0)),
+            detection("det-good"),
+        ]
+    )
+
+    assert result.accepted == 1
+    assert result.rejected == 1
+    assert [incoming.detection_id for incoming in result.for_tracking] == ["det-good"]

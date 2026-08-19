@@ -134,6 +134,43 @@ class IngestionPipeline:
         if -skew > self._max_skew:
             return "timestamp_too_old"
 
+        return self._validate_uncertainty(detection)
+
+    def _validate_uncertainty(self, detection: Detection) -> str | None:
+        """Reject a detection claiming precision no measurement has.
+
+        The schema admits zero uncertainty — `ge=0.0` — and zero is not a very precise
+        measurement, it is a sensor reporting a fault. Two things go wrong with it, and the
+        second is worse than the first.
+
+        It is **degenerate**. Measurement covariance reaches the filter as `R`, and the
+        association gate solves `S = H P Hᵀ + R` for the Mahalanobis distance. With `R` zero
+        and a track whose own positional covariance has not yet been grown by process noise —
+        a track initiated this cycle, or any cycle where no time has passed, which is every
+        replayed cycle driven by a paused `SimClock` — `S` is singular and the solve raises.
+        That is an unhandled `LinAlgError` out of the association gate, taking the whole
+        pipeline with it.
+
+        It is also **a lie the filter believes**. `SensorAdapter`'s contract is explicit that
+        understating uncertainty is worse than reporting none, because the filter has no way to
+        discover it was misled. A zero-variance measurement is weighted as infinitely
+        trustworthy against every other observation of the same object.
+
+        `isotropic_covariance` already refuses this, but `_reduce` builds the matrix inline and
+        never reaches that guard. Rejecting here rather than tightening the guard keeps the
+        failure legible: it becomes a `DETECTION_REJECTED` event naming the sensor and the
+        reason, which is what FM-011 asks for, instead of an exception three modules away from
+        the sensor that caused it.
+        """
+        if detection.measurement.position_uncertainty_m <= 0.0:
+            return "non_positive_position_uncertainty"
+
+        covariance = detection.measurement.position_covariance_enu
+        if covariance is not None and any(covariance[axis][axis] <= 0.0 for axis in range(3)):
+            # The schema checks shape, symmetry and non-negativity; a zero variance on any one
+            # axis passes all three and is still singular.
+            return "degenerate_position_covariance"
+
         return None
 
     def _reject(self, detection: Detection, reason: str) -> None:
