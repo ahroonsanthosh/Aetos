@@ -41,7 +41,18 @@ class TrackEvidence:
 
     track_id: str
     speed_mps: float
+
     altitude_m: float
+    """Height above the **site reference plane**, in metres — not the ellipsoidal altitude the
+    `Track` publishes.
+
+    The profiles in `config/classification/profiles.json` are site-relative and say so plainly:
+    the `vehicle` band runs from -30 m to +40 m, which is only meaningful as height above the
+    ground the vehicle is standing on. Feeding this the ellipsoidal figure added the site's own
+    elevation to every track, so the same drone hovering thirty metres up classified as
+    `small_uas` at a sea-level site and `unknown_uas` at one a kilometre up — and at a few
+    hundred metres it leaned `bird`, which then *discounted* its risk score (FM-0211)."""
+
     vertical_rate_mps: float
     detection_count: int
     coasting: bool

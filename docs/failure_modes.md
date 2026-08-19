@@ -235,6 +235,36 @@ reports ellipsoidal altitude, which is correct for display and for FM-004.
 mapping itself — because the factor is correct in isolation either way, and it was the value
 flowing into it that carried the wrong datum.
 
+### FM-0211 — Classification read an ellipsoidal altitude against site-relative bands
+**Status:** Closed · **Severity:** was High at any elevated site — systematic misclassification
+
+**What it was.** The same mistake as FM-0210, in the other assessment module and found by
+looking for it. `ClassificationService` passed `track.position.altitude_m` — ellipsoidal — into
+`TrackEvidence.altitude_m`, which is matched against the bands in
+`config/classification/profiles.json`.
+
+Those bands are unambiguously site-relative, and the `vehicle` profile says so in the data:
+`absolute_min: -30.0`, `typical_max: 15.0`, `absolute_max: 40.0`. A band straddling zero is only
+meaningful as height above the ground the vehicle is standing on.
+
+So the site's elevation was added to every track before classification. The same drone hovering
+thirty metres up classified as `small_uas` at a sea-level site, leaned `bird` at two hundred
+metres, and became `unknown_uas` with full confidence at a kilometre.
+
+**Why it is worse than a wrong label.** A benign classification *discounts* the risk score
+(`mitigation_for`). At a few hundred metres of site elevation the error pushed real contacts
+toward `bird`, which then made the system more willing to dismiss them. The two defects
+compounded in the dangerous direction.
+
+**Fix.** `TrackEvidence.altitude_m` is height above the site reference, from `track.enu.up_m`,
+documented on the field.
+
+**What makes it stay closed.** `tests/unit/test_vertical_datum.py` covers the whole class rather
+than the two instances: it asserts that the same approach scores identically and produces the
+same reason codes at sites from sea level to 1 500 m, that the same object classifies
+identically at every elevation, and — pinned by name, because a property test needs a site to
+fail at — that neither assessment module reads the ellipsoidal field.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 
