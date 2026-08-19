@@ -14,8 +14,12 @@
   color: var(--text-primary);
 }
 
-.health__metric-value.is-warning { color: var(--status-warning); }
-.health__metric-value.is-nominal { color: var(--status-nominal); }
+.health__metric-value.is-warning {
+  color: var(--status-warning);
+}
+.health__metric-value.is-nominal {
+  color: var(--status-nominal);
+}
 
 .health__metric-note {
   font-size: var(--text-2xs);
@@ -31,7 +35,9 @@
   border-bottom: 1px solid var(--line-subtle);
 }
 
-.health__row:last-child { border-bottom: none; }
+.health__row:last-child {
+  border-bottom: none;
+}
 
 .health__name {
   font-size: var(--text-sm);
@@ -45,13 +51,70 @@
   letter-spacing: var(--tracking-wide);
 }
 
-.health__state--ok            { color: var(--status-nominal); }
-.health__state--degraded      { color: var(--status-warning); }
-.health__state--unavailable   { color: var(--status-critical); }
-.health__state--not_built     { color: var(--status-inert); }
-.health__state--not_connected { color: var(--status-inert); }
+.health__state--ok {
+  color: var(--status-nominal);
+}
+.health__state--degraded {
+  color: var(--status-warning);
+}
+.health__state--unavailable {
+  color: var(--status-critical);
+}
+.health__state--not_built {
+  color: var(--status-inert);
+}
+.health__state--not_connected {
+  color: var(--status-inert);
+}
 
 .health__detail {
   font-size: var(--text-sm);
   color: var(--text-muted);
+}
+
+/* The watchdog banner.
+ *
+ * Above the component list rather than in it, because it is the one line an operator reads
+ * before deciding whether to trust anything below it. Colour follows the component states so
+ * the two never disagree about what "degraded" looks like. */
+.health__posture {
+  display: grid;
+  grid-template-columns: 180px 130px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--line-subtle);
+  border-left-width: 3px;
+}
+
+.health__posture-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+}
+
+.health__posture--ok {
+  border-left-color: var(--status-nominal);
+}
+.health__posture--ok .health__posture-label {
+  color: var(--status-nominal);
+}
+.health__posture--degraded {
+  border-left-color: var(--status-warning);
+}
+.health__posture--degraded .health__posture-label {
+  color: var(--status-warning);
+}
+.health__posture--unavailable {
+  border-left-color: var(--status-critical);
+}
+.health__posture--unavailable .health__posture-label {
+  color: var(--status-critical);
+}
+.health__posture--not_connected {
+  border-left-color: var(--status-inert);
+}
+.health__posture--not_connected .health__posture-label {
+  color: var(--status-inert);
 }

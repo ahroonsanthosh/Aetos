@@ -300,17 +300,24 @@ def test_mode_reports_simulation_as_a_backend_fact(client: TestClient) -> None:
 def test_health_reports_unbuilt_modules_as_unbuilt(client: TestClient) -> None:
     """A green light nothing computes is worse than no light.
 
-    Fusion and the health watchdog do not exist at all. Classification, risk and alerting do,
-    but this fixture builds an API over a bare projection with no pipeline behind it, so from
-    this endpoint's point of view they are equally absent — and it must say so rather than
-    reporting a module it has no handle to as healthy.
+    Fusion does not exist at all. Classification, risk, alerting and the watchdog do, but this
+    fixture builds an API over a bare projection with no pipeline behind it, so from this
+    endpoint's point of view they are equally absent — and it must say so rather than reporting
+    a module it has no handle to as healthy.
+
+    The watchdog reports `not_connected` rather than `not_built`, and the difference matters:
+    "nobody wrote it" and "nobody attached it" send an operator to different places.
     """
     body = client.get(f"{API_PREFIX}/system/health").json()
     components = {c["component"]: c for c in body["components"]}
 
-    for absent in ("fusion", "classification", "risk", "alerts", "system_health"):
+    for absent in ("fusion", "classification", "risk", "alerts"):
         assert components[absent]["state"] == "not_built"
         assert components[absent]["detail"]
+
+    assert components["system_health"]["state"] == "not_connected"
+    assert "FM-010" in components["system_health"]["detail"]
+    assert body["posture"] is None, "no watchdog attached means no posture may be claimed"
 
 
 def test_health_reports_attached_modules_as_running(
@@ -351,7 +358,6 @@ def test_health_reports_attached_modules_as_running(
 
     # Still absent, and must not have been swept along by the same change.
     assert components["fusion"]["state"] == "not_built"
-    assert components["system_health"]["state"] == "not_built"
 
 
 class _SituationStub:

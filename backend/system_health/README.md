@@ -1,30 +1,88 @@
-# `backend/system_health` — not built
+# `backend/system_health` — the watchdog
 
-Empty on purpose, like `backend/fusion`. The one file is `__init__.py`.
+Decides, from what the sensors report about themselves, whether the system is healthy, degraded,
+or lying to its operator. Closes FM-010.
 
-## What would live here
+## The distinction this module exists to hold
 
-The watchdog: deciding, from what sensors report about themselves, whether the system is healthy,
-degraded, or lying to its operator. Rate analysis over a window, a degraded-mode controller, and
-the self-test.
+**Loss of contact with a sensor is a fact. Absence of detections is not.**
 
-## What exists instead, and why it is not this
+A driver that cannot open its port is definitely broken. A radar that has reported nothing for
+ninety seconds may be broken, or may be pointed at an empty sky, and no amount of looking at the
+sensor will tell you which. So the verdict vocabulary keeps the two apart:
 
-`GET /system/health` reports a `sensors` row built from each adapter's own `health()`, polled per
-request (ADR 0018). It is honest and it is useful — it will tell you a port could not be opened
-or that a byte stream is not framing — but it is **not** a watchdog:
+| Verdict | Claim |
+| --- | --- |
+| `OK` | In contact and producing detections within the interval this site expects. |
+| `QUIET` | In contact, healthy by its own account, silent past the policy window. **Not a fault claim.** |
+| `DEGRADED` | Running with reduced capability the adapter itself named, or failing its polls. |
+| `OFFLINE` | Not observing at all. Contact is lost. A definite fault. |
+| `NOT_STARTED` | Attached, never started. Not a fault; nothing has been asked of it. |
 
-- No rate analysis. It cannot tell a sensor that has gone quiet from a sky that is empty, which
-  is the whole of FM-010, because that judgement needs a window and a site-level policy.
-- No degraded-mode controller. Nothing changes behaviour when the picture thins.
-- No self-test. Nothing exercises the pipeline to prove it still works when nothing is flying.
+Collapsing `QUIET` into a fault would cry wolf on every calm night, and an operator who learns
+to ignore the row has disabled the mechanism. Collapsing it into `OK` would be the green light
+this system is written against. Both mistakes end the same way, which is why the words stay
+separate all the way to the display.
 
-## Why the distinction is kept sharp
+A `QUIET` verdict carries the number of seconds and the threshold it was compared against, so it
+can be argued with without opening the policy file.
 
-Adapters report facts about themselves and make no claim about what silence means; the health
-endpoint makes a blunt, pessimistic judgement about those facts. A real watchdog would make a
-*policy* judgement — thresholds that differ between a 10 Hz imaging sensor and a 1 Hz
-radio-frequency one — and that policy belongs here, not scattered across adapters.
+## Posture
 
-Calling the current row a watchdog would be the failure this system is written against: a green
-light nothing computes.
+Derived across all sources, and reported as a banner rather than a row because it is the one
+line an operator reads before deciding whether to trust anything below it.
+
+- `NOMINAL` — every source in contact. Includes the case where all of them are quiet: a calm
+  sky is not a fault.
+- `DEGRADED` — at least one source faulted, at least one still observing. Not an average; four
+  radars and one dead cable is degraded, because the question is never "are most of mine fine".
+- `BLIND` — nothing is observing, or nothing is attached. The display is memory, and an empty
+  one means nothing at all.
+- `STALLED` — see below.
+
+Transitions are appended to the log as `SENSOR_STATUS_CHANGED`, `DEGRADED_MODE_ENTERED` and
+`DEGRADED_MODE_EXITED`, on transition only. A log that recorded a healthy radar twice a second
+would bury the moment it stopped. Both directions of the posture change are recorded: a recovery
+nobody logged is indistinguishable from one that never happened.
+
+## The self-test
+
+Every component in this system reports on itself, and a component that has stopped running
+reports nothing — which renders identically to one with nothing to say. The watchdog timestamps
+each pass; `report()` ages that timestamp against the clock at the moment somebody asks. A
+pipeline that has stopped stepping therefore surfaces as `STALLED` to the API even though
+nothing inside the pipeline could possibly say so.
+
+It works precisely because it is evaluated *outside* the thing it is testing. `report()` appends
+nothing and mutates nothing, which is what makes it safe on the request path — and it is also
+why nothing reachable from the API may cause an assessment: a request that could trigger one
+would destroy the endpoint's ability to tell a system that is stepping from one that is only
+answering.
+
+`stall_threshold_s` must exceed the pipeline tick, or the system would declare itself stalled on
+every healthy cycle. `SystemHealthPolicy.validate_against_tick` is checked at startup, where
+both numbers are known; the policy file cannot see the tick and so cannot check it alone.
+
+## What this module deliberately does not do
+
+**Change behaviour.** Degraded mode here is a *declaration*: recorded in the log, shown on the
+display, and nothing else. No threshold moves, no track is scored differently. Silently altering
+the assessment pipeline when the picture thins would mean an operator comparing two incidents
+was comparing two different systems.
+
+## Layering
+
+Adapters report facts about themselves and make no claim about what silence means. `Pipeline`
+gathers those reports and overrides an adapter that raised on its last poll — a driver that
+throws and then claims OK is describing an intention. The watchdog judges what arrives, against
+a window and a site policy neither of the other two has. `GET /system/health` reports the
+judgement without restating it: the posture appears once, on the response, never duplicated into
+the component row, because two representations of one fact are free to disagree.
+
+## Layout
+
+| File | |
+| --- | --- |
+| `models.py` | Verdicts, posture, and the assessment records. The vocabulary and its limits. |
+| `policy.py` | Thresholds, loaded from `config/system_health/policy.json`. |
+| `watchdog.py` | The watchdog itself. |

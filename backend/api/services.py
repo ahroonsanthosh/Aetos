@@ -33,6 +33,7 @@ from backend.database.repositories import (
 )
 from backend.events.store import EventStore
 from backend.risk.correlation import SituationAssessment
+from backend.system_health.models import HealthAssessment
 from sensors.adapters.interface import SensorHealth
 
 
@@ -132,6 +133,14 @@ class ApiServices:
     sensor_health: SensorHealthSource | None = None
     """Where `GET /system/health` reads per-sensor state from. None when nothing is attached."""
 
+    watchdog: WatchdogSource | None = None
+    """The system-health watchdog, if one is stepping with the pipeline.
+
+    Optional on the same terms as the rest: an API built over a bare projection has no cycle
+    behind it and therefore nothing that could be watching. Absent is reported as *not running*
+    rather than as healthy — an unwatched system must never render as a watched one.
+    """
+
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
@@ -150,6 +159,18 @@ class SensorHealthSource(Protocol):
     """
 
     def sensor_health(self) -> list[SensorHealth]: ...
+
+
+class WatchdogSource(Protocol):
+    """Anything that can report the system's current posture — in practice `Watchdog`.
+
+    Only the read side is exposed. Nothing reachable from the API may cause an assessment: the
+    posture is a consequence of the cycle running, and letting a request trigger one would mean
+    the health endpoint could not distinguish a system that is stepping from one that is only
+    answering.
+    """
+
+    def report(self) -> HealthAssessment: ...
 
 
 class AlertSource(Protocol):

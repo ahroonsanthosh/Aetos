@@ -65,6 +65,7 @@ from backend.events.store import SqliteEventStore
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
+from backend.system_health import Watchdog, load_system_health_policy
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from backend.zones.site import SensorPlacement, Site
@@ -146,6 +147,13 @@ class Pipeline:
             self.events,
         )
         self.alerting = AlertService(load_alert_policy(), self.events)
+        self.watchdog = Watchdog(clock, load_system_health_policy(), self.events)
+        """Judges what the adapters report, over a window they do not have (FM-010).
+
+        Constructed here rather than in the API so that it is stepped by the cycle. A watchdog
+        driven from the request path would only notice a dead sensor while somebody was
+        looking, which is the one time they would already know.
+        """
 
         # Alerts outlive the process that raised them. Rebuilding from the log before the
         # first cycle is what makes that true — without it a restart discharges every open
@@ -348,6 +356,11 @@ class Pipeline:
         # way (ADR 0015).
         self.alerting.review_cycle(assessed, now)
 
+        # After everything that could report a fault, and before the projection catches up, so
+        # any status event this pass appends is visible to the API in the same cycle it was
+        # decided rather than one later.
+        self.watchdog.assess(self.sensor_health())
+
         # Catch the projection up after tracking, never before: the projection reads the log,
         # and reading it before this cycle's events are appended would leave the API serving a
         # picture one cycle stale for no reason.
@@ -441,9 +454,7 @@ def build_hardware_adapter(
             boresight_deg=placement.boresight_deg,
             tilt_deg=link.tilt_deg,
         ),
-        gate=DetectionGateConfig(
-            min_range_m=link.min_range_m, max_range_m=link.max_range_m
-        ),
+        gate=DetectionGateConfig(min_range_m=link.min_range_m, max_range_m=link.max_range_m),
         raw_log_path=(data_dir / link.raw_log_path) if link.raw_log_path else None,
     )
     return UartFmcwRadarAdapter(
@@ -549,9 +560,7 @@ class ModeRefused(RuntimeError):
     """
 
 
-def resolve_sources(
-    mode: RunMode, site: Site, scenario: str | None
-) -> tuple[bool, str | None]:
+def resolve_sources(mode: RunMode, site: Site, scenario: str | None) -> tuple[bool, str | None]:
     """Which adapter families a run mode wants, and the refusals if it cannot have them.
 
     Returns `(attach_hardware, scenario_to_run)`. Every refusal below is a state that would
@@ -862,6 +871,11 @@ def build_application(
 
     pipeline = Pipeline(clock, geometry, resolved)
     pipeline.deployment_lock = lock
+
+    # Checked here rather than at load, because it is the one policy value that is only wrong
+    # in combination with something the policy file cannot see. A stall threshold below the
+    # tick would make the system declare itself stalled on every healthy cycle.
+    pipeline.watchdog.policy.validate_against_tick(tick_s)
     if attach_hardware:
         pipeline.attach_hardware()
         _report_hardware_state(pipeline, tick_s)
@@ -889,6 +903,7 @@ def build_application(
         run_mode=mode,
         live_adapter_count=pipeline.live_adapter_count,
         sensor_health=pipeline,
+        watchdog=pipeline.watchdog,
     )
 
     app = create_app(services)

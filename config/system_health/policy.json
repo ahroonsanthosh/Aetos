@@ -1,0 +1,17 @@
+{
+  "notes": "Thresholds decide when silence is worth reporting, never what it means. A QUIET verdict is a statement about the data, not a fault claim: an empty sky produces one. Raise a threshold if operators start ignoring the row; lower it if a dead sensor went unnoticed. stall_threshold_s must stay well above the pipeline tick (default 0.5s).",
+  "default_silence_threshold_s": 60.0,
+  "silence_threshold_s": {
+    "simulated_radar": 20.0,
+    "simulated_eo_ir": 20.0,
+    "simulated_rf": 60.0,
+    "simulated_acoustic": 60.0,
+    "radar": 30.0,
+    "eo_ir": 20.0,
+    "rf": 120.0,
+    "acoustic": 120.0
+  },
+  "startup_grace_s": 30.0,
+  "stall_threshold_s": 10.0,
+  "assess_simulated_sensors": true
+}

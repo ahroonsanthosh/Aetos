@@ -79,15 +79,39 @@ the adapter's documented obligation.
 ## Sensor and input failures
 
 ### FM-010 — Sensor goes silent
-**Status:** Open — target of build stage 12
+**Status:** Closed — `backend/system_health`
 
 A sensor stops producing detections. Tracks that depended on it coast, then go STALE, then
 LOST. The hazard is that the system keeps rendering confident-looking tracks on data that no
-longer exists.
+longer exists — and, worse, that an empty map is read as a clear sky.
 
-**Intended handling:** watchdog detects sensor silence past a configured threshold; sensor
-health is marked degraded; if sensor count or aggregate confidence drops below the usable
-threshold, degraded mode activates and is stated visibly in the UI.
+**Handling.** The watchdog runs as a cycle stage, holding the window and the site policy that
+no adapter can hold for itself, and it draws a distinction the rest of the system is not
+permitted to blur:
+
+- **Loss of contact is definite.** A source reporting OFFLINE, or one whose poll raised, is
+  faulted. The posture becomes DEGRADED with any source out and BLIND with all of them out,
+  and both are recorded as `DEGRADED_MODE_ENTERED` and shown as a banner above the component
+  list.
+- **Absence of detections is not.** A source in contact and silent past this site's threshold
+  is reported QUIET, carrying the seconds and the threshold that produced the verdict — never
+  as a fault, because an empty sky produces identical evidence. The system states the fact and
+  leaves the conclusion to the operator.
+
+Thresholds are per sensor type in `config/system_health/policy.json`, because the right window
+differs by an order of magnitude between an imaging sensor and a radio-frequency one.
+
+**The stall.** Every component here reports on itself, and a component that has stopped running
+reports nothing at all — which renders identically to one with nothing to say. The watchdog
+timestamps each pass and `report()` ages it against the clock at the moment somebody asks, so a
+pipeline that has stopped stepping shows as STALLED even though nothing inside it is in any
+position to notice. This is the self-test, and it works only because it is evaluated outside
+the thing it tests.
+
+**What degraded mode deliberately does not do:** change behaviour. No threshold moves and no
+track is treated differently. Silently altering the assessment pipeline when the picture thins
+would mean an operator comparing two incidents was comparing two different systems. The
+declaration is the product.
 
 ### FM-011 — Malformed detection data
 **Status:** Open — target of build stage 12

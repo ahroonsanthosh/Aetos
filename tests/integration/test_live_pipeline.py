@@ -20,7 +20,9 @@ import pytest
 
 from backend.common.clock import SimClock
 from backend.common.config import RunMode
+from backend.events.types import EventType
 from backend.main import Pipeline, build_hardware_adapter, resolve_sources
+from backend.system_health.models import Posture, SensorVerdict
 from backend.zones.geometry import load_site_geometry
 from sensors.adapters.uart_fmcw_radar.config import UartLinkConfig
 from sensors.adapters.uart_fmcw_radar.link import LinkError
@@ -316,6 +318,7 @@ def test_the_shipped_hardware_site_is_refused_in_simulation_with_a_scenario() ->
     with pytest.raises(ModeRefused):
         resolve_sources(RunMode.SIMULATION, site, "a_benign_transit")
 
+
 # --------------------------------------------------------------------------------------
 # One sensor's failure is not every sensor's failure
 # --------------------------------------------------------------------------------------
@@ -411,3 +414,100 @@ def test_a_sensor_that_recovers_stops_being_reported_as_degraded(tmp_path: Path)
     finally:
         Flaky.fail = True
         pipeline.close()
+
+
+# -- the watchdog, over a real cycle ---------------------------------------------------------
+
+
+def test_the_watchdog_tells_a_dead_link_from_a_quiet_sky(live_system) -> None:
+    """FM-010, end to end, and the reason this module exists.
+
+    Two runs of the same length with the same output — no detections — and the watchdog must
+    reach different conclusions, because the *evidence* differs: one sensor is in contact and
+    seeing nothing, the other cannot be reached at all. Anything that reported these the same
+    way would be exactly the green light this system is written against.
+    """
+    pipeline, link, clock = live_system
+    threshold = pipeline.watchdog.policy.threshold_for(pipeline.adapters[0].sensor_type)
+
+    # A quiet sky: frames keep arriving, and every one of them reports zero targets. That is
+    # what this radar does over an empty sky — it does not stop transmitting — which is exactly
+    # why the adapter can be sure it is still in contact while having nothing to report.
+    # Past the startup grace window as well as the silence threshold — the two are separate
+    # numbers and a run shorter than both would prove nothing about either.
+    grace = pipeline.watchdog.policy.startup_grace_s
+    while (clock.now() - START).total_seconds() <= max(threshold, grace) + 1.0:
+        link.chunks.append(frame())
+        pipeline.step()
+        clock.advance(threshold / 4)
+
+    link.chunks.append(frame())
+    pipeline.step()
+
+    quiet = pipeline.watchdog.report()
+    assert [s.verdict for s in quiet.sensors] == [SensorVerdict.QUIET]
+    assert quiet.posture is Posture.NOMINAL, "an empty sky is not a fault"
+
+    # The same silence, with the adapter unplugged underneath it.
+    link.vanish()
+    pipeline.step()
+
+    dead = pipeline.watchdog.report()
+    assert [s.verdict for s in dead.sensors] == [SensorVerdict.OFFLINE]
+    assert dead.posture is Posture.BLIND
+
+
+def test_detections_keep_the_posture_nominal(live_system) -> None:
+    """The converse. A sensor producing data must never drift into a quiet verdict."""
+    pipeline, link, clock = live_system
+
+    for range_m in (90, 80, 70, 60):
+        link.chunks.append(approaching_target(range_m))
+        pipeline.step()
+        clock.advance(0.5)
+
+    report = pipeline.watchdog.report()
+    assert [s.verdict for s in report.sensors] == [SensorVerdict.OK]
+    assert report.posture is Posture.NOMINAL
+
+
+def test_a_pipeline_that_stops_stepping_is_visible_as_stalled(live_system) -> None:
+    """The self-test, against a real pipeline rather than a stub.
+
+    Nothing inside the pipeline can report this: a cycle that is not running executes no code
+    that could raise. The posture ages out on its own because it is evaluated against the clock
+    at the moment somebody asks, which is the only place the check survives.
+    """
+    pipeline, link, clock = live_system
+    link.chunks.append(approaching_target(50))
+    pipeline.step()
+    assert pipeline.watchdog.report().posture is Posture.NOMINAL
+
+    clock.advance(pipeline.watchdog.policy.stall_threshold_s + 1.0)
+
+    assert pipeline.watchdog.report().posture is Posture.STALLED
+
+
+def test_losing_and_regaining_a_sensor_is_recorded_in_the_log(live_system) -> None:
+    """An operator reconstructing the incident afterwards reads the log, not the display."""
+    pipeline, link, clock = live_system
+    link.chunks.append(approaching_target(50))
+    pipeline.step()
+    clock.advance(0.5)
+
+    link.vanish()
+    pipeline.step()
+    clock.advance(0.5)
+
+    # Plugged back in, and past the adapter's reconnect backoff.
+    link.gone = False
+    clock.advance(5.0)
+    link.chunks.append(approaching_target(50))
+    assert pipeline.step() == 1, "the adapter did not reacquire a port that came back"
+
+    recorded = [
+        e.event_type
+        for e in pipeline.events.read_from(1)
+        if e.event_type in {EventType.DEGRADED_MODE_ENTERED, EventType.DEGRADED_MODE_EXITED}
+    ]
+    assert recorded == [EventType.DEGRADED_MODE_ENTERED, EventType.DEGRADED_MODE_EXITED]

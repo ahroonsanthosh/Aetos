@@ -51,7 +51,7 @@ a single combined pipeline function.
 | `backend/risk/` | Threat scoring with reason codes |
 | `backend/decision/` | Recommendation category only — never execution |
 | `backend/events/` | Append-only durable event store; replay |
-| `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
+| `backend/system_health/` | Watchdog: judges sensor silence, declares the posture, detects a stalled pipeline |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
 | `sensors/` | `SensorAdapter` contract, simulated adapter, testbed radar driver |
