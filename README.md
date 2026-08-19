@@ -140,3 +140,8 @@ laptop.
 
 Under active construction. See `docs/architecture.md` for the current state of each module
 and `docs/adr/` for why things are built the way they are.
+
+**New to this repository?** [`docs/codebase_context.md`](docs/codebase_context.md) is the
+orientation document: what is genuinely built versus aspirational, the load-bearing decisions
+and what they protect against, the risk grading design, how to integrate the testbed radar, and
+where the highest-value gaps are.

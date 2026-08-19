@@ -83,7 +83,13 @@ class TrackRisk:
     track_confidence: float
 
     contributing_sensor_count: int = 1
-    """How many distinct sensors have contributed a detection to this track.
+    """How many distinct sensors have contributed a detection to this track *at any point*.
+
+    Cumulative, not simultaneous: `TrackMetadata.contributing_sensors` is a set that grows and
+    never shrinks, so this counts sensors that have each observed the object over the track's
+    life, not sensors agreeing on this cycle. That is the honest reading of the number, and it
+    is still the corroboration that matters — a radar multipath artefact does not also appear to
+    an RF sensor a minute later.
 
     Defaults to 1 — the assumption that costs nothing, since a track exists only because
     something detected it, and one sensor earns no corroboration.
@@ -548,6 +554,11 @@ class SensorCorroborationFactor(EscalationFactor):
     Deliberately counts *distinct sensors*, not detections. A hundred returns from one radar is
     persistence, which `PersistenceFactor` already scores; two returns from two radars is
     corroboration, and conflating them would let a single chatty sensor impersonate agreement.
+
+    The count is cumulative over the track's life rather than a snapshot of which sensors are
+    holding it this cycle — see `TrackRisk.contributing_sensor_count`. The wording it emits says
+    so, because "corroborated by 3 sensors" and "3 sensors saw it at some point" are different
+    claims and an operator is entitled to the one that is true.
     """
 
     @property
@@ -566,7 +577,7 @@ class SensorCorroborationFactor(EscalationFactor):
         activation = min(1.0, (count - 1) / (full_at - 1))
         return self.contribution(
             activation,
-            f"Corroborated by {count} independent sensors.",
+            f"Seen by {count} independent sensors over this track's life.",
         )
 
 
