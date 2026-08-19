@@ -18,6 +18,7 @@ from backend.alerting.policy import load_alert_policy
 from backend.alerting.service import AlertService
 from backend.api.app import API_PREFIX, create_app
 from backend.api.identity import LocalOperatorIdentityProvider
+from backend.api.rest import MAX_HISTORY_POINTS
 from backend.api.services import ApiServices
 from backend.common.clock import SimClock
 from backend.common.config import RunMode
@@ -619,3 +620,46 @@ def test_health_warns_when_no_authentication_is_configured(client: TestClient) -
 
     assert posture["state"] == "not_connected"
     assert "NO authentication" in posture["detail"]
+
+
+def test_track_history_is_bounded_by_default(client: TestClient) -> None:
+    """The ceiling used to apply only when a caller volunteered a limit, so the default was
+    the whole of a permanently retained history (FM-022 keeps it forever). A protective bound
+    nobody is obliged to ask for is not a bound."""
+    track_id = client.get(f"{API_PREFIX}/tracks").json()["tracks"][0]["track_id"]
+
+    body = client.get(f"{API_PREFIX}/tracks/{track_id}/history").json()
+
+    assert body["count"] <= MAX_HISTORY_POINTS
+    assert body["total"] >= body["count"]
+    assert body["truncated"] is (body["total"] > body["count"])
+
+
+def test_a_truncated_history_says_so_and_keeps_the_recent_end(client: TestClient) -> None:
+    """Two failures in one: a short list that looked complete, and a route truncated from the
+    wrong end.
+
+    `ORDER BY seq LIMIT n` returned the *oldest* n entries, so an operator asking where a
+    track has been got the beginning of its route with nothing indicating the rest existed.
+    Where it has been lately is the operationally useful half.
+    """
+    track_id = client.get(f"{API_PREFIX}/tracks").json()["tracks"][0]["track_id"]
+    full = client.get(f"{API_PREFIX}/tracks/{track_id}/history").json()
+    assert full["count"] >= 3, "need a track with some history for this to mean anything"
+
+    limited = client.get(f"{API_PREFIX}/tracks/{track_id}/history?limit=2").json()
+
+    assert limited["count"] == 2
+    assert limited["truncated"] is True
+    assert limited["total"] == full["total"]
+    assert [p["seq"] for p in limited["points"]] == [p["seq"] for p in full["points"][-2:]]
+
+
+def test_history_points_stay_oldest_first_when_truncated(client: TestClient) -> None:
+    """Truncating from the recent end must not reverse the order the trail is drawn in."""
+    track_id = client.get(f"{API_PREFIX}/tracks").json()["tracks"][0]["track_id"]
+
+    limited = client.get(f"{API_PREFIX}/tracks/{track_id}/history?limit=3").json()
+
+    seqs = [p["seq"] for p in limited["points"]]
+    assert seqs == sorted(seqs)

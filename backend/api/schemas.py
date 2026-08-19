@@ -291,6 +291,14 @@ class TrackHistoryResponse(BaseModel):
     track_id: str
     points: list[TrackHistoryPointView]
     count: int
+    """How many points this response carries."""
+
+    total: int
+    """How many the track actually has. Equal to `count` unless the response was truncated."""
+
+    truncated: bool
+    """Whether points were left out. A partial route that looks complete is exactly the kind
+    of confident, wrong picture this system exists to avoid — the operator is told."""
 
 
 class DetectionView(BaseModel):

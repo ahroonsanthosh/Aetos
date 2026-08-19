@@ -298,6 +298,14 @@ export function OperationalMap({
         {selectedTrackId && history.error && (
           <span className="label map__legend-warning">History unavailable</span>
         )}
+        {/* A truncated route is drawn exactly like a complete one, so the difference has to be
+            stated. Without this an operator reading the trail would take the most recent
+            10,000 points for the whole of where the object has been. */}
+        {selectedTrackId && !history.error && history.truncated && (
+          <span className="label map__legend-warning">
+            Trail truncated — showing latest {history.points.length} of {history.total}
+          </span>
+        )}
       </div>
 
       {/* Range and bearing under the pointer. Cheap to provide, and it turns the display from

@@ -150,9 +150,15 @@ export interface TrackHistoryPointView {
 
 export interface TrackHistoryResponse {
   track_id: string
-  /** Oldest first. */
+  /** Oldest first. When truncated these are the most recent points, not the first. */
   points: TrackHistoryPointView[]
   count: number
+  /** How many points the track actually has. */
+  total: number
+  /** Whether points were left out. A partial route drawn as a complete one is exactly the
+   *  kind of confident, wrong picture this interface must never present, so the operator is
+   *  told rather than left to infer it from a short list. */
+  truncated: boolean
 }
 
 export type Role = 'viewer' | 'operator' | 'admin'

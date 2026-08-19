@@ -162,6 +162,29 @@ rejections, asserts zero is still accepted so the validator cannot overreach int
 legitimate configurations, and drives both previously unguarded divisors with a zero parameter
 to assert the cycle survives.
 
+### FM-028 — Track history was unbounded, and truncated from the wrong end
+**Status:** Closed · **Severity:** was Medium — a partial route presented as a complete one
+
+**What it was.** `GET /tracks/{id}/history` declared a ceiling of 10 000 points on its `limit`
+parameter, and defaulted that parameter to `None` — meaning no limit at all. Track history is
+retained permanently (FM-022), so the default response was the entire history of a track, for
+as long as a deployment had been running. The operator interface requested it with no limit.
+
+The second half is worse. When a limit *was* supplied, the query was `ORDER BY seq LIMIT n`,
+which returns the **oldest** n entries. An operator asking where a track had been received the
+beginning of its route, with nothing in the response indicating that the rest existed — a trail
+drawn from it looks exactly like a complete one.
+
+**Fix.** The endpoint is bounded by default rather than on request. Truncation keeps the most
+recent points, because where something has been lately is the operationally useful half, and
+the response carries `total` and `truncated` so a partial history is visibly partial. The map
+legend says so in words when a trail is truncated.
+
+**What makes it stay closed.** `tests/integration/test_api.py` asserts the default response is
+bounded, that a truncated one reports `truncated` with the true `total`, that the points
+returned are the most recent ones rather than the first, and that they remain oldest-first so
+the trail is still drawn in the right direction.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 
