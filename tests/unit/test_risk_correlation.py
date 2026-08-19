@@ -465,3 +465,50 @@ def test_merging_a_chain_does_not_swallow_genuinely_distinct_contacts(
     for ordering in itertools.permutations(far_apart):
         clusters = cluster_tracks(list(ordering), policy)
         assert len(clusters) == 2
+
+
+# --------------------------------------------------------------------------------------
+# Operator-facing wording
+# --------------------------------------------------------------------------------------
+
+
+def test_findings_read_as_english_in_the_singular(
+    geometry: SiteGeometry, policy: SituationPolicy
+) -> None:
+    """These strings reach an operator, and "1 objects" tells them the system was assembled
+    carelessly — a bad impression for a display whose whole job is to be believed.
+
+    Regression: the duplicate-track advisory read "3 tracks appear to be 1 objects — 1 set(s)
+    are co-located and co-moving", visible on the overview banner whenever fusion's absence was
+    being reported, which is most of the time.
+    """
+    fragments = [
+        contact("TRK-A", bearing_deg=0.0),
+        contact("TRK-B", bearing_deg=0.0, offset_m=(30.0, 0.0, 0.0)),
+    ]
+
+    situation = assess_situation(fragments, geometry, policy)
+    detail = next(f.detail for f in situation.findings if f.code == "duplicate_tracks_suspected")
+
+    assert "1 object " in detail or detail.endswith("1 object")
+    assert "1 objects" not in detail
+    assert "1 sets" not in detail
+    assert "(s)" not in detail
+
+
+def test_findings_read_as_english_in_the_plural(
+    geometry: SiteGeometry, policy: SituationPolicy
+) -> None:
+    tracks = [
+        contact("TRK-A", bearing_deg=0.0),
+        contact("TRK-B", bearing_deg=0.0, offset_m=(30.0, 0.0, 0.0)),
+        contact("TRK-C", bearing_deg=90.0),
+        contact("TRK-D", bearing_deg=90.0, offset_m=(0.0, 30.0, 0.0)),
+    ]
+
+    situation = assess_situation(tracks, geometry, policy)
+    detail = next(f.detail for f in situation.findings if f.code == "duplicate_tracks_suspected")
+
+    assert "4 tracks" in detail
+    assert "2 objects" in detail
+    assert "2 sets" in detail

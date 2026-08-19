@@ -242,8 +242,8 @@ def assess_situation(
                 # attribute to coincidence the more directions it comes from.
                 level=RiskLevel.CRITICAL if len(axes) >= 3 else RiskLevel.HIGH,
                 detail=(
-                    f"{len(axes)} contacts converging on the site from separate bearings "
-                    f"({bearings}). No single track shows this."
+                    f"{_plural(len(axes), 'contact')} converging on the site from separate "
+                    f"bearings ({bearings}). No single track shows this."
                 ),
                 track_ids=involved,
             )
@@ -255,7 +255,7 @@ def assess_situation(
                 code="simultaneous_engagement",
                 level=RiskLevel.HIGH,
                 detail=(
-                    f"{len(engaged)} distinct objects within "
+                    f"{_plural(len(engaged), 'distinct object')} within "
                     f"{policy.engagement_range_m / 1000:.0f} km of the protected area at once."
                 ),
                 track_ids=[track_id for cluster in engaged for track_id in cluster.track_ids],
@@ -272,9 +272,10 @@ def assess_situation(
                 code="duplicate_tracks_suspected",
                 level=RiskLevel.NONE,
                 detail=(
-                    f"{len(tracks)} tracks appear to be {len(clusters)} objects — "
-                    f"{len(fragmented)} set(s) are co-located and co-moving. Sensor fusion is "
-                    "not built (FM-023)."
+                    f"{_plural(len(tracks), 'track')} appear to be "
+                    f"{_plural(len(clusters), 'object')} — "
+                    f"{_plural(len(fragmented), 'set')} co-located and co-moving. "
+                    "Sensor fusion is not built (FM-023)."
                 ),
                 track_ids=[track_id for cluster in fragmented for track_id in cluster.track_ids],
             )
@@ -322,3 +323,13 @@ def _distinct_axes(clusters: list[TrackCluster], policy: SituationPolicy) -> lis
 def _angular_gap(a: float, b: float) -> float:
     difference = abs(a - b) % 360.0
     return min(difference, 360.0 - difference)
+
+
+def _plural(count: int, singular: str, plural: str | None = None) -> str:
+    """`count` and its noun, agreeing in number.
+
+    These strings are read by an operator, not by a log parser. "1 objects" and "1 set(s)" are
+    the sort of thing that quietly tells a reader the system was assembled carelessly, which is
+    a bad impression for a display whose whole job is to be believed.
+    """
+    return f"{count} {singular if count == 1 else (plural or singular + 's')}"
