@@ -310,3 +310,78 @@ def test_a_huge_body_is_rejected_quickly(secured_app) -> None:
 
     assert response.status_code == 422
     assert elapsed < 5.0
+
+
+# --------------------------------------------------------------------------------------
+# Cross-site requests
+# --------------------------------------------------------------------------------------
+
+
+def test_a_cross_origin_write_is_refused(secured_app) -> None:
+    """Defence in depth behind SameSite=strict.
+
+    SameSite is the real protection — a modern browser will not attach the session cookie to a
+    cross-site request at all. This covers what it does not: a browser too old to enforce it,
+    and any future change that loosens the cookie. The harm it prevents is specific: a forged
+    acknowledgement marks a live alert as seen by an operator who never saw it.
+    """
+    with TestClient(secured_app) as client:
+        sign_in(client, "admin1")
+        response = client.post(
+            "/api/v1/auth/logout", headers={"Origin": "https://attacker.example"}
+        )
+
+    assert response.status_code == 403
+
+
+def test_a_request_without_an_origin_is_allowed(secured_app) -> None:
+    """Browsers set `Origin` on every cross-origin write, so its absence means the caller is
+    not a browser — curl, a monitoring probe, the post-deploy checks in the deployment guide.
+    Rejecting those would break legitimate automation to defend against an attack it cannot
+    mount."""
+    with TestClient(secured_app) as client:
+        sign_in(client, "admin1")
+        response = client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 204
+
+
+def test_reads_are_never_blocked_by_origin(secured_app) -> None:
+    """A cross-origin *read* cannot be used to change anything, and blocking it would break
+    embedding the console in a dashboard someone legitimately built."""
+    with TestClient(secured_app) as client:
+        sign_in(client, "admin1")
+        response = client.get("/api/v1/tracks", headers={"Origin": "https://elsewhere.example"})
+
+    assert response.status_code == 200
+
+
+# --------------------------------------------------------------------------------------
+# The event stream
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cookie", [None, "forged-value"])
+def test_the_stream_refuses_an_unauthenticated_upgrade(secured_app, cookie: str | None) -> None:
+    """The stream carries the whole live picture. An upgrade that succeeded without a session
+    would hand it to anyone who could reach the port."""
+    from starlette.websockets import WebSocketDisconnect
+
+    with TestClient(secured_app) as client:
+        client.cookies.clear()
+        if cookie is not None:
+            client.cookies.set("aetos_session", cookie)
+
+        with pytest.raises(WebSocketDisconnect) as refusal:
+            with client.websocket_connect("/api/v1/stream") as socket:
+                socket.receive_text()
+
+    assert refusal.value.code == 4401, "the close code must tell the client not to retry"
+
+
+def test_an_authenticated_upgrade_succeeds(secured_app) -> None:
+    """The converse, so the guard cannot become "nobody may stream"."""
+    with TestClient(secured_app) as client:
+        sign_in(client, "admin1")
+        with client.websocket_connect("/api/v1/stream"):
+            pass

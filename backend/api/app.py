@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -141,6 +141,39 @@ def create_app(services: ApiServices) -> FastAPI:
     )
     app.state.services = services
     app.state.broadcaster = broadcaster
+
+    @app.middleware("http")
+    async def _reject_cross_origin_writes(request: Request, call_next):
+        """Refuse a state-changing request that a browser says came from somewhere else.
+
+        Defence in depth behind `SameSite=strict`, which is the real protection: a modern
+        browser will not attach the session cookie to a cross-site request at all. This covers
+        what that does not — a browser too old to enforce SameSite, and any future change that
+        loosens the cookie.
+
+        Deliberately permissive in one direction: a request with **no** `Origin` is allowed
+        through. Browsers set it on every cross-origin write, so its absence means the caller is
+        not a browser — curl, a monitoring probe, the deployment checks in `docs/deployment.md`
+        — and those are not the thing CSRF describes. Rejecting them would break legitimate
+        automation to defend against an attack they cannot mount.
+
+        The comparison is against the `Host` the request arrived with, so it keeps working
+        behind the reverse proxy that terminates TLS without needing to know its name.
+        """
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            origin = request.headers.get("origin")
+            if origin is not None:
+                expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
+                # A proxy terminating TLS forwards the original scheme; trust it only when the
+                # deployment asserted a proxy is there, which is what proxy_headers does.
+                allowed = {expected, expected.replace("http://", "https://", 1)}
+                if origin not in allowed:
+                    return JSONResponse(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        content={"detail": "Cross-origin request refused."},
+                    )
+
+        return await call_next(request)
 
     @app.middleware("http")
     async def _security_headers(request: Request, call_next):
