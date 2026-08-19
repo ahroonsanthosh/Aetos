@@ -134,7 +134,9 @@ class ClassificationService:
                 TrackEvidence(
                     track_id=track.track_id,
                     speed_mps=track.kinematics.speed_mps,
-                    altitude_m=track.position.altitude_m,
+                    # Site-relative, matching the profile bands. The published altitude is
+                    # ellipsoidal and would add the site's elevation to every track (FM-0211).
+                    altitude_m=track.enu.up_m,
                     vertical_rate_mps=track.kinematics.vertical_rate_mps,
                     detection_count=track.tracking.detection_count,
                     coasting=track.tracking.is_coasting,

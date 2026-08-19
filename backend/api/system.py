@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.api.deps import OptionalOperatorDep, ServicesDep
 from backend.api.services import ApiServices
 from backend.common.config import RunMode
+from backend.system_health.models import Posture
 from sensors.adapters.interface import SensorState
 
 router = APIRouter()
@@ -80,6 +81,17 @@ class SystemHealthView(BaseModel):
     projection_lag: int = Field(ge=0)
     """Events committed but not yet projected. Non-zero briefly is normal; growing without
     bound means the projection has stalled and the operator's picture is falling behind."""
+
+    posture: Posture | None = None
+    """What the watchdog says the system as a whole can currently claim about the sky.
+
+    Separate from the component list because it is not a component: it is the conclusion drawn
+    across all of them, and the operator interface treats it differently — a banner rather than
+    a row. None when no watchdog is attached, which the `system_health` component explains.
+
+    Absent from the unauthenticated answer. Whether a site is currently blind is exactly the
+    fact an attacker would most like to confirm without logging in.
+    """
 
 
 class ModeView(BaseModel):
@@ -236,27 +248,42 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
 
     components.append(_sensor_health(services))
 
-    components.append(_module_health("classification", services.classification_running,
-        running="Track identity is being assessed from kinematics and sensor evidence.",
-        absent="Classification is not running; tracks report no label."))
-    components.append(_module_health("risk", services.situation is not None,
-        running="Tracks are scored each cycle, with reason codes.",
-        absent="Threat assessment is not running; every track scores zero."))
-    components.append(_module_health("alerts", services.alerts is not None,
-        running="Risk levels are being promoted to alerts against the alerting policy.",
-        absent="Alert generation is not running; the alert feed is empty."))
+    components.append(
+        _module_health(
+            "classification",
+            services.classification_running,
+            running="Track identity is being assessed from kinematics and sensor evidence.",
+            absent="Classification is not running; tracks report no label.",
+        )
+    )
+    components.append(
+        _module_health(
+            "risk",
+            services.situation is not None,
+            running="Tracks are scored each cycle, with reason codes.",
+            absent="Threat assessment is not running; every track scores zero.",
+        )
+    )
+    components.append(
+        _module_health(
+            "alerts",
+            services.alerts is not None,
+            running="Risk levels are being promoted to alerts against the alerting policy.",
+            absent="Alert generation is not running; the alert feed is empty.",
+        )
+    )
+
+    components.append(_watchdog_health(services))
 
     # Genuinely absent. Listed explicitly so the dashboard shows the shape of the finished
     # system and where the gaps still are.
-    for component, detail in (
-        ("fusion", "Multi-sensor reconciliation is not implemented."),
-        ("system_health", "The watchdog and degraded-mode controller are not implemented."),
-    ):
-        components.append(
-            ComponentHealth(
-                component=component, state=ComponentState.NOT_BUILT, detail=detail
-            )
+    components.append(
+        ComponentHealth(
+            component="fusion",
+            state=ComponentState.NOT_BUILT,
+            detail="Multi-sensor reconciliation is not implemented.",
         )
+    )
 
     components.append(
         ComponentHealth(
@@ -274,6 +301,47 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
         latest_event_seq=latest_seq,
         projection_seq=projection_seq,
         projection_lag=max(0, latest_seq - projection_seq),
+        posture=services.watchdog.report().posture if services.watchdog else None,
+    )
+
+
+def _watchdog_health(services: ApiServices) -> ComponentHealth:
+    """The watchdog's own row: whether anything is judging sensor silence at all.
+
+    Note what this row is *not*. It does not restate the posture — that is `posture` on the
+    response, and duplicating it here would be a second representation of one fact, free to
+    disagree with the first. This row answers only "is the watchdog running", which is the
+    question the rest of the response cannot answer for itself.
+
+    A stalled posture degrades this row, because a watchdog whose last pass has aged out is not
+    doing its job even though the object exists.
+    """
+    if services.watchdog is None:
+        return ComponentHealth(
+            component="system_health",
+            state=ComponentState.NOT_CONNECTED,
+            detail=(
+                "No watchdog is attached to this process. Sensor silence is not being judged "
+                "against any threshold, so a dead sensor and an empty sky look identical "
+                "(FM-010)."
+            ),
+        )
+
+    assessment = services.watchdog.report()
+    if assessment.posture is Posture.STALLED:
+        return ComponentHealth(
+            component="system_health",
+            state=ComponentState.UNAVAILABLE,
+            detail=assessment.summary,
+        )
+
+    return ComponentHealth(
+        component="system_health",
+        state=ComponentState.OK,
+        detail=(
+            f"Watching {len(assessment.sensors)} source(s) against the site's silence "
+            f"thresholds. {assessment.summary}"
+        ),
     )
 
 
@@ -350,9 +418,7 @@ def _database_health(services: ApiServices) -> ComponentHealth:
             detail=f"The database could not be read: {exc}",
         )
 
-    return ComponentHealth(
-        component="database", state=ComponentState.OK, detail="Readable."
-    )
+    return ComponentHealth(component="database", state=ComponentState.OK, detail="Readable.")
 
 
 _ACCEPTABLE_PROJECTION_LAG = 50

@@ -110,7 +110,7 @@ makes backend restart recoverable.
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
 | `backend/risk` | Score + confidence + reason codes + hysteresis; cycle-level situation findings | Recommend an action, or hold track state |
 | `backend/decision` | Recommendation category | Score risk, or execute anything, ever |
-| `backend/system_health` | Watchdog, degraded mode, self-test | Suppress alerts |
+| `backend/system_health` | Judge sensor silence against a window and a site policy; declare the posture | Suppress alerts, or change any assessment threshold |
 | `backend/api` | REST + WebSocket | Hold authoritative state |
 | `frontend` | Display and operator input | Be the source of truth for anything |
 
@@ -155,7 +155,7 @@ Per spec §20. Status updated as stages complete.
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
 | 11 | Sensor adapter framework finalised, real stubs in place | **done** — interface, one real driver (ADR 0017), and mode-selected wiring with per-sensor health (ADR 0018). The hardware itself remains unvalidated |
-| 12 | Chaos hardening, degraded-mode UI states | not started |
+| 12 | Chaos hardening, degraded-mode UI states | partial — the watchdog, the posture banner and the stall self-test are done (ADR 0019, FM-010); fault injection is not |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
 through ingestion into tracking, classification assesses each track from pooled evidence, risk

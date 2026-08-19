@@ -1,17 +1,35 @@
 """Runnable entry point: wires the pipeline together and serves the API.
 
-Everything below this line existed already as modules that tests constructed individually.
-This is the one place they are assembled into a system that runs, which is what makes the
-repository usable rather than merely correct.
+Everything below this line existed already as modules that tests constructed individually. This
+is the one place they are assembled into a system that runs, which is what makes the repository
+usable rather than merely correct.
 
-    python -m backend.main                          serve the API against an empty log
-    python -m backend.main --scenario a_benign_transit   serve, and drive that scenario
+    python -m backend.main                                    idle system, empty log
+    python -m backend.main --scenario a_benign_transit        drive the simulator
+    python -m backend.main --mode live --site my_site         read this site's real hardware
 
-The scenario runner here is a **development and demonstration driver**, not the scenario
-control API. `POST /scenarios/{id}/start` still reports itself unimplemented, because it is:
-starting a scenario over HTTP needs lifecycle, authorisation and concurrency answers this
-does not have. What this gives is a way to see the whole pipeline work end to end, which is
-the thing the specification asks to be verified before anything is built on top of it.
+## What this file decides
+
+**Which sensors feed the pipeline**, from the run mode and the site document, refusing any
+combination it cannot honour rather than starting something that would mislead an operator —
+a LIVE badge over an empty sky, or synthetic tracks in a live picture with nothing saying so
+(`resolve_sources`, ADR 0018).
+
+**Where this deployment's history lives.** `data/<site>/<mode>/`, claimed by a marker file and
+held by a lock, so one deployment cannot inherit another's tracks and cannot be written by two
+processes at once (`resolve_data_dir`, FM-053).
+
+**Whether it is safe to bind what was asked for.** `guard_bind` refuses to expose an
+unauthenticated console, an account-less one, or session cookies in clear (ADR 0016).
+
+## What it is not
+
+The scenario runner here is a **development and demonstration driver**, not the scenario control
+API. `POST /scenarios/{id}/start` still reports itself unimplemented, because it is: starting a
+scenario over HTTP needs lifecycle, authorisation and concurrency answers this does not have.
+
+`start.sh` is the developer path — it manages a virtualenv and builds the interface. A deployed
+service runs this module directly; see `docs/deployment.md`.
 """
 
 from __future__ import annotations
@@ -39,7 +57,7 @@ from backend.auth.service import AuthService
 from backend.classification.classifier import build_default_classifier
 from backend.classification.service import ClassificationService, CycleEvidence
 from backend.common.clock import Clock, SystemClock
-from backend.common.config import ConfigPaths, RunMode
+from backend.common.config import ConfigError, ConfigPaths, RunMode
 from backend.database.projection import TrackProjection
 from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
@@ -47,6 +65,7 @@ from backend.events.store import SqliteEventStore
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
+from backend.system_health import Watchdog, load_system_health_policy
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from backend.zones.site import SensorPlacement, Site
@@ -128,6 +147,13 @@ class Pipeline:
             self.events,
         )
         self.alerting = AlertService(load_alert_policy(), self.events)
+        self.watchdog = Watchdog(clock, load_system_health_policy(), self.events)
+        """Judges what the adapters report, over a window they do not have (FM-010).
+
+        Constructed here rather than in the API so that it is stepped by the cycle. A watchdog
+        driven from the request path would only notice a dead sensor while somebody was
+        looking, which is the one time they would already know.
+        """
 
         # Alerts outlive the process that raised them. Rebuilding from the log before the
         # first cycle is what makes that true — without it a restart discharges every open
@@ -135,6 +161,10 @@ class Pipeline:
         self.alerting.rebuild()
 
         self._adapters: list[SensorAdapter] = []
+
+        self._poll_failures: dict[str, str] = {}
+        """Sensor id to the error its last poll raised, cleared when it polls cleanly. Read by
+        `sensor_health()` so a driver that throws cannot report itself healthy."""
 
         self.deployment_lock: DeploymentLock | None = None
         """Held by whoever assembled this pipeline, released when it closes. None in tests and
@@ -195,8 +225,39 @@ class Pipeline:
 
         Polled per request rather than cached: the whole value of the row is that it is current
         when someone looks at it, which is exactly when they have stopped trusting the display.
+
+        Two things are overridden rather than passed through. An adapter that raised on its
+        last poll is reported DEGRADED whatever it says about itself — a driver that throws and
+        then claims OK is describing an intention, not a state. And an adapter whose `health()`
+        itself raises is reported OFFLINE rather than being allowed to take the health endpoint
+        down with it, because the one moment this endpoint must answer is when something is
+        already wrong.
         """
-        return [adapter.health() for adapter in self._adapters]
+        reports: list[SensorHealth] = []
+        for adapter in self._adapters:
+            try:
+                health = adapter.health()
+            except Exception as exc:  # noqa: BLE001 — see the docstring
+                reports.append(
+                    SensorHealth(
+                        sensor_id=adapter.sensor_id,
+                        sensor_type=adapter.sensor_type,
+                        state=SensorState.OFFLINE,
+                        reason=f"health() raised {type(exc).__name__}: {exc}",
+                    )
+                )
+                continue
+
+            failure = self._poll_failures.get(adapter.sensor_id)
+            if failure is not None and health.state is not SensorState.OFFLINE:
+                health = health.model_copy(
+                    update={
+                        "state": SensorState.DEGRADED,
+                        "reason": f"last poll raised {failure}",
+                    }
+                )
+            reports.append(health)
+        return reports
 
     def attach_scenario(self, scenario_id: str) -> None:
         """Point the simulated sensors at a scenario's world.
@@ -270,7 +331,7 @@ class Pipeline:
         """
         detections: list[Detection] = []
         for adapter in self._adapters:
-            detections.extend(adapter.get_detections())
+            detections.extend(self._poll(adapter))
 
         # Validates, deduplicates, records DETECTION_RECEIVED, and reduces to the tracker's
         # input. The classification hints come back separately — they are evidence about what
@@ -295,11 +356,43 @@ class Pipeline:
         # way (ADR 0015).
         self.alerting.review_cycle(assessed, now)
 
+        # After everything that could report a fault, and before the projection catches up, so
+        # any status event this pass appends is visible to the API in the same cycle it was
+        # decided rather than one later.
+        self.watchdog.assess(self.sensor_health())
+
         # Catch the projection up after tracking, never before: the projection reads the log,
         # and reading it before this cycle's events are appended would leave the API serving a
         # picture one cycle stale for no reason.
         self.projection.catch_up()
         return ingested.accepted
+
+    def _poll(self, adapter: SensorAdapter) -> list[Detection]:
+        """One adapter's detections, with its failures isolated from every other sensor's.
+
+        The cycle used to poll adapters in a bare loop, so one misbehaving driver raised
+        through `step()` and cost *every* sensor its cycle. The task-level guard kept the run
+        alive, but the operator picture stopped advancing on all sensors because one was
+        faulty — and the reason was in a log rather than on the display.
+
+        Start-up already tolerates this: a site with three radars and one unplugged cable runs
+        with three. Runtime now agrees with start-up. The failure is not swallowed — it is
+        recorded, logged, and reported through `sensor_health()`, which is where an operator
+        looks when the picture seems thin.
+        """
+        try:
+            detections = adapter.get_detections()
+        except Exception as exc:  # noqa: BLE001 — an adapter may raise anything; none of it
+            # is worth the rest of the site's cycle.
+            message = f"{type(exc).__name__}: {exc}"
+            first = self._poll_failures.get(adapter.sensor_id) != message
+            self._poll_failures[adapter.sensor_id] = message
+            if first:
+                _LOG.exception("Sensor %s failed to poll and was skipped.", adapter.sensor_id)
+            return []
+
+        self._poll_failures.pop(adapter.sensor_id, None)
+        return detections
 
     def close(self) -> None:
         for adapter in self._adapters:
@@ -361,9 +454,7 @@ def build_hardware_adapter(
             boresight_deg=placement.boresight_deg,
             tilt_deg=link.tilt_deg,
         ),
-        gate=DetectionGateConfig(
-            min_range_m=link.min_range_m, max_range_m=link.max_range_m
-        ),
+        gate=DetectionGateConfig(min_range_m=link.min_range_m, max_range_m=link.max_range_m),
         raw_log_path=(data_dir / link.raw_log_path) if link.raw_log_path else None,
     )
     return UartFmcwRadarAdapter(
@@ -469,9 +560,7 @@ class ModeRefused(RuntimeError):
     """
 
 
-def resolve_sources(
-    mode: RunMode, site: Site, scenario: str | None
-) -> tuple[bool, str | None]:
+def resolve_sources(mode: RunMode, site: Site, scenario: str | None) -> tuple[bool, str | None]:
     """Which adapter families a run mode wants, and the refusals if it cannot have them.
 
     Returns `(attach_hardware, scenario_to_run)`. Every refusal below is a state that would
@@ -782,11 +871,23 @@ def build_application(
 
     pipeline = Pipeline(clock, geometry, resolved)
     pipeline.deployment_lock = lock
+
+    # Checked here rather than at load, because it is the one policy value that is only wrong
+    # in combination with something the policy file cannot see. A stall threshold below the
+    # tick would make the system declare itself stalled on every healthy cycle.
+    pipeline.watchdog.policy.validate_against_tick(tick_s)
     if attach_hardware:
         pipeline.attach_hardware()
         _report_hardware_state(pipeline, tick_s)
     if scenario:
         pipeline.attach_scenario(scenario)
+
+    # One pass before the first request, so the health endpoint answers from a real assessment
+    # rather than from never having run. Without it a deployment with nothing attached — no
+    # scenario, no hardware, which is an ordinary way to start — reports STALLED, raising a
+    # fault over a system that is merely idle. The pipeline task does not step an empty
+    # adapter set, so this is the only pass such a run would ever get.
+    pipeline.watchdog.assess(pipeline.sensor_health())
 
     services = ApiServices(
         clock=clock,
@@ -809,6 +910,7 @@ def build_application(
         run_mode=mode,
         live_adapter_count=pipeline.live_adapter_count,
         sensor_health=pipeline,
+        watchdog=pipeline.watchdog,
     )
 
     app = create_app(services)
@@ -944,6 +1046,13 @@ def main() -> None:
         )
     except (ModeRefused, StartupRefused) as refusal:
         raise SystemExit(f"\n  {refusal}\n") from refusal
+    except ConfigError as invalid:
+        # A configuration document this deployment ships is missing or wrong. That is an
+        # operator-facing problem with an operator-facing message already attached — it names
+        # the file and what is wrong with it — and it was reaching the terminal as a Python
+        # traceback with the useful line last. Every other refusal in this function prints
+        # cleanly; a config error is not less deserving of that for being raised deeper down.
+        raise SystemExit(f"\n  {invalid}\n") from invalid
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.

@@ -241,6 +241,43 @@ gives you a system that runs. It does not give you a system whose detections mea
 counter-UAS operator would assume they mean, and no amount of deployment hardening changes
 that — only the test matrix in `sensors/adapters/uart_fmcw_radar/README.md` does.
 
+## What the application defends against itself
+
+Findings from an offensive pass against a running instance, and what closed them. Listed
+because knowing which defences are *in the process* tells you which ones do not depend on your
+proxy configuration being right.
+
+| Defence | Where |
+|---|---|
+| Password hashing off the event loop, bounded concurrency | In-process. A login flood used to freeze the operator's display; it no longer degrades it (FM-060) |
+| CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` | In-process middleware, on every response including errors (FM-061) |
+| `Strict-Transport-Security` | In-process, **only** on requests that arrived over https |
+| Cross-origin writes refused | In-process, behind `SameSite=strict` |
+| Session cookie `HttpOnly` + `SameSite=strict` + `Secure` behind a proxy | In-process |
+| WebSocket upgrades refused without a session (close code 4401) | In-process |
+| Account enumeration resistance, by body and by timing | In-process |
+| **TLS termination** | **Your proxy.** Aetos holds no key |
+| **Rate limiting** | **Your proxy.** Only login concurrency is bounded in-process |
+| **Request size limits** | **Your proxy.** Oversized bodies are rejected quickly, but the bytes still arrive |
+
+Two of those are worth configuring deliberately rather than assuming:
+
+```nginx
+# Rate-limit the one expensive unauthenticated endpoint.
+limit_req_zone $binary_remote_addr zone=aetos_login:10m rate=10r/m;
+location /api/v1/auth/login {
+    limit_req zone=aetos_login burst=5 nodelay;
+    proxy_pass http://127.0.0.1:8000;
+    # ... the same proxy headers as the block above
+}
+
+# Nothing this API accepts is large.
+client_max_body_size 256k;
+```
+
+If your proxy sets security headers of its own, it wins and nothing breaks — the application
+uses `setdefault`.
+
 ## What is still true after all this
 
 - **`data/` holds the event log and the account table.** Back it up, and treat the backup as

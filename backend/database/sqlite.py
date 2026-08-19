@@ -335,14 +335,21 @@ class SqliteTrackHistoryRepository(TrackHistoryRepository):
         )
 
     def for_track(self, track_id: str, limit: int | None = None) -> list[TrackHistoryEntry]:
-        sql = (
-            "SELECT seq, event_type, timestamp, snapshot FROM track_history"
-            " WHERE track_id = ? ORDER BY seq"
-        )
-        params: tuple[Any, ...] = (track_id,)
+        # Newest-first with a LIMIT, then reversed, so a truncated history keeps its most
+        # recent entries rather than its first ones. `ORDER BY seq LIMIT n` returned the oldest
+        # n — the beginning of a route rather than where the object has just been.
         if limit is not None:
-            sql += " LIMIT ?"
-            params += (limit,)
+            sql = (
+                "SELECT seq, event_type, timestamp, snapshot FROM track_history"
+                " WHERE track_id = ? ORDER BY seq DESC LIMIT ?"
+            )
+            params: tuple[Any, ...] = (track_id, limit)
+        else:
+            sql = (
+                "SELECT seq, event_type, timestamp, snapshot FROM track_history"
+                " WHERE track_id = ? ORDER BY seq"
+            )
+            params = (track_id,)
         return [
             TrackHistoryEntry(
                 seq=row["seq"],
@@ -350,8 +357,14 @@ class SqliteTrackHistoryRepository(TrackHistoryRepository):
                 timestamp=row["timestamp"],
                 track=_validate(Track, row["snapshot"], f"track history {track_id}#{row['seq']}"),
             )
-            for row in self._db.query(sql, params)
+            for row in sorted(self._db.query(sql, params), key=lambda row: row["seq"])
         ]
+
+    def count_for_track(self, track_id: str) -> int:
+        row = self._db.query(
+            "SELECT COUNT(*) AS n FROM track_history WHERE track_id = ?", (track_id,)
+        )
+        return int(next(iter(row))["n"])
 
     def discard_all(self) -> None:
         self._db.execute("DELETE FROM track_history")

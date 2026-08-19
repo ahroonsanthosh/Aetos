@@ -30,6 +30,15 @@ from backend.tracking.models import Track
 SOURCE = "alerting"
 
 ALERT_ID_KEY = "alert_id"
+
+OPERATOR_ID_KEY = "operator_id"
+"""Payload key naming who acknowledged an alert.
+
+A constant like its siblings, and for a sharper reason than tidiness: this key is the only
+record of *who* acted, which is the audit claim ADR 0016 rests on. It is written in one place
+and read in another during rebuild, and as two bare literals a rename in either would lose the
+operator silently — the alert would rebuild as acknowledged by nobody, which is a worse record
+than not rebuilding at all."""
 """Payload key naming the alert an event refers to.
 
 Every alert event after the first carries it, because `ALERT_CREATED` is identified by the
@@ -252,7 +261,7 @@ class AlertService:
             SOURCE,
             payload={
                 ALERT_ID_KEY: alert_id,
-                "operator_id": operator_id,
+                OPERATOR_ID_KEY: operator_id,
                 "level": str(acknowledged.level),
                 "peak_level": str(acknowledged.peak_level),
             },
@@ -333,7 +342,7 @@ class AlertService:
             elif event.event_type is EventType.OPERATOR_ACKNOWLEDGED:
                 existing = self._open.get(alert_id)
                 if existing is not None:
-                    operator = event.payload.get("operator_id")
+                    operator = event.payload.get(OPERATOR_ID_KEY)
                     self._remember(
                         existing.model_copy(
                             update={

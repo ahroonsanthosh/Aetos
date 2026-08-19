@@ -47,6 +47,13 @@ DEFAULT_POLICY_FILE = "policy.json"
 _SUPPORT_SATURATION = 10.0
 
 # Smallest discount worth reporting as a reason code.
+#
+# The multiplier is always applied to the score — it is part of the arithmetic. What this
+# governs is whether the operator is *told* about it. Below this, the discount is invisible in
+# a score rounded to a whole number, and the reason line reads "Discounted: classified bird (0%
+# of the distribution ...)" — a sentence asserting a judgement the system did not really make,
+# quoting a percentage that rounded to nothing. A reason list is only worth reading if every
+# line in it changed something.
 _MATERIAL_MITIGATION = 0.02
 
 _FACTOR_TYPES: dict[str, type[EscalationFactor]] = {
@@ -102,10 +109,13 @@ class RiskEngine:
         mitigation, mitigation_reason = mitigation_for(risk, self._policy.min_mitigation)
 
         scored = [_with_contribution(reading, readings, _combine_readings) for reading in readings]
-        if mitigation_reason is not None:
+        if mitigation_reason is not None and (1.0 - mitigation) >= _MATERIAL_MITIGATION:
             # Recorded as a contribution so it appears in the reason list like everything else.
             # An operator who sees a score *drop* is owed the same explanation as one who sees
             # it rise, and burying the discount would make the number unexplainable.
+            #
+            # Immaterial discounts are still applied to the score and deliberately not reported:
+            # see `_MATERIAL_MITIGATION`.
             scored.append(
                 FactorContribution(
                     code="benign_classification",
@@ -282,6 +292,25 @@ def load_risk_policy(
             f"{file}: no such risk factor: {', '.join(sorted(unknown))}. "
             f"Known factors: {', '.join(sorted(_FACTOR_TYPES))}"
         )
+
+    # Factor *codes* were checked here from the beginning; the parameter names inside each
+    # factor were not. That asymmetry is the bug: a free-form dict cannot use `extra="forbid"`,
+    # so an unrecognised key fell through to the factor's default. Someone tuning `fast_mp`
+    # instead of `fast_mps` got no error and no effect — the file read as configured and the
+    # system behaved as though it were not.
+    for code, factor_policy in policy.factors.items():
+        supported = _FACTOR_TYPES[code].SUPPORTED_PARAMETERS
+        unrecognised = set(factor_policy.parameters) - supported
+        if unrecognised:
+            raise ConfigError(
+                f"{file}: risk factor {code!r} has no parameter "
+                f"{', '.join(repr(p) for p in sorted(unrecognised))}. "
+                + (
+                    f"It accepts: {', '.join(sorted(supported))}."
+                    if supported
+                    else "It takes no parameters."
+                )
+            )
 
     return policy
 

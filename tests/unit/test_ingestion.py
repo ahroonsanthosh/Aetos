@@ -227,3 +227,83 @@ def test_scalar_uncertainty_becomes_an_isotropic_covariance(
     covariance = result.for_tracking[0].covariance
     assert covariance.shape == (3, 3)
     assert covariance[0][0] == pytest.approx(15.0**2)
+
+
+# --------------------------------------------------------------------------------------
+# Uncertainty a filter cannot use is malformed input, not a precise measurement
+# --------------------------------------------------------------------------------------
+
+
+def _detection_with(measurement: Measurement, clock: SimClock) -> Detection:
+    return Detection(
+        detection_id="DET-UNC-1",
+        timestamp=clock.now(),
+        sensor=SensorRef(sensor_id="radar_north", sensor_type=SensorType.SIMULATED_RADAR),
+        position=GeoPosition(latitude=51.9000, longitude=-8.4697, altitude_m=120.0),
+        measurement=measurement,
+        quality=Quality(confidence=0.8),
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "measurement"),
+    [
+        ("zero scalar uncertainty", Measurement(position_uncertainty_m=0.0)),
+        (
+            "all-zero covariance",
+            Measurement(
+                position_uncertainty_m=5.0,
+                position_covariance_enu=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            ),
+        ),
+        (
+            "singular covariance with positive variances",
+            Measurement(
+                position_uncertainty_m=5.0,
+                position_covariance_enu=[[4.0, 4.0, 0.0], [4.0, 4.0, 0.0], [0.0, 0.0, 4.0]],
+            ),
+        ),
+    ],
+)
+def test_degenerate_uncertainty_is_rejected_at_the_boundary(
+    label: str, measurement: Measurement, pipeline: IngestionPipeline, clock: SimClock
+) -> None:
+    """Each of these is schema-legal and none of them can be tracked.
+
+    `position_uncertainty_m` is `ge=0.0` and the covariance validator only rejects negative
+    variances, so a sensor can assert perfect or degenerate positional knowledge and pass
+    validation. The filter cannot survive it: the innovation covariance is singular and both
+    the association gate and the update raise `LinAlgError`, taking down the entire tracking
+    cycle rather than the one detection that caused it.
+
+    A sensor claiming it knows exactly where something is has not made a precise measurement,
+    it has made a broken one (FM-011).
+    """
+    result = pipeline.ingest([_detection_with(measurement, clock)])
+
+    assert result.accepted == 0, f"{label} was accepted and would have reached the filter"
+    assert result.rejected == 1
+
+
+def test_a_singular_report_costs_only_its_own_detection(
+    pipeline: IngestionPipeline, clock: SimClock
+) -> None:
+    """The point of rejecting at the boundary: one malformed sensor must not cost the sky."""
+    good = _detection_with(Measurement(position_uncertainty_m=8.0), clock).model_copy(
+        update={"detection_id": "DET-GOOD"}
+    )
+    bad = _detection_with(Measurement(position_uncertainty_m=0.0), clock)
+
+    result = pipeline.ingest([bad, good])
+
+    assert result.accepted == 1
+    assert result.rejected == 1
+    assert [d.detection_id for d in result.for_tracking] == ["DET-GOOD"]
+
+
+def test_realistic_uncertainty_still_passes(pipeline: IngestionPipeline, clock: SimClock) -> None:
+    """The guard must not be so eager that it rejects a genuinely precise sensor. A
+    centimetre-class report is implausible for radar and must still be tracked."""
+    result = pipeline.ingest([_detection_with(Measurement(position_uncertainty_m=0.01), clock)])
+
+    assert result.accepted == 1
