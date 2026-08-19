@@ -21,7 +21,9 @@ a token becomes necessary.
 
 from __future__ import annotations
 
+import anyio
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.deps import OptionalOperatorDep, ServicesDep, session_token
@@ -29,6 +31,23 @@ from backend.auth.models import USERNAME_PATTERN, Role
 from backend.auth.policy import SESSION_COOKIE_NAME
 
 router = APIRouter()
+
+MAX_CONCURRENT_HASHES = 4
+"""How many password verifications may run at once.
+
+Moving the hash off the event loop stops a login flood from freezing the display, but it does
+not stop one from burning every core: each attempt is hundreds of milliseconds of deliberate
+CPU, and an unauthenticated caller chooses how many to send. Bounding the concurrency makes a
+flood queue rather than saturate, so the machine keeps enough capacity to run the pipeline and
+serve the operators who are already signed in.
+
+Small on purpose. Real logins are rare — a handful at shift change — and a queue costs a
+waiting operator a second, while an unbounded pool costs everyone the picture. A reverse proxy
+should rate-limit this endpoint as well (`docs/deployment.md`); this is the part that does not
+depend on someone remembering to.
+"""
+
+_HASHING_SLOTS = anyio.Semaphore(MAX_CONCURRENT_HASHES)
 
 _AUTH_ABSENT = (
     "Authentication is not configured in this deployment. There is no login to perform, and no "
@@ -81,7 +100,21 @@ async def login(
     if services.auth is None:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, _AUTH_ABSENT)
 
-    result = services.auth.authenticate(body.username, body.password)
+    # Password hashing is deliberately expensive — around 350 ms — and this is an `async`
+    # handler, so calling it directly would run scrypt *on the event loop*. Everything the
+    # process does would stop for the duration: other requests, the WebSocket push, and the
+    # pipeline cycle that advances the operator's picture.
+    #
+    # That was measured, not theorised: three unauthenticated clients sending login attempts
+    # took every other request from 0.7 ms to 1.1 seconds, a factor of 1683, with no
+    # credentials required. An attacker could freeze the operator's display from outside.
+    #
+    # Only the hashing moves. The reads before it and the writes after it stay on this thread,
+    # so the store keeps its single writer (ADR 0006).
+    attempt = services.auth.begin_authentication(body.username)
+    async with _HASHING_SLOTS:
+        verified = await run_in_threadpool(attempt.verify, body.password)
+    result = services.auth.finish_authentication(attempt, verified)
     if not result.succeeded or result.user is None or result.token is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, _REJECTED)
 

@@ -26,7 +26,13 @@ from datetime import datetime, timedelta
 from enum import StrEnum, auto
 
 from backend.auth.models import Credential, Role, Session, User
-from backend.auth.passwords import dummy_verify, hash_password, needs_rehash, verify_password
+from backend.auth.passwords import (
+    ScryptParameters,
+    dummy_verify,
+    hash_password,
+    needs_rehash,
+    verify_password,
+)
 from backend.auth.policy import AuthPolicy
 from backend.common.clock import Clock
 from backend.common.identifiers import IdGenerator
@@ -82,6 +88,46 @@ class LoginResult:
         return self.token is not None and self.user is not None
 
 
+@dataclass(slots=True)
+class _AuthAttempt:
+    """One authentication in progress: everything read, nothing yet decided.
+
+    Exists so the expensive half of authentication can be moved off an event loop without
+    moving the database work with it. `verify` does the hashing and nothing else — no reads,
+    no writes, no clock — which is what makes it safe to run in a worker thread while the
+    single writer keeps ownership of the store (ADR 0006).
+
+    The timing equalisation lives here rather than in the caller. An unknown or locked account
+    still pays for a full hash, so the two halves of the split cannot accidentally be
+    recombined into something that returns early and leaks which accounts exist.
+    """
+
+    username: str
+    user: User | None
+    credential: Credential | None
+    predetermined: LoginFailure | None
+    scrypt: ScryptParameters
+
+    password_for_rehash: str = ""
+    """Held only between `verify` and `finish_authentication`, to re-hash a credential stored
+    under outdated parameters. Never logged, never stored, and gone when the attempt is."""
+
+    def verify(self, password: str) -> bool:
+        """The expensive part. Safe to run in a worker thread.
+
+        Always hashes. A predetermined failure — unknown username, locked account — does the
+        same work and discards it, because an attempt that returned early would be measurably
+        faster and that timing difference is an account-enumeration oracle.
+        """
+        self.password_for_rehash = password
+
+        if self.predetermined is not None or self.credential is None:
+            dummy_verify(self.scrypt)
+            return False
+
+        return verify_password(password, self.credential.password_hash)
+
+
 class AuthService:
     """Authenticates, issues and validates sessions, and manages accounts."""
 
@@ -114,38 +160,68 @@ class AuthService:
     def authenticate(self, username: str, password: str) -> LoginResult:
         """Check a credential and, on success, issue a session.
 
-        Every branch that fails does the same amount of hashing work and returns the same
-        shape. Read the ordering carefully before changing it: the lockout check comes *before*
+        Synchronous, and therefore **not** what the HTTP layer calls: password hashing is
+        deliberately expensive, and running it on an event loop blocks everything the process
+        is doing (see `begin_authentication`). This form exists for the admin CLI and for
+        tests, and is a thin wrapper over the same three phases the HTTP path uses, so there is
+        one implementation of the decision logic rather than two that can drift.
+        """
+        attempt = self.begin_authentication(username)
+        return self.finish_authentication(attempt, attempt.verify(password))
+
+    def begin_authentication(self, username: str) -> _AuthAttempt:
+        """Phase one: read what is needed to decide, decide nothing yet.
+
+        Split from the hashing so a caller on an event loop can await the expensive part in a
+        worker thread while every database read and write stays on the single writer thread
+        that owns them (ADR 0006).
+
+        Read the ordering carefully before changing it: the lockout check comes *before*
         password verification, so a locked account cannot be probed for the correct password;
         the disabled check comes after verification, so whether an account is disabled is not
         learnable without already knowing its password.
         """
-        now = self._clock.now()
         user = self._users.by_username(username.strip().lower())
+        credential = None if user is None else self._credentials.get(user.user_id)
 
         if user is None:
-            # Hash anyway. Returning here without the work would make an unknown username
-            # measurably faster than a known one.
-            dummy_verify(self._policy.scrypt)
-            return self._failed(username, None, LoginFailure.NO_SUCH_USER)
+            outcome = LoginFailure.NO_SUCH_USER
+        elif user.locked_at(self._clock.now()):
+            outcome = LoginFailure.ACCOUNT_LOCKED
+        else:
+            outcome = None
 
-        if user.locked_at(now):
-            dummy_verify(self._policy.scrypt)
-            return self._failed(username, user, LoginFailure.ACCOUNT_LOCKED)
+        return _AuthAttempt(
+            username=username,
+            user=user,
+            credential=credential,
+            predetermined=outcome,
+            scrypt=self._policy.scrypt,
+        )
 
-        credential = self._credentials.get(user.user_id)
-        if credential is None or not verify_password(password, credential.password_hash):
-            if credential is None:
-                # An account with no credential cannot be logged into, but must still cost the
-                # same as one that can.
-                dummy_verify(self._policy.scrypt)
-            return self._record_bad_password(username, user, now)
+    def finish_authentication(self, attempt: _AuthAttempt, verified: bool) -> LoginResult:
+        """Phase three: record what happened and issue a session if one is owed.
+
+        Every failing branch returns the same shape, and phase two did the same amount of
+        hashing work whichever branch this takes.
+        """
+        now = self._clock.now()
+
+        if attempt.predetermined is not None:
+            return self._failed(attempt.username, attempt.user, attempt.predetermined)
+
+        user = attempt.user
+        assert user is not None  # predetermined covers the None case
+
+        if not verified:
+            return self._record_bad_password(attempt.username, user, now)
 
         if not user.enabled:
-            return self._failed(username, user, LoginFailure.ACCOUNT_DISABLED)
+            return self._failed(attempt.username, user, LoginFailure.ACCOUNT_DISABLED)
 
         self._clear_failures(user, now)
-        self._upgrade_hash_if_stale(user, password, credential, now)
+        if attempt.credential is not None:
+            self._upgrade_hash_if_stale(user, attempt.password_for_rehash, attempt.credential, now)
 
         token, session = self._issue_session(user, now)
         self._events.append(

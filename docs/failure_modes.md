@@ -265,6 +265,65 @@ same reason codes at sites from sea level to 1 500 m, that the same object class
 identically at every elevation, and — pinned by name, because a property test needs a site to
 fail at — that neither assessment module reads the ellipsoidal field.
 
+### FM-060 — Password hashing ran on the event loop
+**Status:** Closed · **Severity:** was High — unauthenticated denial of service against the
+operator's picture
+
+**What it was.** `POST /auth/login` is an `async` handler and called `AuthService.authenticate`
+directly. Password verification is scrypt at deliberate cost — around 350 ms — so it executed
+**on the event loop**, and everything the process does shares that loop: other requests, the
+WebSocket push, and the pipeline cycle that advances the operator's display.
+
+Measured, not theorised. Three unauthenticated clients sending login attempts took every other
+request from 0.7 ms to 1.1 seconds — a factor of 1683. No credentials, no exploit, just the
+login form. And it is worse than slow responses: with the loop blocked, the pipeline stops
+stepping and the stream stops pushing, so the display freezes on stale data while showing every
+sign of being live.
+
+**Fix.** Authentication is split into three phases — read, verify, record. Only the verify step
+leaves the loop, in a worker thread, so every database read and write stays on the single writer
+that owns them (ADR 0006). The synchronous `authenticate` remains for the admin CLI and is a
+thin wrapper over the same three phases, so there is one implementation of the decision logic
+rather than two that can drift.
+
+Concurrency is bounded (`MAX_CONCURRENT_HASHES`). Moving the hash off the loop stops a flood
+freezing the display; it does not stop one burning every core, and an unauthenticated caller
+chooses how many to send. A flood now queues instead of saturating.
+
+**What makes it stay closed.** `tests/integration/test_network_exposure.py` reproduces the
+attack and asserts responsiveness holds — verified to fail when the fix is reverted. The
+timing-equalisation that resists account enumeration is re-asserted alongside it, because the
+refactor moved `dummy_verify` and a version that returned early for an unknown user would have
+reintroduced the oracle while every other test passed.
+
+### FM-061 — No security headers
+**Status:** Closed · **Severity:** was Medium — clickjacking and MIME sniffing against a browser
+console
+
+**What it was.** No `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy` or `Permissions-Policy` on any response. The realistic attack on an operator
+console is clickjacking: frame it invisibly and let someone acknowledge an alert they cannot
+see.
+
+**Fix.** Middleware, so a route added later cannot be added without them — the same reasoning
+that gates the router rather than each handler. Set in the application rather than left to the
+reverse proxy: a proxy is the right place for TLS and rate limiting, which this process cannot
+do, but a header it *can* set should not depend on someone else's configuration being right.
+`Strict-Transport-Security` is the deliberate exception, added only to requests that arrived
+over TLS so a loopback run cannot pin `localhost` to https in a developer's browser.
+
+### FM-062 — Scenario control was gated at viewer
+**Status:** Closed · **Severity:** was Low today, High on the day the engine is written
+
+**What it was.** `POST /scenarios/{id}/start` and `/stop` carried only the router's baseline
+`viewer` gate, while `POST /scenarios` required `admin`. Both are unimplemented, so nothing was
+exposed — but the missing role was deferred to whoever implemented the engine, in a docstring
+saying it "becomes an operator action" one day. The route existed with viewer access, and the
+gate depended on a future author reading a comment.
+
+**Fix.** Gated at `admin` now, while it does nothing. A viewer is not authorised to drive the
+simulation whether or not the engine that would do it exists.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 

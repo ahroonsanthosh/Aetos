@@ -416,16 +416,24 @@ async def create_scenario(
 @router.post("/scenarios/{scenario_id}/start", status_code=_NOT_IMPLEMENTED, tags=["scenarios"])
 async def start_scenario(
     services: ServicesDep,
+    operator: RequireAdmin,
     scenario_id: Annotated[str, Path()],
 ) -> None:
     """Not implemented. Returns 501.
+
+    Gated at `admin` **now**, while it does nothing, rather than when it starts doing
+    something. The role was previously left to whoever implemented the engine — a note in this
+    docstring saying it "becomes an operator action" one day — which meant the route already
+    existed with viewer-level access and the gate depended on a future author reading a
+    comment. A viewer is not authorised to drive the simulation whether or not the engine that
+    would do it exists.
 
     It appends no event, because nothing started. A `SCENARIO_STARTED` event written by an
     endpoint that starts nothing would make the log a record of something that did not happen,
     and the log's entire value is that it is not that.
 
-    When a scenario engine exists this becomes an operator action and takes an
-    `OperatorContext` the way `create_scenario` already does.
+    When a scenario engine exists this takes an `OperatorContext` the way `create_scenario`
+    already does, so the action is attributable and not merely authorised.
     """
     _require_known_scenario(services, scenario_id)
     raise HTTPException(_NOT_IMPLEMENTED, _SCENARIO_ENGINE_ABSENT)
@@ -434,9 +442,10 @@ async def start_scenario(
 @router.post("/scenarios/{scenario_id}/stop", status_code=_NOT_IMPLEMENTED, tags=["scenarios"])
 async def stop_scenario(
     services: ServicesDep,
+    operator: RequireAdmin,
     scenario_id: Annotated[str, Path()],
 ) -> None:
-    """Not implemented. Returns 501. See `start_scenario`."""
+    """Not implemented. Returns 501. See `start_scenario`, including the role."""
     _require_known_scenario(services, scenario_id)
     raise HTTPException(_NOT_IMPLEMENTED, _SCENARIO_ENGINE_ABSENT)
 
