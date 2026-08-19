@@ -45,15 +45,23 @@ from sensors.schemas.detection import (
     SensorType,
 )
 
-_MIN_FRAMES_FOR_ERROR_RATE = 20
-"""Below this many parsed frames since start, a run of parse failures is as likely to be start-
-up noise (a header split across the first couple of reads) as a marginal link, so DEGRADED is
-not reported until there is enough of a sample to mean something."""
+_MIN_EVENTS_FOR_ERROR_RATE = 20
+"""Below this many framing events since start, a run of failures is as likely to be start-up
+noise (opening the port mid-stream, so the first bytes are the tail of someone else's frame) as
+a marginal link, so DEGRADED is not reported until there is enough of a sample to mean
+something."""
 
 _DEGRADED_FRAME_ERROR_RATE = 0.2
-"""Above this fraction of frames failing to parse, report DEGRADED rather than OK. The adapter
-reports this because it is the adapter's own knowledge of its link, not a judgement about
-whether the sensor is broken versus looking at an empty scene — that distinction is
+"""Above this fraction of framing events failing, report DEGRADED rather than OK.
+
+A "failure" is a resync (a header that led nowhere) or a payload that framed but did not parse.
+Resyncs are counted because they are the *only* observable symptom of a marginal link: a link
+corrupting bytes mid-frame shows up as footers that do not match, not as payloads that fail to
+parse. Counting parse failures alone would leave this state effectively unreachable — a health
+signal that cannot fire is worse than none, because it implies coverage that does not exist.
+
+The adapter reports this because it is the adapter's own knowledge of its link, not a judgement
+about whether the sensor is broken versus looking at an empty scene — that distinction is
 `backend/system_health`'s job (see `sensors/adapters/README.md`, "Health")."""
 
 
@@ -111,6 +119,12 @@ class UartFmcwRadarAdapter(SensorAdapter):
         self._last_detection_time = None
         self._frame_successes = 0
         self._frame_errors = 0
+
+        # Clear the reconnect backoff before attempting. An explicit start() is a deliberate
+        # act by a caller who may well have just fixed the cable, and honouring a backoff armed
+        # by the previous run would leave a working sensor reporting OFFLINE until it expired —
+        # indistinguishable, to an operator, from hardware that is still unplugged (FM-010).
+        self._last_link_attempt_monotonic = None
         self._try_connect()
 
     def stop(self) -> None:
@@ -146,14 +160,20 @@ class UartFmcwRadarAdapter(SensorAdapter):
         except SerialTransportError as exc:
             self._last_link_error = str(exc)
             self._transport.close()
+            # Drop the partial frame with the link that was carrying it. Whatever arrives after
+            # a reconnect is a fresh stream, and splicing it onto the tail of the old one can
+            # only manufacture a frame that was never transmitted.
+            self._buffer = b""
             return []
 
         self._buffer += chunk
-        payloads, self._buffer = extract_data_frames(self._buffer)
+        scan = extract_data_frames(self._buffer)
+        self._buffer = scan.remainder
+        self._frame_errors += scan.resyncs
 
         timestamp = self._clock.now()
         detections: list[Detection] = []
-        for payload in payloads:
+        for payload in scan.payloads:
             try:
                 targets = parse_targets(payload)
             except FrameError:
@@ -194,14 +214,14 @@ class UartFmcwRadarAdapter(SensorAdapter):
         if not self._transport.is_open:
             return SensorState.OFFLINE, self._last_link_error or "serial link not open"
 
-        total_frames = self._frame_successes + self._frame_errors
-        if total_frames >= _MIN_FRAMES_FOR_ERROR_RATE:
-            error_rate = self._frame_errors / total_frames
+        total_events = self._frame_successes + self._frame_errors
+        if total_events >= _MIN_EVENTS_FOR_ERROR_RATE:
+            error_rate = self._frame_errors / total_events
             if error_rate > _DEGRADED_FRAME_ERROR_RATE:
                 return (
                     SensorState.DEGRADED,
-                    f"{self._frame_errors}/{total_frames} frames failed to parse since "
-                    "start; link may be marginal",
+                    f"{self._frame_errors}/{total_events} frames since start lost framing or "
+                    "failed to parse; link may be marginal",
                 )
         return SensorState.OK, "nominal"
 

@@ -30,7 +30,8 @@ class FakeTransport:
 
     def __init__(self, *, fail_open: bool = False) -> None:
         self._open = False
-        self._fail_open = fail_open
+        self.fail_open = fail_open
+        """Public so a test can 'reseat the cable' mid-run."""
         self.open_calls = 0
         self._queue: list[bytes] = []
         self._raise_on_next_read: Exception | None = None
@@ -41,7 +42,7 @@ class FakeTransport:
 
     def open(self) -> None:
         self.open_calls += 1
-        if self._fail_open:
+        if self.fail_open:
             raise SerialTransportError("simulated open failure")
         self._open = True
 
@@ -253,6 +254,84 @@ def test_a_frame_split_across_two_polls_is_still_parsed(clock: SimClock, frame: 
     transport.queue(whole[6:])
     detections = adapter.get_detections()
     assert len(detections) == 1
+
+
+def test_restart_after_a_failed_start_reconnects_immediately(
+    clock: SimClock, frame: LocalFrame
+) -> None:
+    """An explicit start() must not be blocked by a backoff armed by the previous run.
+
+    Regression: a caller who fixes the cable and restarts the adapter within the reconnect
+    interval would otherwise see OFFLINE from working hardware until the timer expired —
+    indistinguishable, to an operator, from a sensor still unplugged (FM-010).
+    """
+    transport = FakeTransport(fail_open=True)
+    adapter = _adapter(clock, frame, transport)
+    adapter.start()
+    assert adapter.health().state == SensorState.OFFLINE
+
+    adapter.stop()
+    transport.fail_open = False  # the cable is reseated
+    adapter.start()  # no clock advance: still well inside reconnect_interval_s
+
+    assert adapter.health().state == SensorState.OK
+
+
+def test_a_partial_frame_does_not_survive_a_link_drop(
+    clock: SimClock, frame: LocalFrame
+) -> None:
+    """Bytes buffered from before a disconnect must not be spliced onto the post-reconnect
+    stream, which could only manufacture a frame that was never transmitted."""
+    transport = FakeTransport()
+    adapter = _adapter(clock, frame, transport)
+    adapter.start()
+
+    whole = _frame(distance_byte=15)
+    transport.queue(whole[:6])
+    assert adapter.get_detections() == []
+
+    transport.fail_next_read(SerialTransportError("cable pulled"))
+    assert adapter.get_detections() == []
+
+    # Reconnect, then deliver only the tail of the old frame. With the stale head discarded
+    # this is unframed noise, so it must yield nothing rather than a spurious detection.
+    clock.advance(10.0)
+    transport.queue(whole[6:])
+
+    assert adapter.get_detections() == []
+
+
+def test_persistent_framing_corruption_reports_degraded(
+    clock: SimClock, frame: LocalFrame
+) -> None:
+    """The DEGRADED state must be reachable from the symptom a marginal link actually shows —
+    headers that lead nowhere — not only from the near-impossible short-payload case."""
+    transport = FakeTransport()
+    adapter = _adapter(clock, frame, transport)
+    adapter.start()
+
+    # Headers whose declared length never leads to a valid footer: framing lost, repeatedly.
+    corrupt = DATA_FRAME_HEADER + (8).to_bytes(2, "little") + b"NOTAFOOTERXX"
+    transport.queue(corrupt * 30)
+    adapter.get_detections()
+
+    health = adapter.health()
+    assert health.state == SensorState.DEGRADED
+    assert "framing" in health.reason
+
+
+def test_a_clean_stream_stays_ok_and_never_reports_degraded(
+    clock: SimClock, frame: LocalFrame
+) -> None:
+    transport = FakeTransport()
+    adapter = _adapter(clock, frame, transport)
+    adapter.start()
+
+    transport.queue(_frame(distance_byte=12) * 40)
+    detections = adapter.get_detections()
+
+    assert len(detections) == 40
+    assert adapter.health().state == SensorState.OK
 
 
 def test_a_dropped_link_reports_offline_and_reconnects_after_the_backoff(

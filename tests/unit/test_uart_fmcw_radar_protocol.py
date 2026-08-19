@@ -13,6 +13,7 @@ import pytest
 from sensors.adapters.uart_fmcw_radar.protocol import (
     DATA_FRAME_FOOTER,
     DATA_FRAME_HEADER,
+    MAX_PLAUSIBLE_PAYLOAD_LEN,
     FrameError,
     extract_data_frames,
     parse_targets,
@@ -37,26 +38,26 @@ def _payload(*records: bytes, count: int | None = None) -> bytes:
 
 def test_extract_single_complete_frame() -> None:
     payload = _payload(_target_record())
-    frames, remainder = extract_data_frames(_frame(payload))
+    scan = extract_data_frames(_frame(payload))
 
-    assert frames == [payload]
-    assert remainder == b""
+    assert scan.payloads == [payload]
+    assert scan.remainder == b""
 
 
 def test_extract_returns_empty_when_no_header_present() -> None:
-    frames, remainder = extract_data_frames(b"\x01\x02\x03garbage")
+    scan = extract_data_frames(b"\x01\x02\x03garbage")
 
-    assert frames == []
+    assert scan.payloads == []
     # Only the last few bytes are retained, in case a header started near the end.
-    assert len(remainder) <= 3
+    assert len(scan.remainder) <= 3
 
 
 def test_extract_skips_leading_garbage_before_a_header() -> None:
     payload = _payload(_target_record())
-    frames, remainder = extract_data_frames(b"\x00\x01\xff" + _frame(payload))
+    scan = extract_data_frames(b"\x00\x01\xff" + _frame(payload))
 
-    assert frames == [payload]
-    assert remainder == b""
+    assert scan.payloads == [payload]
+    assert scan.remainder == b""
 
 
 def test_extract_buffers_a_frame_split_across_two_calls() -> None:
@@ -64,13 +65,13 @@ def test_extract_buffers_a_frame_split_across_two_calls() -> None:
     whole = _frame(payload)
     first_half, second_half = whole[:7], whole[7:]
 
-    frames, remainder = extract_data_frames(first_half)
-    assert frames == []
-    assert remainder == first_half
+    scan = extract_data_frames(first_half)
+    assert scan.payloads == []
+    assert scan.remainder == first_half
 
-    frames, remainder = extract_data_frames(remainder + second_half)
-    assert frames == [payload]
-    assert remainder == b""
+    scan = extract_data_frames(scan.remainder + second_half)
+    assert scan.payloads == [payload]
+    assert scan.remainder == b""
 
 
 def test_extract_resyncs_past_a_corrupt_length_field() -> None:
@@ -84,20 +85,53 @@ def test_extract_resyncs_past_a_corrupt_length_field() -> None:
     bogus = DATA_FRAME_HEADER + (5).to_bytes(2, "little") + b"NOTAFOOTR"
     buffer = bogus + good_frame
 
-    frames, remainder = extract_data_frames(buffer)
+    scan = extract_data_frames(buffer)
 
-    assert frames == [payload]
-    assert remainder == b""
+    assert scan.payloads == [payload]
+    assert scan.remainder == b""
+    assert scan.resyncs == 1
+
+
+def test_extract_reports_no_resyncs_on_a_clean_stream() -> None:
+    payload = _payload(_target_record())
+    assert extract_data_frames(_frame(payload) + _frame(payload)).resyncs == 0
+
+
+def test_an_implausible_length_field_resyncs_instead_of_stalling() -> None:
+    """A corrupt length field must cost one byte of resync, not withhold every later frame
+    until the declared byte count arrives — which at this baud rate is seconds of apparent
+    silence, indistinguishable from an empty sky (FM-010)."""
+    payload = _payload(_target_record())
+    bogus = DATA_FRAME_HEADER + (60000).to_bytes(2, "little")
+
+    scan = extract_data_frames(bogus + _frame(payload))
+
+    assert scan.payloads == [payload]
+    assert scan.resyncs == 1
+    assert scan.remainder == b""
+
+
+def test_a_payload_at_the_plausible_limit_is_still_accepted() -> None:
+    """The implausible-length guard must reject noise without also rejecting a legitimately
+    full frame, so the boundary itself is exercised."""
+    records = _target_record() * ((MAX_PLAUSIBLE_PAYLOAD_LEN - 2) // 5)
+    payload = _payload(count=0) + records
+    assert len(payload) <= MAX_PLAUSIBLE_PAYLOAD_LEN
+
+    scan = extract_data_frames(_frame(payload))
+
+    assert scan.payloads == [payload]
+    assert scan.resyncs == 0
 
 
 def test_extract_finds_multiple_frames_in_one_buffer() -> None:
     payload_a = _payload(_target_record(distance_byte=5))
     payload_b = _payload(_target_record(distance_byte=50))
 
-    frames, remainder = extract_data_frames(_frame(payload_a) + _frame(payload_b))
+    scan = extract_data_frames(_frame(payload_a) + _frame(payload_b))
 
-    assert frames == [payload_a, payload_b]
-    assert remainder == b""
+    assert scan.payloads == [payload_a, payload_b]
+    assert scan.remainder == b""
 
 
 def test_parse_targets_reads_angle_distance_direction_speed_signal() -> None:

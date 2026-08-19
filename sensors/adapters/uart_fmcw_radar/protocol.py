@@ -48,6 +48,15 @@ _PAYLOAD_PREFIX_LEN = 2
 _TARGET_RECORD_LEN = 5
 _ANGLE_ZERO_OFFSET = 0x80
 
+MAX_PLAUSIBLE_PAYLOAD_LEN = 256
+"""Ceiling on a declared payload length before the header is treated as noise.
+
+The length field is two bytes, so a corrupt one can declare up to 65535. Believing it means
+withholding every subsequent frame until that many bytes have arrived — several seconds of
+apparent silence at this link's baud rate, which is exactly the "empty sky versus broken
+sensor" ambiguity FM-010 is about. A real payload here is a 2-byte prefix plus a handful of
+5-byte records, so anything past this is a corrupt header rather than a large frame."""
+
 
 class FrameError(ValueError):
     """A byte sequence framed correctly but did not parse as a valid payload."""
@@ -83,41 +92,69 @@ class RawTarget:
     proxy for return strength, never as a calibrated SNR in dB."""
 
 
-def extract_data_frames(buffer: bytes) -> tuple[list[bytes], bytes]:
-    """Every complete data-frame payload found in `buffer`, and the unconsumed remainder.
+@dataclass(frozen=True, slots=True)
+class FrameScan:
+    """The result of one pass over a receive buffer."""
+
+    payloads: list[bytes]
+    """Complete data-frame payloads, in wire order."""
+
+    remainder: bytes
+    """Bytes not yet consumed — a partial frame awaiting the rest of its bytes, or the tail
+    that might hold the start of a header split across two reads."""
+
+    resyncs: int
+    """How many header-shaped byte sequences did not lead to a valid footer and were skipped.
+
+    Reported rather than silently swallowed because this is the only observable symptom of a
+    marginal link — corrupt framing that still parses is invisible otherwise, and an adapter
+    cannot report a link as degraded on evidence it threw away."""
+
+
+def extract_data_frames(buffer: bytes) -> FrameScan:
+    """Every complete data-frame payload found in `buffer`, plus what could not be consumed.
 
     Scans for `DATA_FRAME_HEADER` rather than assuming the buffer starts aligned, because a
     serial link can be opened mid-stream or lose framing after line noise. A header without a
     complete frame behind it yet is left in the remainder for the next call; a header whose
-    declared length does not lead to a valid footer is treated as a false match inside noise
-    and skipped by one byte, rather than trusted. Never raises — losing and regaining framing
-    is normal behaviour for a live UART link, not a caller error.
+    declared length is implausible or does not lead to a valid footer is treated as a false
+    match inside noise and skipped by one byte, rather than trusted. Never raises — losing and
+    regaining framing is normal behaviour for a live UART link, not a caller error.
     """
     payloads: list[bytes] = []
+    resyncs = 0
     cursor = 0
     while True:
         start = buffer.find(DATA_FRAME_HEADER, cursor)
         if start == -1:
             # Keep the last few bytes in case a header is split across this call and the next.
             tail_start = max(cursor, len(buffer) - (_HEADER_LEN - 1))
-            return payloads, buffer[tail_start:]
+            return FrameScan(payloads, buffer[tail_start:], resyncs)
 
         length_start = start + _HEADER_LEN
         length_end = length_start + _LENGTH_FIELD_LEN
         if length_end > len(buffer):
-            return payloads, buffer[start:]
+            return FrameScan(payloads, buffer[start:], resyncs)
 
         payload_len = int.from_bytes(buffer[length_start:length_end], byteorder="little")
+        if payload_len > MAX_PLAUSIBLE_PAYLOAD_LEN:
+            # Believing this length would stall framing until it was filled. Treat the header
+            # as noise and resync, so a corrupt length field costs one byte, not seconds.
+            resyncs += 1
+            cursor = start + 1
+            continue
+
         payload_start = length_end
         payload_end = payload_start + payload_len
         footer_end = payload_end + _FOOTER_LEN
         if footer_end > len(buffer):
-            return payloads, buffer[start:]
+            return FrameScan(payloads, buffer[start:], resyncs)
 
         if buffer[payload_end:footer_end] != DATA_FRAME_FOOTER:
             # A header-shaped byte sequence that was not really a header (noise, or a corrupt
             # length field). Resync by searching again one byte later rather than trusting the
             # length field a second time.
+            resyncs += 1
             cursor = start + 1
             continue
 
