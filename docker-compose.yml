@@ -1,0 +1,40 @@
+# Aetos in a container.
+#
+# NOT CURRENTLY USABLE AS-IS — one decision is outstanding. See "Docker" in README.md.
+#
+# The image binds 0.0.0.0 because that is the only way the port is reachable from outside the
+# container, and `guard_bind` refuses to bind anything but loopback without --behind-proxy,
+# which asserts that TLS is terminated in front of the process. Publishing to 127.0.0.1 as
+# below means nothing crosses a network in clear, so the posture is genuinely safe — but the
+# process cannot verify that, and passing --behind-proxy to quieten it would encode an
+# assertion about TLS that is not true here.
+#
+# Resolving that is a deliberate decision about how a container declares its exposure, and it
+# has not been taken. Until it is, run Aetos with ./start.sh.
+#
+# To run a different scenario once it is resolved:
+#   docker compose run --rm --service-ports aetos --scenario h_track_crossing
+
+services:
+  aetos:
+    build: .
+    ports:
+      # Bound to localhost deliberately. Aetos authenticates operators (ADR 0016), but a
+      # console carrying the whole live picture still has no business being reachable beyond
+      # the machine running it. Publishing on 0.0.0.0 would put the login page — and the
+      # lockout counter behind it — on the network.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # The event log is the source of truth and survives the container.
+      - aetos-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/v1/system/mode')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  aetos-data:

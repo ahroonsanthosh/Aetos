@@ -54,9 +54,9 @@ USER aetos
 
 EXPOSE 8000
 
-# 0.0.0.0 so the port is reachable from outside the container. The published port is bound to
-# localhost in compose — there is no authentication (FM-001), and this must not be reachable
-# beyond the machine running it.
+# 0.0.0.0 so the port is reachable from outside the container; the published port is bound to
+# localhost in compose. Note that `guard_bind` refuses this combination without --behind-proxy
+# or --no-auth, so the container does not currently start — see the note in docker-compose.yml.
 ENTRYPOINT ["python", "-m", "backend.main", \
             "--host", "0.0.0.0", "--port", "8000", \
             "--data-dir", "/app/data"]

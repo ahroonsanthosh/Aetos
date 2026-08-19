@@ -91,11 +91,20 @@ There is no native PowerShell equivalent yet. If you'd rather not install or use
 so and one can be added — but treat that as untested until it has actually been run on
 Windows, the same way the Docker path below is flagged.
 
-### Or with Docker, if you would rather not install either
+### Docker — present, but not currently working
 
-```bash
-docker compose up      # then http://localhost:8000
-```
+`Dockerfile` and `docker-compose.yml` are at the repository root and the image builds the
+interface and the API into one container. **`docker compose up` does not currently start**, and
+the reason is a real one rather than a missing file.
+
+The container must bind `0.0.0.0` for its port to be reachable at all, and `guard_bind` refuses
+to bind anything but loopback without `--behind-proxy` — which asserts that TLS is terminated in
+front of the process. Compose publishes to `127.0.0.1` only, so nothing crosses a network in
+clear and the posture is genuinely safe; the process simply cannot verify that, and passing
+`--behind-proxy` would encode a claim about TLS that is not true.
+
+How a container should declare its exposure is a deliberate decision that has not been taken.
+Until it is, use `./start.sh`.
 
 ### Tests
 

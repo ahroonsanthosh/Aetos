@@ -125,6 +125,20 @@ These are the ones that will bite you if you change them without reading the ADR
 - **`response/`** — deliberately empty, gated behind a design pass.
 - **Scenario control API** — `POST /scenarios/{id}/start` returns "not implemented" honestly.
 
+### Docker: present, does not start
+
+`Dockerfile` and `docker-compose.yml` are at the repository root (they were under `frontend/`
+with a build context that could not resolve their own `COPY` paths — fixed). The image is
+sound. **`docker compose up` still does not start**, for a real reason:
+
+The container must bind `0.0.0.0` to be reachable, and `guard_bind` refuses anything but
+loopback without `--behind-proxy`, which asserts TLS termination in front of the process.
+Compose publishes to `127.0.0.1` only, so the posture is genuinely safe — the process just
+cannot verify it, and passing `--behind-proxy` would encode a claim about TLS that is false.
+
+How a container declares its exposure is an open design decision. Do not paper over it by
+passing `--behind-proxy`; that is a lie in a config file about a security boundary.
+
 ### Config that looks live but is not
 `config/environments/{sim,staging,prod}.json` each declare a `risk.hysteresis` block **that
 nothing reads.** The live risk tuning is `config/risk/policy.json`, in different units, with
@@ -373,6 +387,32 @@ cd frontend && npm run build    # builds
 
 ---
 
+## 9a. What was verified by running it, not just by testing it
+
+The final review pass exercised the system rather than only its test suite. Recorded here so a
+later session knows what is genuinely proven versus merely asserted.
+
+- **All nine scenarios, each for its full declared duration** (200–360 s). Grading discriminates
+  correctly: `a_benign_transit` peaks MEDIUM with **zero alerts** and never gets closer than
+  1784 m; `b_approaching_threat` reaches CRITICAL, raises 6 alerts, and penetrates to −791 m
+  inside the protected area. Every other threat scenario reaches CRITICAL and alerts.
+  *(Beware: a truncated run makes benign and threat scenarios look identical — the threats
+  simply have not arrived yet. Run full durations.)*
+- **`./start.sh` from cold** with `.venv` and `frontend/dist` deleted: rebuilds and serves in
+  ~18 s.
+- **The operator interface rendered against live data** in Chromium: PPI display, zone rings,
+  track markers, track table, honest "not assessed" on unassessed tracks, `FUSION NOT BUILT`
+  chip. **Zero console errors, zero failed requests.** SPA deep-link (`/health`) returns 200 on
+  a hard refresh.
+- **Deployment guard** refuses all three unsafe binds and permits loopback development.
+- **Auth end to end**: admin CLI → login → gated routes 401→200, OpenAPI gated, wrong password
+  refused, full audit trail written.
+- **A real `SensorType.RADAR` stream** through ingestion → tracking → classification → risk to a
+  sensible recommendation, with nothing downstream branching on sensor kind.
+- **Not verified**: the Docker path (no daemon available, and it does not start anyway — above).
+
+---
+
 ## 10. Where to start on new work
 
 Roughly in order of value:
@@ -384,7 +424,9 @@ Roughly in order of value:
    already reports the facts; nothing consumes them.
 3. **Wire in the testbed radar** (§6) — needs the site-configuration decision first.
 4. **Reconcile the two hysteresis configs** (§4) — pick which units the deployment surface speaks.
-5. **Restart recovery and saturation** — see `docs/failure_modes.md`; both open.
+5. **Decide how a container declares its exposure** (§4, Docker) — small, and it unblocks
+   `docker compose up`.
+6. **Restart recovery and saturation** — see `docs/failure_modes.md`; both open.
 
 Read `docs/failure_modes.md` before relying on any of this. Authentication (FM-001) is closed;
 sensor silence, restart recovery and saturation are not.
