@@ -158,23 +158,40 @@ def cluster_tracks(tracks: list[TrackRisk], policy: SituationPolicy) -> list[Tra
     chain — sensor A and sensor C may each agree with B while disagreeing with each other by
     more than the threshold — and requiring every pair to agree would split that chain back
     into the fragments this exists to reconcile.
+
+    A track matching several existing clusters therefore **merges** them rather than picking
+    one. Without that, the chain above survives only when its bridging member happens to be
+    processed in the middle: with A and C seen first they open two clusters, and B arriving
+    later joins whichever it is compared against first, leaving the other stranded. The result
+    would depend on the order tracks were created in — which, since acquisition order is
+    whatever the sensors happened to do, means the same three fragments could be reported as
+    one object or two on different runs of the same situation.
+
+    Merging makes this the connected components of the "probably the same object" relation,
+    which is order-independent by construction.
     """
     clusters: list[TrackCluster] = []
 
     for track in tracks:
-        joined = next(
-            (
-                cluster
-                for cluster in clusters
-                if any(_probably_same_object(track, member, policy) for member in cluster.members)
-            ),
-            None,
-        )
-        if joined is None:
+        matching = [
+            cluster
+            for cluster in clusters
+            if any(_probably_same_object(track, member, policy) for member in cluster.members)
+        ]
+
+        if not matching:
             clusters.append(TrackCluster(track_ids=[track.track_id], members=[track]))
-        else:
-            joined.track_ids.append(track.track_id)
-            joined.members.append(track)
+            continue
+
+        # Fold every cluster this track bridges into the first, then add the track itself.
+        primary, *bridged = matching
+        for other in bridged:
+            primary.track_ids.extend(other.track_ids)
+            primary.members.extend(other.members)
+            clusters.remove(other)
+
+        primary.track_ids.append(track.track_id)
+        primary.members.append(track)
 
     return clusters
 

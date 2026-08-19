@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.common.clock import Clock
-from backend.common.identifiers import event_id_generator
+from backend.common.identifiers import event_id_generator, event_id_sequence
 from backend.events.types import Event, EventType
 
 Subscriber = Callable[[Event], None]
@@ -309,11 +309,38 @@ class SqliteEventStore(EventStore):
             raise EventStoreError(f"could not read events: {exc}") from exc
 
     def _restore_id_sequence(self) -> None:
-        count = self.count()
-        if count:
-            self._ids = event_id_generator()
-            for _ in range(count):
-                self._ids.next()
+        """Resume identifier numbering above the highest one the log actually holds.
+
+        Read from the last stored `event_id` rather than counted from the number of rows.
+        Counting is only correct while every identifier issued reached the disk, and `append`
+        takes one *before* its INSERT: a transient write failure — a momentarily full disk, a
+        filesystem hiccup — spends an identifier with no row behind it. The count then
+        understates what has been issued, so the next start re-mints an identifier the log
+        already contains, and every append from then on dies on the UNIQUE constraint.
+
+        That turned a recoverable glitch into a permanent one. The log is the only authority on
+        what happened and the pipeline must halt when it cannot record (FM-032), so a store
+        that cannot append is a system that cannot run — and it stayed that way across every
+        subsequent restart, because each one recomputed the same colliding resume point.
+
+        Identifiers are issued monotonically and rows are inserted in issuance order, so the
+        last row by `seq` carries the highest identifier. That also makes this O(1) rather than
+        a loop over the whole log at every startup.
+        """
+        row = self._conn.execute(
+            "SELECT event_id FROM events ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return
+
+        highest = event_id_sequence(row["event_id"])
+        if highest is None:
+            # An identifier this format does not recognise, written by an older version. Fall
+            # back to the row count: it is what the previous implementation used, and it is no
+            # worse here than it was there.
+            highest = self.count()
+
+        self._ids = event_id_generator(start=highest + 1)
 
 
 def _row_to_event(row: sqlite3.Row) -> Event:

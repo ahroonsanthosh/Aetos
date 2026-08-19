@@ -13,6 +13,7 @@ self-reinforcing coupling the narrow per-track input exists to prevent.
 
 from __future__ import annotations
 
+import itertools
 import math
 from datetime import UTC, datetime
 
@@ -411,3 +412,56 @@ class _Holder:
         updated = track.model_copy(update={"threat": threat})
         self._tracks[track_id] = updated
         return updated
+
+
+# --------------------------------------------------------------------------------------
+# Clustering must not depend on the order tracks were acquired in
+# --------------------------------------------------------------------------------------
+
+
+def test_a_chain_of_fragments_clusters_the_same_whatever_the_acquisition_order(
+    policy: SituationPolicy,
+) -> None:
+    """The exact case single-link agglomeration is chosen for, from every direction.
+
+    Regression: a track was joined to the *first* cluster it matched and never merged the
+    others, so the chain the docstring describes — sensor A and sensor C each agreeing with B
+    while disagreeing with each other — survived only when B happened to be processed between
+    them. With A and C acquired first they opened two clusters, and B arriving later joined one
+    and left the other stranded.
+
+    Acquisition order is whatever the sensors happened to do, so the same three fragments of
+    one drone were reported as one object or two depending on nothing meaningful. Being the
+    connected components of the relation, the answer must not move.
+    """
+    separation = policy.duplicate_separation_m * 0.9
+    chain = [
+        contact("TRK-A", bearing_deg=0.0, offset_m=(0.0, 0.0, 0.0)),
+        contact("TRK-B", bearing_deg=0.0, offset_m=(separation, 0.0, 0.0)),
+        contact("TRK-C", bearing_deg=0.0, offset_m=(2 * separation, 0.0, 0.0)),
+    ]
+
+    for ordering in itertools.permutations(chain):
+        clusters = cluster_tracks(list(ordering), policy)
+        acquired = [track.track_id for track in ordering]
+
+        assert len(clusters) == 1, (
+            f"acquisition order {acquired} split one chain of fragments into "
+            f"{len(clusters)} objects"
+        )
+        assert sorted(clusters[0].track_ids) == ["TRK-A", "TRK-B", "TRK-C"]
+
+
+def test_merging_a_chain_does_not_swallow_genuinely_distinct_contacts(
+    policy: SituationPolicy,
+) -> None:
+    """The merge must stay bounded by the relation — two contacts far apart are two objects,
+    however the clusters were built up around them."""
+    far_apart = [
+        contact("TRK-A", bearing_deg=0.0, range_m=2_000.0),
+        contact("TRK-B", bearing_deg=180.0, range_m=2_000.0),
+    ]
+
+    for ordering in itertools.permutations(far_apart):
+        clusters = cluster_tracks(list(ordering), policy)
+        assert len(clusters) == 2

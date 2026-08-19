@@ -389,3 +389,58 @@ def test_concurrent_reader_sees_committed_events(tmp_path: Path, clock: SimClock
     assert [e.track_id for e in reader.read_from(1)] == ["TRK-00001"]
     reader.close()
     writer.close()
+
+
+def test_a_transient_write_failure_does_not_wedge_the_log_across_a_restart(tmp_path) -> None:
+    """A recoverable glitch must not become a permanent one.
+
+    Regression: `append` takes an `event_id` before its INSERT, so a write that fails — a
+    momentarily full disk, a filesystem hiccup — spends an identifier with no row behind it.
+    Identifier numbering was then resumed from the *row count*, which understates what has been
+    issued, so the next start re-minted an identifier the log already held and every append
+    from that moment died on the UNIQUE constraint.
+
+    Because the log is the only authority on what happened and the pipeline must halt when it
+    cannot record (FM-032), that is a system that cannot run — and it stayed that way across
+    every subsequent restart, since each one recomputed the same colliding resume point.
+    """
+    path = tmp_path / "events.db"
+    clock = SimClock(START)
+
+    store = SqliteEventStore(clock, path)
+    for index in range(10):
+        store.append(EventType.TRACK_UPDATED, "tracking", {"index": index})
+
+    # The disk is momentarily unwritable: the identifier is spent, no row is written.
+    store._conn.execute("PRAGMA query_only=ON")
+    with pytest.raises(EventStoreError):
+        store.append(EventType.TRACK_UPDATED, "tracking", {"during": "outage"})
+    store._conn.execute("PRAGMA query_only=OFF")
+
+    store.append(EventType.TRACK_UPDATED, "tracking", {"after": "recovery"})
+    recorded = {event.event_id for event in store.read_from(1)}
+    store.close()
+
+    reopened = SqliteEventStore(clock, path)
+    try:
+        event = reopened.append(EventType.TRACK_UPDATED, "tracking", {"after": "restart"})
+        assert event.event_id not in recorded
+    finally:
+        reopened.close()
+
+
+def test_reopening_resumes_above_the_highest_identifier_the_log_holds(tmp_path) -> None:
+    path = tmp_path / "events.db"
+    clock = SimClock(START)
+
+    store = SqliteEventStore(clock, path)
+    for index in range(5):
+        store.append(EventType.TRACK_UPDATED, "tracking", {"index": index})
+    issued = [event.event_id for event in store.read_from(1)]
+    store.close()
+
+    reopened = SqliteEventStore(clock, path)
+    try:
+        assert reopened.append(EventType.TRACK_UPDATED, "tracking").event_id not in issued
+    finally:
+        reopened.close()

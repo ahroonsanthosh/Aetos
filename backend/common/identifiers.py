@@ -21,6 +21,7 @@ _ALERT_PREFIX = "ALT"
 
 _TRACK_ID_PATTERN = re.compile(r"^TRK-\d{5,}$")
 _ALERT_ID_PATTERN = re.compile(r"^ALT-(\d{5,})$")
+_EVENT_ID_PATTERN = re.compile(r"^evt-(\d{8,})$")
 
 
 class IdGenerator:
@@ -62,14 +63,30 @@ def track_id_generator() -> IdGenerator:
     return IdGenerator(_TRACK_PREFIX, width=5)
 
 
-def event_id_generator() -> IdGenerator:
+def event_id_generator(start: int = 1) -> IdGenerator:
     """Event IDs.
 
     Note that the event log's ordering authority is its monotonic `seq`, assigned by the
     single writer, not this identifier. The event ID is a stable human-readable handle; `seq`
     is the total order. See docs/adr/0006.
+
+    `start` exists for the same reason as `alert_id_generator`'s: reopening an existing log
+    must resume above the highest identifier it already contains. Resuming from the *row count*
+    instead is only correct while every identifier issued reached the disk, and an append whose
+    INSERT fails spends one without writing a row — after which the count understates what has
+    been issued, and the resumed generator re-mints an identifier the log already holds.
     """
-    return IdGenerator(_EVENT_PREFIX, width=8)
+    return IdGenerator(_EVENT_PREFIX, width=8, start=start)
+
+
+def event_id_sequence(value: str) -> int | None:
+    """The counter inside an event identifier, or None if it is not one.
+
+    Returns None rather than raising so that a log containing an identifier written by an
+    older format can still be resumed from, rather than refusing to open.
+    """
+    match = _EVENT_ID_PATTERN.match(value)
+    return int(match.group(1)) if match else None
 
 
 def alert_id_generator(start: int = 1) -> IdGenerator:
