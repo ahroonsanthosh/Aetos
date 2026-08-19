@@ -32,6 +32,7 @@ from backend.risk.factors import (
     LowAltitudePenetrationFactor,
     PersistenceFactor,
     ProximityFactor,
+    SensorCorroborationFactor,
     TimeToProtectedFactor,
     TrackRisk,
     ZoneIncursionFactor,
@@ -59,6 +60,7 @@ _FACTOR_TYPES: dict[str, type[EscalationFactor]] = {
     "low_altitude_near_asset": LowAltitudePenetrationFactor,
     "identified_as_uas": IdentityThreatFactor,
     "persistent_track": PersistenceFactor,
+    "multi_sensor_corroboration": SensorCorroborationFactor,
 }
 
 

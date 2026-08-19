@@ -5,14 +5,19 @@
     "zone_incursion": {
       "group": "engagement",
       "weight": 0.85,
-      "parameters": {}
+      "parameters": {
+        "monitored_activation": 0.0,
+        "restricted_activation": 0.6,
+        "protected_activation": 1.0
+      }
     },
     "closing_on_protected_area": {
       "group": "engagement",
       "weight": 0.8,
       "parameters": {
         "horizon_s": 300.0,
-        "urgent_s": 45.0
+        "urgent_s": 45.0,
+        "sharpness": 2.0
       }
     },
     "proximity_to_protected_area": {
@@ -70,6 +75,13 @@
       "parameters": {
         "established_s": 90.0,
         "minimum_detections": 6.0
+      }
+    },
+    "multi_sensor_corroboration": {
+      "group": "corroborating",
+      "weight": 0.3,
+      "parameters": {
+        "corroborating_sensors": 3.0
       }
     }
   },

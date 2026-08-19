@@ -164,3 +164,54 @@ This is a real narrowing of the original decision, and it is worth stating why t
 looked right: noisy-OR *is* the correct rule for independent evidence, and the factor list reads
 like independent evidence until it is run. Nothing in the reasoning was wrong except the
 unexamined assumption that all nine factors were the same kind of statement.
+
+## Amendment — curve shape is part of the decision, and must be tested as such
+
+Found by reading the engine against its own documentation rather than by running it, which is
+why it survived so long.
+
+`closing_on_protected_area` is the sharpest number the system produces: "ninety seconds out" is
+actionable in a way "1.8 km" is not, because it already folds in speed and geometry. Its
+documented shape was explicit — *"the difference between 300 s and 240 s barely matters and the
+difference between 60 s and 20 s matters enormously"* — and it shipped raising the linear ramp
+to the power **0.5** rather than **2**, which is precisely that curve inverted.
+
+The consequence was not subtle. Under the inverted exponent a contact four minutes out on a
+straight-line course activated at **0.49**; the intended figure is **0.06**. Because engagement
+takes the group *maximum* and this factor carries the second-highest weight in the group, that
+one factor routinely set the entire score, and ordinary distant inbound traffic sat a few points
+below MEDIUM on geometry that said only "inbound, eventually" — the same over-sensitivity the
+first amendment was written to remove, reintroduced through a different door.
+
+Every test passed throughout. The endpoints were correct — full activation at the urgent
+threshold, silence beyond the horizon — and only the middle of the curve was wrong. Endpoint
+assertions cannot see that.
+
+Two things follow, and the second matters more than the first.
+
+1. The exponent is now `sharpness`, a factor parameter defaulting to 2.0, so the curve is
+   tunable per site and its shape is stated in configuration rather than implied by code.
+2. **A factor's curve shape is part of this decision, not an implementation detail of it.**
+   `tests/unit/test_risk_calibration.py` therefore asserts monotonicity and mid-curve
+   relationships across every ramp, not just their endpoints — expressed as relationships
+   ("this is below that") rather than exact scores, so a legitimate retune does not fail the
+   suite and train people to update expected values without reading them.
+
+## Amendment — corroboration counts sensors, not detections
+
+`multi_sensor_corroboration` was added to the `corroborating` group. The evidence was already
+being carried to the operator on every published Track and simply never passed to assessment.
+
+The reasoning is that failure modes must be *independent* to corroborate. A single sensor's
+picture can be an artefact of that sensor — radar multipath off a structure, an RF bearing
+ghost, a thermal reflection — and no amount of persistence on that one sensor rules it out,
+because the error repeats with the observation. A second sensor of a different kind failing the
+same way in the same place at the same time is a far less likely coincidence.
+
+It counts *distinct sensors* rather than detections deliberately. A hundred returns from one
+radar is persistence, which `persistent_track` already scores; two returns from two sensors is
+corroboration. Conflating them would let one chatty sensor impersonate agreement, which is the
+opposite of what the factor is for.
+
+Being corroborating, it cannot create concern where the geometry found none: a contact held by
+every sensor on site, parked far away going nowhere, still scores zero.

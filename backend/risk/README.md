@@ -51,9 +51,17 @@ two together would quietly suppress it.
 | `low_altitude_near_asset` | behaviour | Altitude, gated on proximity |
 | `identified_as_uas` | corroborating | Classification mass on UAS labels × confidence |
 | `persistent_track` | corroborating | Detection count and track age |
+| `multi_sensor_corroboration` | corroborating | How many distinct sensors hold the track |
 
 Adding a concern — RF emission, correlated approach, airspace deconfliction — is one class
 implementing `EscalationFactor` plus one config entry. Nothing existing changes.
+
+`multi_sensor_corroboration` is the one this system is uniquely placed to offer, and it counts
+*distinct sensors* rather than detections on purpose. A single sensor's picture can be an
+artefact of that sensor — radar multipath, an RF bearing ghost, a thermal reflection — and no
+amount of persistence on one sensor rules that out, because the error repeats with the
+observation. A hundred returns from one radar is persistence; two returns from two sensors is
+corroboration, and conflating them would let one chatty sensor impersonate agreement.
 
 ## How they combine
 
@@ -69,7 +77,7 @@ Not one rule but three, because the factors are three different kinds of stateme
 
 Then `score = 100 · escalation · mitigation`.
 
-This is the second version. The first applied plain noisy-OR to all nine and was wrong twice
+This is the second version. The first applied plain noisy-OR to all of them and was wrong twice
 over — a track 11 km away scored 25 for having been observed two minutes, and an ordinary
 inbound contact at 700 m pinned at 100 with nowhere left to go. Both are recorded in ADR 0013's
 amendment; both were found by running the engine, not by reading it.
@@ -119,6 +127,23 @@ approach (FM-023). That is not fusion — nothing is merged, no track state chan
 over-count is reported to the operator rather than quietly absorbed: *"8 tracks · likely 5
 objects"*.
 
+## Calibrating it
+
+`tests/unit/test_risk.py` protects the safety properties. `tests/unit/test_risk_calibration.py`
+protects something distinct and easier to lose: **the curves keep the shape their design says
+they have, all the way along, not just at their endpoints.**
+
+That separation was earned. The time-to-boundary ramp shipped with its exponent inverted —
+shallow where it was documented to be steep — and every test passed throughout, because the
+endpoints were correct and only the middle was wrong. A contact four minutes out activated at
+0.49 instead of 0.06, and since engagement takes the group *maximum*, that single factor
+routinely set the whole score. Ordinary inbound traffic sat a few points below MEDIUM on
+geometry that said only "inbound, eventually".
+
+So calibration is asserted as **monotonicity and mid-curve relationships** rather than as exact
+scores. A test that pins an exact number to a tuning constant fails on every legitimate retune,
+and teaches whoever hits it to update the expected value without reading why.
+
 ## Known limits
 
 - **Constant-velocity geometry.** Time-to-boundary assumes the current course is held. It is
@@ -131,7 +156,7 @@ objects"*.
 | File | Purpose |
 |---|---|
 | `models.py` | `RiskAssessment`, `FactorContribution` |
-| `factors.py` | `EscalationFactor` and the nine implementations; mitigation |
+| `factors.py` | `EscalationFactor` and the ten implementations; mitigation |
 | `engine.py` | Combination, confidence, policy loading |
 | `hysteresis.py` | Score → level, ADR 0007 |
 | `correlation.py` | Track clustering and cycle-level situation findings |

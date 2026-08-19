@@ -196,6 +196,7 @@ class RiskService:
             speed_mps=track.kinematics.speed_mps,
             altitude_m=track.position.altitude_m,
             detection_count=track.tracking.detection_count,
+            contributing_sensor_count=len(track.tracking.contributing_sensors),
             track_age_s=(now - track.tracking.first_seen).total_seconds(),
             coasting=track.tracking.is_coasting,
             track_confidence=track.tracking.track_confidence,

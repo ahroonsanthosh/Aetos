@@ -46,7 +46,18 @@ UAS_LABELS = frozenset(
 # Labels that positively identify something as *not* an air threat. Only these can earn a
 # mitigation discount — `unknown` is deliberately absent, and that absence is the safety
 # property of the whole module.
-BENIGN_LABELS = frozenset({ClassificationLabel.BIRD, ClassificationLabel.VEHICLE})
+BENIGN_LABELS: tuple[ClassificationLabel, ...] = (
+    ClassificationLabel.BIRD,
+    ClassificationLabel.VEHICLE,
+)
+"""Ordered rather than a set, so that naming the leading benign label is deterministic.
+
+Two labels holding equal mass is an ordinary outcome of a confusion model, and picking the
+winner out of a `frozenset` resolved that tie by iteration order — which for enum members
+depends on string hashing and therefore on `PYTHONHASHSEED`. The same replayed log could then
+explain the same discount with a different label from run to run, which is exactly the kind of
+irreproducibility ADR 0008 exists to prevent. A tuple makes the tie-break declaration order.
+"""
 
 
 @dataclass(slots=True)
@@ -70,6 +81,13 @@ class TrackRisk:
     track_age_s: float
     coasting: bool
     track_confidence: float
+
+    contributing_sensor_count: int = 1
+    """How many distinct sensors have contributed a detection to this track.
+
+    Defaults to 1 — the assumption that costs nothing, since a track exists only because
+    something detected it, and one sensor earns no corroboration.
+    """
 
     classification: dict[ClassificationLabel, float] = field(default_factory=dict)
     """The classification distribution, empty when nothing has classified this track."""
@@ -204,9 +222,23 @@ class ZoneIncursionFactor(EscalationFactor):
         )
 
     def _severity_activation(self, zone: ProjectedZone) -> float:
-        # Monitored presence is the ground state at a site that bothered to define monitored
-        # airspace, so it activates nothing on its own; restricted and protected escalate.
-        return {0: 0.0, 1: 0.6, 2: 1.0}.get(zone.kind.severity, 0.0)
+        """How much each kind of zone escalates, by `ZoneKind.severity`.
+
+        Configuration rather than constants, for the reason `FactorPolicy` gives: what presence
+        in a restricted ring *means* is a site judgement, not a property of the software. A
+        range whose restricted ring is routinely transited by its own traffic needs a lower
+        figure than one where any incursion is exceptional, and neither should have to edit
+        Python to say so.
+
+        Monitored presence stays at zero by default: it is the ground state at a site that
+        bothered to define monitored airspace, so escalating on it would put every ordinary
+        contact above the floor.
+        """
+        return {
+            0: self._policy.parameter("monitored_activation", 0.0),
+            1: self._policy.parameter("restricted_activation", 0.6),
+            2: self._policy.parameter("protected_activation", 1.0),
+        }.get(zone.kind.severity, 0.0)
 
 
 class TimeToProtectedFactor(EscalationFactor):
@@ -225,6 +257,7 @@ class TimeToProtectedFactor(EscalationFactor):
     def assess(self, risk: TrackRisk, geometry: SiteGeometry) -> FactorContribution:
         horizon_s = self._policy.parameter("horizon_s", 300.0)
         urgent_s = self._policy.parameter("urgent_s", 45.0)
+        sharpness = max(1e-6, self._policy.parameter("sharpness", 2.0))
 
         seconds = geometry.time_to_protected_area_s(risk.position, risk.velocity)
         if seconds is None:
@@ -239,9 +272,12 @@ class TimeToProtectedFactor(EscalationFactor):
         if seconds <= urgent_s:
             activation = 1.0
         else:
-            activation = 1.0 - (seconds - urgent_s) / max(1e-6, horizon_s - urgent_s)
-            # Squared so the curve is steep near the urgent end and shallow near the horizon.
-            activation = activation**0.5 if activation > 0 else 0.0
+            remaining = 1.0 - (seconds - urgent_s) / max(1e-6, horizon_s - urgent_s)
+            # Raised to `sharpness` (>1) so the curve is shallow out near the horizon and steep
+            # in near the urgent end — the shape this factor's docstring describes. An exponent
+            # below 1 inverts that, holding a distant contact near full activation; the default
+            # of 2.0 is the intended shape and a site should have a specific reason to move it.
+            activation = max(0.0, remaining) ** sharpness
 
         return self.contribution(
             activation,
@@ -490,6 +526,47 @@ class PersistenceFactor(EscalationFactor):
             activation,
             f"Tracked continuously for {_duration(risk.track_age_s)} across "
             f"{risk.detection_count} detections.",
+        )
+
+
+class SensorCorroborationFactor(EscalationFactor):
+    """How many independent sensors are holding this track.
+
+    Corroboration in the strictest sense, and the one this system is uniquely placed to
+    provide: multi-sensor fusion is the product's premise, and until now the risk engine threw
+    the result away. `contributing_sensors` was carried all the way onto the published Track and
+    then not passed to assessment.
+
+    The reasoning is about *failure modes being independent*. A single sensor's picture can be
+    an artefact of that sensor — radar multipath off a structure, an RF bearing ghost, a thermal
+    reflection — and no amount of persistence on one sensor rules that out, because the error
+    repeats with the observation. A second sensor of a different kind failing the same way at
+    the same place and time is a far less likely coincidence. So agreement across sensors raises
+    how much an existing concern should be believed, which is precisely what the CORROBORATING
+    group is for: it cannot create concern where the geometry found none.
+
+    Deliberately counts *distinct sensors*, not detections. A hundred returns from one radar is
+    persistence, which `PersistenceFactor` already scores; two returns from two radars is
+    corroboration, and conflating them would let a single chatty sensor impersonate agreement.
+    """
+
+    @property
+    def code(self) -> str:
+        return "multi_sensor_corroboration"
+
+    def assess(self, risk: TrackRisk, geometry: SiteGeometry) -> FactorContribution:
+        full_at = max(2.0, self._policy.parameter("corroborating_sensors", 3.0))
+        count = risk.contributing_sensor_count
+
+        if count <= 1:
+            # Not a mark against the track. A single-sensor track is the ordinary case at the
+            # edge of coverage, and saying so is different from saying it is doubtful.
+            return self.silent("Held by a single sensor; no independent corroboration.")
+
+        activation = min(1.0, (count - 1) / (full_at - 1))
+        return self.contribution(
+            activation,
+            f"Corroborated by {count} independent sensors.",
         )
 
 
