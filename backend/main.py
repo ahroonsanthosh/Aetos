@@ -1,17 +1,35 @@
 """Runnable entry point: wires the pipeline together and serves the API.
 
-Everything below this line existed already as modules that tests constructed individually.
-This is the one place they are assembled into a system that runs, which is what makes the
-repository usable rather than merely correct.
+Everything below this line existed already as modules that tests constructed individually. This
+is the one place they are assembled into a system that runs, which is what makes the repository
+usable rather than merely correct.
 
-    python -m backend.main                          serve the API against an empty log
-    python -m backend.main --scenario a_benign_transit   serve, and drive that scenario
+    python -m backend.main                                    idle system, empty log
+    python -m backend.main --scenario a_benign_transit        drive the simulator
+    python -m backend.main --mode live --site my_site         read this site's real hardware
 
-The scenario runner here is a **development and demonstration driver**, not the scenario
-control API. `POST /scenarios/{id}/start` still reports itself unimplemented, because it is:
-starting a scenario over HTTP needs lifecycle, authorisation and concurrency answers this
-does not have. What this gives is a way to see the whole pipeline work end to end, which is
-the thing the specification asks to be verified before anything is built on top of it.
+## What this file decides
+
+**Which sensors feed the pipeline**, from the run mode and the site document, refusing any
+combination it cannot honour rather than starting something that would mislead an operator —
+a LIVE badge over an empty sky, or synthetic tracks in a live picture with nothing saying so
+(`resolve_sources`, ADR 0018).
+
+**Where this deployment's history lives.** `data/<site>/<mode>/`, claimed by a marker file and
+held by a lock, so one deployment cannot inherit another's tracks and cannot be written by two
+processes at once (`resolve_data_dir`, FM-053).
+
+**Whether it is safe to bind what was asked for.** `guard_bind` refuses to expose an
+unauthenticated console, an account-less one, or session cookies in clear (ADR 0016).
+
+## What it is not
+
+The scenario runner here is a **development and demonstration driver**, not the scenario control
+API. `POST /scenarios/{id}/start` still reports itself unimplemented, because it is: starting a
+scenario over HTTP needs lifecycle, authorisation and concurrency answers this does not have.
+
+`start.sh` is the developer path — it manages a virtualenv and builds the interface. A deployed
+service runs this module directly; see `docs/deployment.md`.
 """
 
 from __future__ import annotations
