@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.risk.models import FactorContribution
 from backend.zones.geometry import EnuPoint, EnuVelocity, ProjectedZone, SiteGeometry
@@ -131,6 +131,38 @@ class FactorPolicy(BaseModel):
     parameters: dict[str, float] = Field(default_factory=dict)
     """Factor-specific thresholds. Read by name, with a documented default, so adding a
     parameter does not invalidate every existing site's configuration."""
+
+    @field_validator("parameters")
+    @classmethod
+    def _reject_unusable_parameters(cls, values: dict[str, float]) -> dict[str, float]:
+        """Every parameter must be a finite, non-negative number.
+
+        This was the one configuration surface in the system with no validation at all, and
+        both ways it could be wrong were silent:
+
+        - A **negative** value inverts the judgement rather than failing. `fast_mps: -25`
+          makes a target closing at 20 m/s score zero — a threat factor switched off by a
+          typo, with nothing anywhere saying so.
+        - A **zero** divisor raised `ZeroDivisionError` from inside the assessment, killing
+          the risk stage and with it the whole pipeline cycle, so the operator's picture
+          stopped advancing for a reason that appeared only in a log.
+
+        Zero itself stays legal: several parameters are floors where zero honestly means "no
+        minimum". Divisor safety is handled at the point of division, where three of the five
+        sites already guarded and two did not.
+
+        Rejecting at load matches every other configuration surface here — a bad value is an
+        error when the file is read, not a surprise on the cycle that first touches it.
+        """
+        for name, value in values.items():
+            if not math.isfinite(value):
+                raise ValueError(f"parameter {name!r} must be a finite number, got {value!r}")
+            if value < 0.0:
+                raise ValueError(
+                    f"parameter {name!r} must not be negative, got {value!r}. A negative "
+                    "threshold does not disable a factor, it inverts it — silently."
+                )
+        return values
 
     def parameter(self, name: str, default: float) -> float:
         return self.parameters.get(name, default)
@@ -300,7 +332,7 @@ class ClosureFactor(EscalationFactor):
                 return self.silent(f"Opening from the site at {abs(closure):.0f} m/s.")
             return self.silent("Not closing on the site.")
 
-        activation = min(1.0, closure / fast_mps)
+        activation = min(1.0, closure / max(1e-6, fast_mps))
         return self.contribution(activation, f"Closing on the site at {closure:.0f} m/s.")
 
 
@@ -382,7 +414,7 @@ class LoiterFactor(EscalationFactor):
             )
 
         # 1.0 for a perfectly closed path, 0.0 for a straight line.
-        confinement = 1.0 - min(1.0, risk.net_displacement_m / risk.path_length_m)
+        confinement = 1.0 - min(1.0, risk.net_displacement_m / max(1e-6, risk.path_length_m))
         if confinement < (1.0 - loiter_ratio):
             return self.silent("Travelling through rather than holding station.")
 

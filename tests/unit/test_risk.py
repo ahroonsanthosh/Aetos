@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from backend.risk.engine import RiskEngine, RiskPolicy, build_risk_engine, load_risk_policy
-from backend.risk.factors import TrackRisk
+from backend.risk.factors import ClosureFactor, FactorPolicy, LoiterFactor, TrackRisk
 from backend.zones.geometry import EnuPoint, EnuVelocity, SiteGeometry, load_site_geometry
 from sensors.schemas.detection import ClassificationLabel
 
@@ -514,3 +514,56 @@ def test_a_material_discount_is_still_reported() -> None:
     reasons = [f for f in assessment.factors if f.code == "benign_classification"]
     assert reasons, "a substantial benign classification must be explained"
     assert "bird" in reasons[0].detail
+
+
+# --------------------------------------------------------------------------------------
+# Policy parameters are configuration, and configuration is validated
+# --------------------------------------------------------------------------------------
+
+
+def test_a_negative_parameter_is_rejected_at_load() -> None:
+    """The quiet failure: `fast_mps: -25` does not disable the closing-velocity factor, it
+    inverts it. A target closing at 20 m/s scored zero, and nothing anywhere said so.
+
+    `parameters` was the one configuration surface in the system with no validation at all.
+    """
+    with pytest.raises(ValueError, match="must not be negative"):
+        FactorPolicy(weight=0.5, parameters={"fast_mps": -25.0})
+
+
+def test_a_non_finite_parameter_is_rejected_at_load() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        FactorPolicy(weight=0.5, parameters={"fast_mps": float("inf")})
+
+
+def test_zero_stays_legal_because_some_floors_honestly_mean_none() -> None:
+    """The validator must not overreach: several parameters are minimums where zero means
+    'no minimum', and rejecting those would break legitimate configurations."""
+    policy = FactorPolicy(weight=0.5, parameters={"minimum_mps": 0.0})
+
+    assert policy.parameter("minimum_mps", 1.0) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("factor_type", "parameters", "risk_overrides"),
+    [
+        (ClosureFactor, {"fast_mps": 0.0}, {}),
+        (LoiterFactor, {"minimum_path_m": 0.0, "minimum_window_s": 0.0}, {"loiter_window_s": 60.0}),
+    ],
+)
+def test_a_zero_divisor_cannot_kill_the_cycle(
+    factor_type: type, parameters: dict[str, float], risk_overrides: dict
+) -> None:
+    """Zero is legal at load, so the division sites must survive it.
+
+    Three of the five divisors in this module already carried a `max(1e-6, ...)` guard and two
+    did not — the idiom was there, applied inconsistently. Both unguarded ones raised
+    `ZeroDivisionError` from inside the assessment, which kills the risk stage and with it the
+    whole pipeline cycle: the operator's picture simply stops advancing.
+    """
+    geometry = load_site_geometry("fictional_test_range")
+    factor = factor_type(FactorPolicy(weight=0.5, parameters=parameters))
+
+    contribution = factor.assess(inbound(400.0, **risk_overrides), geometry)
+
+    assert 0.0 <= contribution.activation <= 1.0

@@ -132,6 +132,36 @@ alongside a test that real elapsed time still demotes an unsupported track — s
 degrade into "tracks never go stale" — and one asserting observation time is still reported
 from the sensor rather than restamped on receipt.
 
+### FM-027 — Risk policy parameters were the one unvalidated configuration surface
+**Status:** Closed · **Severity:** was Medium — a threat factor silently disabled, or a killed
+pipeline cycle
+
+**What it was.** `FactorPolicy.parameters` is a free-form `dict[str, float]`, read by name with
+a documented default. Nothing validated the values, and both ways they could be wrong were
+silent:
+
+- **Negative.** `fast_mps: -25` does not disable the closing-velocity factor, it inverts it: a
+  target closing at 20 m/s scored an activation of zero. A threat factor switched off by a
+  typo, with nothing anywhere reporting it.
+- **Zero, where the value is a divisor.** `ZeroDivisionError` raised from inside the
+  assessment, killing the risk stage and with it the whole pipeline cycle — the operator's
+  picture stops advancing, and the reason appears only in a log.
+
+The second had a second cause worth naming: three of the five division sites in
+`backend/risk/factors.py` already carried a `max(1e-6, ...)` guard and two did not. The idiom
+existed and had been applied inconsistently, which is how a defended pattern still produces an
+undefended path.
+
+**Fix.** Parameters are validated at load — finite, and not negative — with a message naming
+the parameter, consistent with every other configuration surface in this repository. Zero
+remains legal, because several parameters are floors where zero honestly means "no minimum",
+and the two unguarded divisors were brought into line with the three that were already safe.
+
+**What makes it stay closed.** `tests/unit/test_risk.py` covers the negative and non-finite
+rejections, asserts zero is still accepted so the validator cannot overreach into breaking
+legitimate configurations, and drives both previously unguarded divisors with a zero parameter
+to assert the cycle survives.
+
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
 
