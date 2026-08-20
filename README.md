@@ -140,3 +140,12 @@ laptop.
 
 Under active construction. See `docs/architecture.md` for the current state of each module
 and `docs/adr/` for why things are built the way they are.
+
+## Where this is going
+
+`docs/vision.md` records the long-term product vision — hardware-agnostic sensor integration,
+multi-sensor fusion, a site digital twin, asset-aware protection, distributed nodes, fleet
+and cross-site coordination, and the rest. It is **aspirational**, marks the build status of
+every capability, and does not relax the scope boundary above: the response capabilities it
+describes are decision support, and `RECOMMENDED`, `AUTHORISED` and `EXECUTED` remain three
+distinct states with three distinct authors.
