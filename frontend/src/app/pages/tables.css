@@ -158,9 +158,28 @@
 /* Sensor condition. `unassessed` and `inert` are deliberately the disabled colour rather than
    any status colour: neither is a judgement about the sensor, and giving either a status tone
    would turn "nobody looked" into a verdict. */
-.sensor-table .condition--unassessed { color: var(--text-disabled); }
+.sensor-table .condition--unassessed { color: var(--text-muted); }
 .sensor-table .condition--inert      { color: var(--status-inert); }
 .sensor-table .condition--ok         { color: var(--status-nominal); }
 .sensor-table .condition--degraded   { color: var(--status-warning); }
 .sensor-table .condition--silent     { color: var(--status-elevated); }
 .sensor-table .condition--offline    { color: var(--status-critical); }
+
+/*
+ * Wide tables on narrow screens.
+ *
+ * These carry ten columns of telemetry and there is no width at which they all fit on a phone.
+ * Dropping columns was the alternative and was rejected: every column here is a value an
+ * operator may be looking for, and a table that quietly omits some is worse than one that
+ * scrolls. So the table scrolls inside its own panel and the page itself never does — a page
+ * that scrolls sideways loses the navigation and the header along with it.
+ */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sensor-table,
+.event-table {
+  min-width: 720px;
+}

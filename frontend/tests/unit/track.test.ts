@@ -312,3 +312,62 @@ describe('fusion on a display track', () => {
     expect(alone.fusion.memberTrackIds).toHaveLength(1)
   })
 })
+
+describe('what the live picture presents', () => {
+  /** The rule `useTrackPicture` applies, mirroring `GET /tracks`. Extracted so the predicate
+   *  itself is under test rather than the hook's plumbing. */
+  const presented = (v: TrackView) => v.fusion.is_primary || !v.fusion.assessed
+
+  const fused = (id: string, isPrimary: boolean, objectId: string) =>
+    view({
+      track_id: id,
+      fusion: {
+        assessed: true,
+        object_id: objectId,
+        is_primary: isPrimary,
+        member_track_ids: isPrimary ? [id] : [],
+        corroborating_sensors: [],
+      },
+    })
+
+  it('shows one track per object, not one per observation', () => {
+    // Three sensors watching one drone produce three tracks; fusion elects one primary. The
+    // map must draw one marker. This is FM-023, and the live picture regressed into it because
+    // the event stream carries supporting tracks even though the REST bootstrap does not.
+    const all = [
+      fused('TRK-00001', true, 'OBJ-0001'),
+      fused('TRK-00002', false, 'OBJ-0001'),
+      fused('TRK-00003', false, 'OBJ-0001'),
+    ]
+
+    const shown = all.filter(presented)
+
+    expect(shown).toHaveLength(1)
+    expect(shown[0]?.track_id).toBe('TRK-00001')
+  })
+
+  it('keeps every track when no fusion service is attached', () => {
+    // The dangerous direction. `assessed: false` means nobody looked, and filtering on
+    // `is_primary` alone would empty the operator's display entirely rather than showing an
+    // unreconciled picture (ADR 0011).
+    const all = [view({ track_id: 'TRK-00001' }), view({ track_id: 'TRK-00002' })]
+
+    expect(all.every((v) => v.fusion.assessed)).toBe(false)
+    expect(all.filter(presented)).toHaveLength(2)
+  })
+
+  it('still presents a supporting track that fusion later released', () => {
+    const released = view({
+      track_id: 'TRK-00009',
+      fusion: {
+        assessed: true,
+        object_id: 'OBJ-0004',
+        is_primary: true,
+        member_track_ids: ['TRK-00009'],
+        corroborating_sensors: [],
+      },
+    })
+
+    expect(presented(released)).toBe(true)
+  })
+})

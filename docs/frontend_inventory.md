@@ -2,10 +2,11 @@
 
 **What this is.** A complete record of the operator interface as it stood *before* the landing
 page and visual redesign, taken so that every data point, every control and every backend
-contact point can be checked off afterwards. Nothing in a redesign is allowed to quietly
+contact point could be checked off afterwards. Nothing in a redesign is allowed to quietly
 disappear, and "I think it's all still there" is not a verification.
 
 Taken 2026-08-19 against `claude/examine-codebase-sck2hv` at commit `582db09`.
+**§10 records the result of checking the finished work against it.**
 
 ---
 
@@ -174,3 +175,72 @@ systems in one repository is the bolt-on.
 
 The mechanisms are what carry the visual quality, not the packaging — and they are all standard
 platform features. They are implemented directly, against the existing token system.
+
+---
+
+## 10. Verification against this inventory
+
+Checked after the redesign, by rendering the running system rather than by reading the diff.
+
+### Preserved
+
+| Item | Result |
+|---|---|
+| 10 screens (§3) | All present, all reachable |
+| 9 interactive controls (§5) | All present |
+| 11 REST calls + 1 WebSocket (§6) | **Unchanged.** No request or response shape was touched. |
+| Deliberate absences (§7) | All intact — `ResponseSystemsPage` still shows no response systems, every `assessed` branch still distinguishes "not assessed" from "nothing found", `SituationBanner` still renders nothing when it has nothing to say, the mode badge is still on the login screen |
+| Dark-only | Unchanged |
+
+### Measured
+
+| Check | Result |
+|---|---|
+| Console errors, 8 pages × 3 widths | **Zero** |
+| Failed requests, 8 pages × 3 widths | **Zero** |
+| Horizontal page overflow | **None** at 1600, 900 and 390 px |
+| WCAG AA contrast | All 12 text and status tokens pass against base, panel **and** raised surfaces |
+| `prefers-reduced-motion` | Entrance, tilt and hint animation all disabled; final composition identical |
+| Backend tests | 604 pass |
+| Frontend tests | 59 pass |
+| `tsc --noEmit`, `ruff check` | Clean |
+| Production build | Succeeds |
+
+### Changed deliberately
+
+- **Root route.** `/` was the operator Overview behind authentication. It is now the landing page
+  for a visitor with no session; an operator with a session still lands on the Overview and never
+  sees the landing page or the boot sequence. `/landing` renders it on demand.
+- **Navigation at narrow widths.** The sidebar was hidden outright below 1100 px, which removed
+  the only means of moving between pages. It becomes a horizontal scrolling strip instead, with
+  every entry — including the unavailable ones — still reachable.
+- **The top bar** wraps to two rows below 900 px. The wall clock and subtitle are dropped; the
+  mode badge, status chips, operator and sign-out all stay.
+- **Wide tables** scroll inside their panel rather than pushing the page sideways. No column was
+  dropped: every one is a value an operator may be looking for.
+
+### Fixed while verifying
+
+- **The live picture ignored fusion.** `GET /tracks` returns one entry per object, but the event
+  stream carries every track, so the map re-accumulated supporting observations as events
+  arrived. Measured on `i_swarm_saturation`: **61 markers drawn for 19 objects** — precisely the
+  over-count FM-023 exists to remove, reintroduced downstream of the fix. `useTrackPicture` now
+  applies the server's own predicate. The hook's docstring had claimed "the live picture and a
+  fresh `GET /tracks` always agree", which had stopped being true.
+- **Two contrast failures**, both found by computing ratios rather than looking. See
+  [design_tokens.md](design_tokens.md) §3.
+- **`docs/design_tokens.md` did not exist** despite two files pointing at it, and
+  `frontend/README.md` pointed at the wrong relative path.
+
+### Not done
+
+- **`/response` remains empty** by design, and the landing page makes no claim of an effector
+  capability. The strapline is `DETECT · TRACK · ASSESS`, not `NEUTRALIZE` as originally
+  specified: Aetos stops at a recommendation to a human, that boundary is enforced by
+  `tests/unit/test_module_boundaries.py`, and the front page is the last place to advertise a
+  capability the product deliberately does not have.
+- **The landing page's HUD reads real values or none.** `GET /system/mode` and
+  `GET /system/health` are ungated, so run mode, subsystem health and log sequence are live. With
+  no backend it shows `LINK OFFLINE` and dashes. It was briefly labelled `SENSORS` while counting
+  health components — neither a sensor count nor honest — and now reads `SUBSYSTEMS n / m`.
+  `GET /sensors` needs a session, so a genuinely public page cannot know the sensor count.

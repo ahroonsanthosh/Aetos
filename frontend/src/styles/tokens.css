@@ -38,6 +38,7 @@
   --brand-mid: #6b4a6b;         /* the mark itself, at rest */
   --brand-accent: #b892c4;      /* highlight: active nav, focus, hover, live values */
   --brand-accent-dim: #b892c433;
+  --brand-accent-veil: #b892c41f;   /* the faintest readable tint; active-row gradients */
   --brand-wash: #3d1f3d40;      /* the radial ground behind the shell */
 
   /* ---- Surfaces. Near-black through to panel, warmed very slightly toward the brand. ---- */
@@ -53,10 +54,22 @@
   --line-strong: #453349;
 
   /* ---- Type. ---- */
+  /* Every value below clears WCAG AA against `--surface-base` at the size it is used, and
+     that is a constraint on the palette rather than a nicety. `--text-muted` carries `.label`,
+     which is 10px uppercase — the smallest type in the interface and the least forgiving.
+
+     Ratios are computed against the *lightest* surface each colour lands on (`--surface-raised`),
+     not against the page ground. Solving against the ground alone is how the second cut of this
+     palette still failed: 4.54:1 on `--surface-base` is 4.26:1 on a panel header, and panel
+     headers are exactly where labels live.
+
+     The first cut had `--text-muted` at #5c4f60 — 2.62:1, unreadable in a lit room. Both were
+     caught by measuring rather than by looking. Hue and saturation are the originals throughout;
+     only lightness moved. */
   --text-primary: #cfc6d1;
-  --text-secondary: #8a7a90;
-  --text-muted: #5c4f60;
-  --text-disabled: #443a48;
+  --text-secondary: #8c7d92;
+  --text-muted: #8e7c93;
+  --text-disabled: #706077;     /* inactive controls only, never live content */
 
   /* ---- Status. The only saturated colours in the system, and they mean something. ---- */
   --status-nominal: #7fae9b;    /* healthy, connected — desaturated so it recedes */
@@ -64,14 +77,16 @@
   --status-notice: #c9a9d2;
   --status-warning: #d99b3f;    /* attention required */
   --status-elevated: #e07a3f;
-  --status-critical: #d9534f;   /* severe */
-  --status-inert: #5c4f60;      /* not built, not connected — deliberately colourless */
+  --status-critical: #da5753;   /* severe — nudged up from #d9534f, which sat at 4.38:1 on a
+                                   panel header. The most important colour in the system to be
+                                   readable was the one that failed. */
+  --status-inert: #8e7c93;      /* not built, not connected — deliberately colourless */
 
   /* Dimmed variants, for fills and trails behind their solid counterparts. */
   --status-nominal-dim: #7fae9b26;
   --status-info-dim: #b892c426;
   --status-warning-dim: #d99b3f26;
-  --status-critical-dim: #d9534f26;
+  --status-critical-dim: #da575326;
 
   /* ---- Track and instrument colours. ---- */
   --track-default: #b892c4;
@@ -95,7 +110,7 @@
   --sensor-marker: #7fae9b;
   --sensor-coverage: #7fae9b14;
 
-  --zone-protected: #d9534f;
+  --zone-protected: #da5753;
   --zone-restricted: #d99b3f;
   --zone-monitored: #b892c4;
 

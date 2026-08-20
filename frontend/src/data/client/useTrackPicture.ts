@@ -102,9 +102,10 @@ export function useTrackPicture(): TrackPicture {
       // testing for a snapshot first would re-add the very track being retired, and the
       // operator would accumulate dead tracks that a page refresh silently cleared.
       //
-      // The backend drops a LOST track from its active set; the client mirrors that, so the
-      // live picture and a fresh GET /tracks always agree. The track is not destroyed: its
-      // whole history remains in the event log and is readable through the history endpoint.
+      // The backend drops a LOST track from its active set and the client mirrors that, which
+      // is one of the two things keeping the live picture and a fresh GET /tracks in agreement;
+      // the fusion filter below is the other. The track is not destroyed: its whole history
+      // remains in the event log and is readable through the history endpoint.
       if (event.event_type === 'TRACK_LOST') {
         const id = event.track_id
         setTracksById((current) => {
@@ -139,6 +140,21 @@ export function useTrackPicture(): TrackPicture {
   const tracks = useMemo(() => {
     if (!frame) return []
     return [...tracksById.values()]
+      // One entry per physical object, exactly as `GET /tracks` returns by default.
+      //
+      // This filter has to exist here as well as on the server. The bootstrap fetch is already
+      // reconciled, but the event stream carries *every* track — supporting observations
+      // included, because they are still tracked and still logged (ADR 0017) — so the picture
+      // re-accumulated them the moment the first event arrived. Measured on
+      // `i_swarm_saturation`: `GET /tracks` returned 19 objects while the map drew 61 markers
+      // for them, which is precisely the over-count FM-023 exists to remove.
+      //
+      // The rule is the server's, copied deliberately rather than approximated: a track is
+      // presented if it is a primary, or if fusion never looked at it. "Not assessed" must
+      // never be filtered out as though it had been assessed and rejected (ADR 0011) — with no
+      // fusion service attached, that predicate keeps every track visible instead of hiding
+      // all of them.
+      .filter((view) => view.fusion.is_primary || !view.fusion.assessed)
       .map((view) => toDisplayTrack(view, frame))
       // Stable ordering by identifier. Sorting by a changing quantity would make rows jump
       // under an operator's cursor every update cycle.

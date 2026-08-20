@@ -80,7 +80,7 @@ client and drifting from it.
 | `src/components/shell/` | Top bar, sidebar |
 | `src/data/models/` | Wire types (`api.ts`), presentation types (`track.ts`), geodesy |
 | `src/data/client/` | REST client, event stream, live picture hook |
-| `src/styles/` | Design tokens — see [design_tokens.md](docs/design_tokens.md) |
+| `src/styles/` | Design tokens — see [design_tokens.md](../docs/design_tokens.md) |
 
 The operational map is a site-centred plan position indicator rather than a geographic
 basemap ([ADR 0010](../docs/adr/0010-radar-ppi-display.md)). It has no external tile
