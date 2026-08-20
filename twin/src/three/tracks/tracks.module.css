@@ -1,0 +1,47 @@
+/*
+ * In-scene track labels.
+ *
+ * DOM rather than sprite text, because a command interface lives or dies on legibility and
+ * nothing renders type as well as the browser. Kept at constant screen size — a label that
+ * shrinks with distance is decoration, not information.
+ */
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px 5px;
+  border-left: 2px solid currentColor;
+  background: rgba(4, 9, 14, 0.82);
+  backdrop-filter: blur(3px);
+  font-family: var(--font-mono);
+  line-height: 1.25;
+  white-space: nowrap;
+  user-select: none;
+  transform: translateX(14px);
+  transition: background 160ms ease;
+}
+
+.labelSelected {
+  background: rgba(8, 16, 22, 0.94);
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.labelId {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.labelMeta {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.labelThreat {
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
