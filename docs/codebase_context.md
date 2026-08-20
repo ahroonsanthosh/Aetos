@@ -445,6 +445,9 @@ against the old code. Useful context because several reveal *classes* of bug wor
 | Watchdog cried wolf | Thresholds derived from update rate flagged the healthiest sensor on the site continuously (81 s of legitimate quiet against a 5 s threshold). | Deriving a threshold from the wrong quantity |
 | Scripted sensor failure did nothing | `apply_degradation` had zero callers and three scenarios named sensor ids no site defines — so the scenario written to test sensor failure tested nothing, silently. | Dead-but-correct code, again |
 | Stale UI and docstring claims | The shell asserted `FUSION NOT BUILT` while the track list displayed fusion output; `/situation` and the Sensors page said the same. | Hardcoded claims about other modules |
+| **Concurrent transactions lost writes** | `Database.transaction()` counted depth on a plain attribute while the connection is shared by the API's threadpool. Two threads both read `_depth == 0`, both issued `BEGIN IMMEDIATE`, and the second raised — taking its statements with it. `sessions.touch()` runs on **every authenticated request**, so two concurrent requests were enough; observed as a 500 from `GET /system/health` during an ordinary sign-in. Reproduced: eight threads × sixty rows raised six times and **lost six writes**. | Check-then-act on shared state |
+| Live picture ignored fusion | `GET /tracks` returns one entry per object, but the event stream carries every track, so the client re-accumulated supporting observations. **61 markers drawn for 19 objects** — FM-023 reintroduced one layer downstream of its own fix, invisible to the suite. | Filtering applied on one read path only |
+| Two contrast failures | `--text-muted` (10px labels) at 2.62:1, then 4.26:1 on the surface it actually lands on; `--status-critical` at 4.38:1. | Verifying against the wrong background |
 
 ### Patterns worth carrying forward
 
@@ -459,8 +462,14 @@ against the old code. Useful context because several reveal *classes* of bug wor
    was hardcoded became a lie the moment the module landed, and none of them failed a test.
    Derive the claim from a handle or a health response instead of asserting it.
 7. **Run it; do not only test it.** Fusion's two largest defects, the watchdog's threshold error,
-   and every stale UI claim were invisible to a fully green suite. They were found by driving
-   full-duration scenarios and rendering the live interface.
+   every stale UI claim, and the transaction race were invisible to a fully green suite. They
+   were found by driving full-duration scenarios, rendering the live interface, and walking the
+   sign-in flow in a real browser.
+8. **`check_same_thread=False` is a promise you then have to keep.** Relaxing thread affinity is
+   reasonable; what broke was that nothing replaced it. If affinity is not the discipline, name
+   what is.
+9. **Measure contrast, never judge it.** On a near-black ground the eye is not reliable, and the
+   background a colour is *tested* against must be the lightest one it actually lands on.
 
 ---
 
@@ -493,9 +502,9 @@ prompted, not passed as a flag.
 ### Full gate (all green as of this writing)
 
 ```bash
-pytest -q                       # 604 passed
+pytest -q                       # 608 passed
 ruff check .                    # clean
-cd frontend && npx vitest run   # 56 passed
+cd frontend && npx vitest run   # 59 passed
 cd frontend && npx tsc --noEmit  # clean
 cd frontend && npm run build    # builds
 ```

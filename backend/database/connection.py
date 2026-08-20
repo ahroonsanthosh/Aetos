@@ -1,9 +1,15 @@
 """SQLite connection handling for the persistence layer.
 
 Deliberately the same posture as `backend/events/store.py`: WAL mode, `synchronous=FULL`,
-one connection, no lock. The reasoning transfers directly — WAL gives a single writer with
-concurrent readers and durable commits without a server process, and a lock here would
-advertise a concurrency model Aetos does not have (ADR 0006).
+one connection. WAL gives a single writer with concurrent readers and durable commits without
+a server process (ADR 0006).
+
+One lock, and only one: `transaction()` serialises the BEGIN/COMMIT pair across threads. This
+file used to say it held no lock at all, on the grounds that a lock would advertise a
+concurrency model Aetos does not have. The connection is nevertheless shared by an API
+threadpool, so two threads really did open transactions at once — and the resulting failure
+lost writes. Enforcing the single-writer discipline is not the same as advertising a
+concurrent one.
 
 `synchronous=FULL` is arguably generous for the track tables, which are a projection and can
 always be rebuilt from the log. It is kept because the same file also holds sites, sensors
@@ -18,6 +24,7 @@ touching the log it is derived from.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -39,10 +46,10 @@ class DatabaseError(RuntimeError):
 class Database:
     """One SQLite connection, shared by every repository built over it.
 
-    Not thread-safe, and opened with SQLite's default thread affinity. That is a real
-    constraint on callers rather than an oversight: repository reads must happen on the
-    thread that opened the connection, which is why the API's route handlers are `async def`
-    and read inline instead of being dispatched to a worker thread.
+    Reads are safe from any thread — SQLite serialises statements internally, and the
+    same-thread check is relaxed below. Writes are serialised by `transaction()`, which holds a
+    lock for the whole unit of work so the single-writer discipline holds in fact and not only
+    in intent.
     """
 
     def __init__(self, clock: Clock, path: Path | str | None = None) -> None:
@@ -55,6 +62,10 @@ class Database:
         self._clock = clock
         self._path = Path(path) if path is not None else None
         self._depth = 0
+        # Guards `_depth` and the BEGIN/COMMIT pair it controls. Reentrant, so a caller
+        # composing two repository operations on one thread still nests by depth rather than
+        # deadlocking. See `transaction`.
+        self._lock = threading.RLock()
         self.is_durable = self._path is not None
 
         try:
@@ -69,10 +80,10 @@ class Database:
                 # same-thread check would reject those reads — in production as well as in
                 # tests, since that is simply how the server runs.
                 #
-                # This relaxes the *ownership* check, not the concurrency discipline. SQLite
-                # itself serialises access internally, and writes still go through the
-                # single-writer path the architecture requires (ADR 0006); nothing here
-                # licenses concurrent writers.
+                # This relaxes the *ownership* check. The concurrency discipline is
+                # enforced by the lock in `transaction()` rather than by thread affinity —
+                # relying on affinity alone was the bug, because affinity was already
+                # relaxed here and nothing took its place.
                 check_same_thread=False,
             )
             self._conn.row_factory = sqlite3.Row
@@ -116,21 +127,39 @@ class Database:
         Reentrant, counting depth rather than nesting savepoints: a caller composing two
         repository operations should not have to know whether either of them already opened a
         transaction. Only the outermost block commits.
+
+        **Held under a lock, and it has to be.** The connection is opened with
+        `check_same_thread=False` because the API serves requests from a threadpool, so two
+        threads genuinely do reach this method at once. Depth-counting alone is a check-then-act
+        race: both threads read `_depth == 0`, both issue `BEGIN IMMEDIATE`, and the second gets
+        "cannot start a transaction within a transaction".
+
+        That is not theoretical. `sessions.touch()` runs on *every authenticated request* to
+        slide the idle expiry, so any two concurrent requests could collide — observed as a 500
+        from `GET /system/health` during an ordinary sign-in. Reproduced directly: eight threads
+        committing sixty rows each raised six times and **lost six writes**, because a
+        transaction that fails to begin takes its statements with it.
+
+        SQLite serialises individual statements; it does not serialise a read-modify-write of a
+        Python attribute, nor the pairing of a BEGIN with its COMMIT. The lock is what makes the
+        single-writer discipline this file claims (ADR 0006) actually true rather than merely
+        intended.
         """
-        if self._depth == 0:
-            self.execute("BEGIN IMMEDIATE")
-        self._depth += 1
-        try:
-            yield
-        except BaseException:
-            self._depth -= 1
+        with self._lock:
             if self._depth == 0:
-                self.execute("ROLLBACK")
-            raise
-        else:
-            self._depth -= 1
-            if self._depth == 0:
-                self.execute("COMMIT")
+                self.execute("BEGIN IMMEDIATE")
+            self._depth += 1
+            try:
+                yield
+            except BaseException:
+                self._depth -= 1
+                if self._depth == 0:
+                    self.execute("ROLLBACK")
+                raise
+            else:
+                self._depth -= 1
+                if self._depth == 0:
+                    self.execute("COMMIT")
 
     def close(self) -> None:
         self._conn.close()

@@ -230,7 +230,15 @@ Checked after the redesign, by rendering the running system rather than by readi
 - **Two contrast failures**, both found by computing ratios rather than looking. See
   [design_tokens.md](design_tokens.md) §3.
 - **`docs/design_tokens.md` did not exist** despite two files pointing at it, and
-  `frontend/README.md` pointed at the wrong relative path.
+  `frontend/README.md` pointed at the wrong relative path. Written.
+- **A backend concurrency bug**, found by walking the sign-in flow with authentication actually
+  enabled — something no earlier pass had done, because the screenshot servers all ran
+  `--no-auth`. `GET /system/health` returned 500 during sign-in: `Database.transaction()` raced
+  on a plain depth counter while the connection is shared by the API threadpool, and a
+  transaction that fails to begin takes its statements with it. `sessions.touch()` runs on every
+  authenticated request, so two concurrent requests were enough. Reproduced at eight threads —
+  six raises, six lost writes — fixed with a reentrant lock, and pinned by four tests in
+  `tests/unit/test_database_connection.py`.
 
 ### Not done
 
