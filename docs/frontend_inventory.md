@@ -174,7 +174,14 @@ brief itself asks for integration "with the same stack, not a separate bolt-on."
 systems in one repository is the bolt-on.
 
 The mechanisms are what carry the visual quality, not the packaging — and they are all standard
-platform features. They are implemented directly, against the existing token system.
+platform features.
+
+**In the event the source was obtained anyway**, pasted in by the user after the egress block was
+reported. It is vendored unmodified at `frontend/vendor/halide-topo-hero.tsx`, outside `src/` so
+nothing bundles it, and `src/components/landing/AetosHero.tsx` is a readable diff against it.
+Every mechanism listed above is preserved rather than reimplemented. Notably it needed neither
+Tailwind nor shadcn: the component is plain React with an inline `<style>` block, which is why it
+integrates with this repository's token CSS without dragging a second styling system in.
 
 ---
 

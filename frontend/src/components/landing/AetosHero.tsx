@@ -1,8 +1,9 @@
 /**
  * The public landing page.
  *
- * Reskinned from 21st.dev's `halide-topo-hero` (kept verbatim alongside this file as
- * `HalideTopoHero.tsx`, so this is readable as a diff against the original). Every mechanism
+ * Reskinned from 21st.dev's `halide-topo-hero` by @shivendra9795kumar, kept verbatim at
+ * `frontend/vendor/halide-topo-hero.tsx` so this is readable as a diff against the original
+ * rather than as a rewrite that merely resembles one. Every mechanism
  * that carries its quality is preserved and none is simplified:
  *
  *   - real CSS `perspective` + `transform-style: preserve-3d`, not a fake 2D skew
