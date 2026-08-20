@@ -12,12 +12,17 @@
  * system's understanding drawn over it.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useThree } from '@react-three/fiber';
+import { Fog } from 'three';
 
-import { useAetos } from '@/state/store';
+import { HANDLED_ASSET_TYPES } from '@/site/assetTypes';
+import { palette } from '@/lib/palette';
+import { useAetos, useScenePresentation } from '@/state/store';
 import { Atmosphere } from './Atmosphere';
 import { CameraRig } from './CameraRig';
 import { CoverageMap } from './sensors/CoverageMap';
+import { GenericAsset } from './site/GenericAsset';
 import { LabelDeclutter } from './labels/LabelDeclutter';
 import { Labels } from './site/Labels';
 import { SensorNodes } from './sensors/SensorNodes';
@@ -37,7 +42,14 @@ import {
 export function Scene() {
   const site = useAetos((s) => s.site);
 
-  /** Structures grouped by type, so the JSX below stays declarative. */
+  /**
+   * Structures grouped by type, so the JSX below stays declarative.
+   *
+   * `generic` is everything outside `HANDLED_ASSET_TYPES` — an OSM import, a traced
+   * building, a type someone typed by hand into the editor. It exists so a site built from
+   * real data is never missing structures just because this file has not been taught its
+   * vocabulary yet.
+   */
   const byType = useMemo(() => {
     return {
       substations: site.assets.filter((a) => a.type === 'substation'),
@@ -46,11 +58,13 @@ export function Scene() {
       inverters: site.assets.filter((a) => a.type === 'inverter'),
       storage: site.assets.filter((a) => a.type === 'storage'),
       gates: site.assets.filter((a) => a.type === 'gate'),
+      generic: site.assets.filter((a) => !HANDLED_ASSET_TYPES.has(a.type)),
     };
   }, [site.assets]);
 
   return (
     <>
+      <SceneFog />
       <CameraRig />
 
       {/* Cool ambient plus two rim lights. There is no sun — this is a command
@@ -85,6 +99,9 @@ export function Scene() {
         {byType.gates.map((asset) => (
           <Gate key={asset.id} asset={asset} />
         ))}
+        {byType.generic.map((asset) => (
+          <GenericAsset key={asset.id} asset={asset} />
+        ))}
 
         <SensorNodes />
         <CoverageMap />
@@ -100,4 +117,26 @@ export function Scene() {
       <Atmosphere />
     </>
   );
+}
+
+/**
+ * Distance fog, sized to the current site.
+ *
+ * Set on the scene object directly via `useThree` rather than in `Canvas`'s `onCreated`:
+ * that callback fires once, at mount, and a site loaded afterwards would be stuck fogged
+ * for whatever the demo site's distances happened to be — visibly wrong for a much larger
+ * or smaller import.
+ */
+function SceneFog() {
+  const scene = useThree((s) => s.scene);
+  const presentation = useScenePresentation();
+
+  useEffect(() => {
+    scene.fog = new Fog(palette.abyss, presentation.fogNear, presentation.fogFar);
+    return () => {
+      scene.fog = null;
+    };
+  }, [scene, presentation.fogNear, presentation.fogFar]);
+
+  return null;
 }

@@ -10,6 +10,7 @@
 
 import { palette } from '@/lib/palette';
 import { useAetos, useThreatCounts } from '@/state/store';
+import { LoadSiteControl } from './LoadSiteControl';
 import styles from './topbar.module.css';
 
 export function TopBar() {
@@ -39,6 +40,7 @@ export function TopBar() {
           <span className={styles.siteId}>{site.id}</span>
           <span className={styles.siteName}>{site.name}</span>
         </div>
+        <LoadSiteControl />
       </div>
 
       <div className={styles.metrics}>

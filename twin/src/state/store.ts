@@ -27,6 +27,7 @@ import type {
 } from '@/types';
 import { DEMO_SITE } from '@/site/demo-site';
 import { DEFAULT_SCENARIO_ID } from '@/simulation/scenarios';
+import { deriveScenePresentation, type ScenePresentation } from '@/site/presentation';
 import type { DataSource } from './source';
 import { pushSnapshot, resetBuffer } from './buffer';
 
@@ -62,6 +63,15 @@ interface AetosState {
   setPaused(paused: boolean): void;
   setRate(rate: number): void;
   toggleLayer(layer: keyof LayerToggles): void;
+  /**
+   * Replace the site entirely — what the site editor's "Preview in Command" and a loaded
+   * site file both call. Clears selection and the live picture, since neither can outlive
+   * the site that produced it, and resets the scenario to idle: the built-in scenarios are
+   * flight paths written against the demo site's own geometry (ADR-equivalent limitation —
+   * see `simulation/scenarios.ts`), so replaying one against an unrelated site would fly a
+   * synthetic UAV through buildings that were never there.
+   */
+  setSite(site: Site): void;
 }
 
 /**
@@ -137,6 +147,11 @@ export const useAetos = create<AetosState>((set, get) => ({
 
   toggleLayer(layer) {
     set((state) => ({ layers: { ...state.layers, [layer]: !state.layers[layer] } }));
+  },
+
+  setSite(site) {
+    resetBuffer();
+    set({ site, selection: null, snapshot: null, connected: false, scenarioId: 'idle' });
   },
 }));
 
@@ -271,6 +286,17 @@ export function useLiveZones(): Zone[] {
       }),
     [zones, live],
   );
+}
+
+/**
+ * How the scene should present itself for the current site — camera distances, fog, grid
+ * spacing, coverage sampling. Memoised on the site reference: `setSite` assigns a new
+ * object only when the site actually changes, so this recomputes exactly then and not on
+ * every unrelated store update.
+ */
+export function useScenePresentation(): ScenePresentation {
+  const site = useAetos((s) => s.site);
+  return useMemo(() => deriveScenePresentation(site), [site]);
 }
 
 export { shallow };

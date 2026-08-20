@@ -15,45 +15,17 @@
  * would be unusable.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Vector3 } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 
-import type { ViewMode } from '@/types';
-import { smoothstep } from '@/lib/geometry';
+import { polygonCentroid, smoothstep } from '@/lib/geometry';
 import { interpolatedPosition } from '@/state/buffer';
-import { useAetos } from '@/state/store';
-import { SITE_EXTENT } from '@/site/demo-site';
-
-/**
- * Distance and pitch the camera settles at for each mode, when nothing is selected.
- *
- * Distances are set from the site's actual extent rather than picked by eye. The site is
- * roughly 940 m by 680 m, and at a 42° vertical field of view the visible height at the
- * target is 2·d·tan(21°) — so an overview that frames the whole site with margin needs
- * about 1,900 m, not the 1,250 m that put the fence line off the edge of the screen.
- */
-const MODE_POSE: Record<ViewMode, { distance: number; polar: number }> = {
-  overview: { distance: 1900, polar: 0.86 },
-  tactical: { distance: 1150, polar: 1.0 },
-  threat: { distance: 900, polar: 1.1 },
-  // System view pulls back further and looks down, because coverage is read as a map.
-  system: { distance: 2300, polar: 0.6 },
-};
+import { useAetos, useScenePresentation } from '@/state/store';
 
 const FLIGHT_SECONDS = 1.25;
-
-/**
- * What the camera looks at with nothing selected.
- *
- * Not the datum. The left and right panels occupy 260 px and 330 px of a shared frame, so
- * the free area's centre sits slightly left of the viewport's; aiming a little east of the
- * datum puts the site in the middle of the space the operator can actually see, and puts
- * the substation — the asset they will look at most — clear of the context panel.
- */
-const SITE_CENTRE = new Vector3(40, 0, 20);
 
 export function CameraRig() {
   const controls = useRef<OrbitControlsImpl>(null);
@@ -62,6 +34,27 @@ export function CameraRig() {
   const selection = useAetos((s) => s.selection);
   const mode = useAetos((s) => s.mode);
   const site = useAetos((s) => s.site);
+  const presentation = useScenePresentation();
+  const modePoses = presentation.cameraPoses;
+
+  /**
+   * What the camera looks at with nothing selected: the site's own boundary centroid,
+   * not the ENU origin. The demo site's datum sits near its geometric middle, but nothing
+   * guarantees that of an imported or traced site — an OSM import's datum is wherever the
+   * operator clicked to centre the fetch, which can land anywhere relative to the
+   * buildings actually returned.
+   *
+   * Nudged a fraction of the site's extent east: the left and right panels occupy 260 px
+   * and 330 px of a shared frame, so the free viewing area's centre sits slightly left of
+   * the viewport's, and a fixed metre offset tuned for one site's scale would either
+   * vanish or dominate at another's.
+   */
+  const siteCentre = useMemo(() => {
+    const centre =
+      site.boundary.length >= 3 ? polygonCentroid(site.boundary) : { e: 0, n: 0 };
+    const nudge = presentation.siteExtent * 0.06;
+    return new Vector3(centre.e + nudge, 0, -centre.n);
+  }, [site.boundary, presentation.siteExtent]);
 
   /** Active flight, if any. */
   const flight = useRef<{
@@ -102,11 +95,11 @@ export function CameraRig() {
 
   // --- Focus changes -------------------------------------------------------
   useEffect(() => {
-    const pose = MODE_POSE[mode];
+    const pose = modePoses[mode];
     followed.current = null;
 
     if (!selection) {
-      flyTo(SITE_CENTRE, pose.distance, pose.polar);
+      flyTo(siteCentre, pose.distance, pose.polar);
       return;
     }
 
@@ -146,13 +139,15 @@ export function CameraRig() {
       // that flies to the object and fills the screen with it has answered a different,
       // less useful question. So the look-at point is pulled back toward the site and the
       // distance opens up with how far out the track is.
-      const target = track.clone().lerp(SITE_CENTRE, 0.38);
-      const spread = track.distanceTo(SITE_CENTRE);
+      const target = track.clone().lerp(siteCentre, 0.38);
+      const spread = track.distanceTo(siteCentre);
       flyTo(target, Math.max(spread * 1.15, 700), 1.02);
     }
-    // `site` is static; re-running on mode or selection is the whole intent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection?.kind, selection?.id, mode]);
+    // `modePoses` and `siteCentre` are both memoised on the site reference, so listing
+    // them here — rather than `site` itself — means this effect re-runs exactly when the
+    // mode, the selection, or the loaded site actually changes, and not on an unrelated
+    // store update that leaves all three referentially unchanged.
+  }, [selection?.kind, selection?.id, mode, modePoses, siteCentre]);
 
   // --- Per-frame -----------------------------------------------------------
   useFrame((_, dt) => {
@@ -199,7 +194,7 @@ export function CameraRig() {
       panSpeed={0.8}
       zoomSpeed={0.85}
       minDistance={40}
-      maxDistance={SITE_EXTENT * 6}
+      maxDistance={presentation.cameraMaxDistance}
       // Stop just short of horizontal: letting the camera go under the ground plane is
       // the fastest way to make a 3D interface feel unfinished.
       maxPolarAngle={Math.PI * 0.487}

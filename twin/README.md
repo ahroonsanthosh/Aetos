@@ -31,6 +31,8 @@ Desktop-first. It expects a command-centre display or a laptop, and a GPU.
   them together.
 - Ten scenarios, switchable live, including sensor failure, coverage gaps, weather
   degradation and a false-positive bird flock.
+- A site editor (`/editor`) that builds a site from real OpenStreetMap footprints, a traced
+  reference image, or by hand — see [Using your own site](#using-your-own-site).
 
 ### What it does not do
 
@@ -59,7 +61,8 @@ WebSocket (later) ─┘         │                        └──> command U
 | Path | What lives there |
 |---|---|
 | `src/types/` | The domain contract. Site, Asset, Sensor, Zone, Track, Threat, ResponseResource, SystemHealth, Snapshot. |
-| `src/site/` | The demonstration facility, as data. Replaceable by a real site survey without touching the renderer. |
+| `src/site/` | The site: the demonstration facility as data, the file schema, scene scaling, default sensor/zone generation, and the OSM and image-tracing importers. |
+| `src/ui/editor/` | The site editor — trace canvas, view transform, forms. |
 | `src/simulation/` | Flight paths, threat model, coverage model, weather, scenarios, engine. No DOM, no three.js. |
 | `src/state/` | `DataSource` (the swap seam), the snapshot interpolation buffer, the store. |
 | `src/three/` | Scene, camera, materials, site geometry, sensors, zones, tracks. |
@@ -101,6 +104,83 @@ The one to look at is **False Positive**. Turning something red when it gets clo
 staying calm when the object is close and harmless is the harder and more valuable
 behaviour, and it is the whole argument for being asset-aware.
 
+## Using your own site
+
+The demonstration facility is data, not code. There are three ways to replace it, and the
+intended use is combining them rather than picking one.
+
+Open the **site editor** at `/editor`, or from the "Site editor" link in the command view's
+top bar.
+
+### 1. Import from OpenStreetMap
+
+Enter a latitude, longitude and radius; the editor queries the Overpass API for real
+building footprints and turns each into an asset with its true outline and, where the
+building is tagged with a height or a floor count, its real height.
+
+Free and keyless. **Not Google Maps** — Google's satellite tiles and Places data need a paid
+API key this project does not have. OSM is the legitimate equivalent, with a real
+limitation: coverage is patchy outside urban areas, and an untagged building arrives with a
+guessed height for you to correct.
+
+### 2. Trace a reference image
+
+Upload a satellite screenshot or a site plan, then calibrate it: click two points whose
+real-world distance you know, and type that distance. From that one measurement the image
+acquires a metres-per-pixel scale, and everything you trace on top of it lands in real
+coordinates.
+
+**There is no automatic building extraction.** Pulling outlines out of an image is a
+computer-vision problem this project does not solve, and pretending otherwise would be
+dishonest about what the tool does. It reads what you draw. In practice tracing a facility's
+dozen significant buildings takes a few minutes and is more accurate than an OSM import,
+because you decide what counts as an asset.
+
+The image is placed north-up. `Calibration.northBearing` carries a rotation and
+`pixelToGround` applies it correctly to traced points, but the raster preview underneath
+stays axis-aligned — a deliberate simplification, since most screenshots are already
+north-up.
+
+### 3. Place and edit by hand
+
+"Place asset" drops a small asset wherever you click. Anything selected can have its name,
+type, criticality and dimensions edited in the right-hand panel.
+
+### Then: sensors, zones, and out
+
+One button generates a starting layout — sensors spaced around the boundary aimed inward, a
+perimeter zone, and a protected volume around every asset at criticality 6 or above. It is a
+starting point to adjust, not a design.
+
+"Download site.json" writes a validated site file. "Preview in Command" loads it straight
+into the command view. Either output can be loaded again later from the command view's
+"Load site…" control or the editor's "Load / continue editing".
+
+### Asset types
+
+Seven types have bespoke 3D models: `substation`, `transformer`, `inverter`,
+`control_building`, `solar_array`, `storage`, `gate`. **Any other type is still valid** —
+`AssetType` is an open string, and anything unrecognised renders through `GenericAsset` as
+massing built from its footprint, extruding a traced outline where one exists. A site
+imported from real building data is never invisible for using vocabulary this codebase has
+not been taught.
+
+### What scales automatically
+
+Camera distances, ground plane size, fog, grid spacing and coverage sampling all derive from
+the loaded site's own extent (`src/site/presentation.ts`), so a 200 m compound and a 4 km
+refinery are both framed sensibly with nothing to retune by hand.
+
+Camera framing uses the *physical* extent — boundary and assets. The ground plane and zoom
+limits use the *scene* extent, which also covers sensor range. A 100 m compound with a 3 km
+radar is a 100 m site to look at, and a 3 km world to draw.
+
+### What does not carry over
+
+The ten built-in scenarios are flight paths written against the demo site's own geometry.
+Loading a different site resets the scenario to "Reset" rather than flying a scripted UAV
+through buildings that were never there. Scenario authoring for arbitrary sites is not built.
+
 ## Integrating with Aetos Core
 
 One line, in `src/ui/CommandInterface.tsx`:
@@ -131,10 +211,14 @@ criticalities, zone polygons, sensor placements — loaded rather than compiled 
 npm test
 ```
 
-33 tests over the simulation layer, which is deliberately free of DOM and three.js so the
-part carrying the reasoning can be verified without rendering anything. They pin the
-behaviour the interface exists to demonstrate: trajectory beats range, birds stay low,
-losing a sensor moves coverage and protection and readiness together, and the
-recommendation ladder never exceeds operator review.
+114 tests, all free of DOM and three.js so the parts carrying the reasoning can be verified
+without rendering anything. They pin the behaviour the interface exists to demonstrate:
+trajectory beats range, birds stay low, losing a sensor moves coverage and protection and
+readiness together, and the recommendation ladder never exceeds operator review.
+
+The site pipeline is covered to the same standard, because it is all pure geometry and
+therefore all checkable: lat/lon to ENU round trips, the image calibration rotation against
+hand-derived expectations at four bearings, Overpass parsing against a fixed fixture, hull
+and buffer containment, scene scaling, and schema validation including the open asset type.
 
 The rendering is not unit-tested. It is checked by looking at it.

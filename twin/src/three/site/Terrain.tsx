@@ -14,27 +14,27 @@ import { Line } from '@react-three/drei';
 
 import type { Ground, Site } from '@/types';
 import { palette } from '@/lib/palette';
+import { useScenePresentation } from '@/state/store';
 import { createGroundMaterial } from '../materials/ground';
 import { roadMaterial } from '../materials/structure';
 import { ribbon } from '../lib/extrude';
 import { FenceRun } from './parts';
 
-/** Half-extent of the ground plane. Well beyond the site so tracks have somewhere to be. */
-const GROUND_EXTENT = 2600;
-
 export function Terrain({ site }: { site: Site }) {
+  const presentation = useScenePresentation();
+
   const groundMaterial = useMemo(
     () =>
       createGroundMaterial({
         ground: palette.ground,
         grid: palette.grid,
         gridMajor: palette.gridMajor,
-        minor: 25,
-        major: 250,
-        fadeStart: 800,
-        fadeEnd: 2400,
+        minor: presentation.gridMinor,
+        major: presentation.gridMajor,
+        fadeStart: presentation.gridFadeStart,
+        fadeEnd: presentation.gridFadeEnd,
       }),
-    [],
+    [presentation.gridMinor, presentation.gridMajor, presentation.gridFadeStart, presentation.gridFadeEnd],
   );
 
   const roads = useMemo(
@@ -51,7 +51,9 @@ export function Terrain({ site }: { site: Site }) {
     <group>
       {/* Ground plane. Built in XY and laid flat, which is what the grid shader expects. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[GROUND_EXTENT * 2, GROUND_EXTENT * 2, 1, 1]} />
+        <planeGeometry
+          args={[presentation.groundExtent * 2, presentation.groundExtent * 2, 1, 1]}
+        />
         <primitive object={groundMaterial} attach="material" />
       </mesh>
 
@@ -88,6 +90,11 @@ function closedLoop(polygon: Ground[], u: number): [number, number, number][] {
  */
 function SiteFootprint({ boundary }: { boundary: Ground[] }) {
   const geometry = useMemo(() => {
+    // A schema-valid site always has at least three boundary points, but the store's live
+    // `site` is not necessarily schema-validated at every intermediate state — guard rather
+    // than let a shape with no starting point throw during a render.
+    if (boundary.length < 3) return null;
+
     const shape = new Shape();
     const first = boundary[0]!;
     shape.moveTo(first.e, first.n);
@@ -100,6 +107,8 @@ function SiteFootprint({ boundary }: { boundary: Ground[] }) {
     g.rotateX(-Math.PI / 2);
     return g;
   }, [boundary]);
+
+  if (!geometry) return null;
 
   return (
     <mesh geometry={geometry} position={[0, 0.05, 0]}>

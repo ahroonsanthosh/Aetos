@@ -34,14 +34,11 @@ import { deriveBehaviour, extrapolate, flightStateAt } from './flight';
 import { assessThreat } from './threat';
 import { DEFAULT_SCENARIO_ID, scenarioById, type Scenario } from './scenarios';
 import { WEATHER } from './weather';
+import { deriveScenePresentation } from '@/site/presentation';
 
 /** Snapshot rate. Matches the cadence a real Core feed would plausibly publish at. */
 export const TICK_HZ = 10;
 export const TICK_MS = 1000 / TICK_HZ;
-
-/** Coverage grid parameters. Coarse enough to recompute cheaply, fine enough to read. */
-const COVERAGE_EXTENT = 700;
-const COVERAGE_RESOLUTION = 50;
 
 /**
  * Track history: one point per second of *simulated* time, bounded.
@@ -81,9 +78,21 @@ export class SimulationEngine {
     covering: Record<string, string[]>;
   };
 
+  /**
+   * Coverage grid extent and cell size, derived from the site rather than fixed — a
+   * facility bigger than the ~700 m the demo site was tuned against needs a wider sample
+   * area or the grid stops short of the fence; one far smaller wastes cells sampling empty
+   * ground past it either way.
+   */
+  private readonly coverageExtent: number;
+  private readonly coverageResolution: number;
+
   constructor(site: Site, scenarioId: string = DEFAULT_SCENARIO_ID) {
     this.site = site;
     this.scenario = scenarioById(scenarioId);
+    const presentation = deriveScenePresentation(site);
+    this.coverageExtent = presentation.coverageExtent;
+    this.coverageResolution = presentation.coverageResolution;
   }
 
   get scenarioId(): string {
@@ -194,7 +203,7 @@ export class SimulationEngine {
       return { ...base, status: derivedStatus, health, effectiveness, degradationReason: reason };
     });
 
-    const coverage = buildCoverageGrid(sensors, COVERAGE_EXTENT, COVERAGE_RESOLUTION);
+    const coverage = buildCoverageGrid(sensors, this.coverageExtent, this.coverageResolution);
 
     const protection: Record<string, number> = {};
     const covering: Record<string, string[]> = {};

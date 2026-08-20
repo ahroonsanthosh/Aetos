@@ -38,6 +38,14 @@ export interface Ground {
 // Site and assets
 // ---------------------------------------------------------------------------
 
+/**
+ * Not a closed union. The seven listed here get a bespoke 3D model
+ * (`three/site/Substation.tsx`, `Structures.tsx`) and drive `SolarField`; everything else —
+ * an OSM building tag Aetos has no model for, a type typed into the site editor by hand — is
+ * still a valid asset, rendered as massing by `GenericAsset` (`three/site/GenericAsset.tsx`).
+ * A site imported from real building data must never go invisible for having a type this
+ * file didn't anticipate.
+ */
 export type AssetType =
   | 'substation'
   | 'transformer'
@@ -45,7 +53,8 @@ export type AssetType =
   | 'control_building'
   | 'solar_array'
   | 'storage'
-  | 'gate';
+  | 'gate'
+  | (string & {});
 
 /** Criticality is operator-declared, 1–10. It is an input to threat, never an output of it. */
 export type Criticality = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
@@ -60,7 +69,15 @@ export interface Asset {
   position: Enu;
   /** Planar extent used for selection bounds and camera framing, metres. */
   footprint: { width: number; depth: number; height: number };
-  /** Rotation about the vertical axis, radians. */
+  /**
+   * The asset's true outline, ground coordinates, closed counter-clockwise — set when it
+   * came from a real building footprint (OSM, a traced image) rather than the axis-aligned
+   * box every hand-authored demo asset uses. `GenericAsset` extrudes this when present and
+   * falls back to `footprint` otherwise; bespoke components ignore it, since a substation's
+   * model is built from its own geometry, not this outline.
+   */
+  footprintPolygon?: Ground[];
+  /** Rotation about the vertical axis, radians. Meaningless when `footprintPolygon` is set. */
   heading: number;
   criticality: Criticality;
   /** Id of the protected volume guarding this asset, if any. */

@@ -16,9 +16,8 @@ import { Canvas } from '@react-three/fiber';
 import { AdaptiveDpr, Preload } from '@react-three/drei';
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
 import { BlendFunction, KernelSize } from 'postprocessing';
-import { ACESFilmicToneMapping, Fog } from 'three';
+import { ACESFilmicToneMapping } from 'three';
 
-import { palette } from '@/lib/palette';
 import { useAetos } from '@/state/store';
 import { Scene } from './Scene';
 
@@ -42,8 +41,6 @@ export function Stage() {
       onPointerMissed={() => select(null)}
       onCreated={({ scene }) => {
         scene.background = null;
-        // Distance fog rather than a hard cut-off, so the site sits in an atmosphere.
-        scene.fog = new Fog(palette.abyss, 1400, 5200);
       }}
     >
       <Suspense fallback={null}>
