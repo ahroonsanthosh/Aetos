@@ -4,76 +4,110 @@
  * Every colour, size and spacing value in the interface comes from here. A component that
  * writes a literal colour is a bug — see docs/design_tokens.md.
  *
- * The palette is deliberately narrow and almost entirely achromatic. Colour is a status
- * signal, never decoration: if amber and red appear on screen they mean something, and an
- * operator learns to trust that. An interface that uses colour freely for emphasis destroys
- * exactly that reflex, which is the one thing a warning colour is for.
+ * ---------------------------------------------------------------------------------------
+ * The palette, and the one rule that governs it
+ * ---------------------------------------------------------------------------------------
+ *
+ * Two families, and they are not interchangeable:
+ *
+ *   BRAND — the eggplant purples, taken from the Aetos mark itself. These carry *identity and
+ *   structure*: the logo, the active navigation item, focus rings, panel headers, the radial
+ *   wash behind the shell. They say where you are. They never say how bad something is.
+ *
+ *   STATUS — amber and red, and nothing else saturated. These carry *judgement*. If one is on
+ *   screen, something has been assessed and found to warrant attention.
+ *
+ * Keeping them apart is the whole design. An interface that uses colour freely for emphasis
+ * destroys the reflex that makes a warning colour work: an operator who sees colour everywhere
+ * stops reading it anywhere. Purple is therefore permitted to be decorative and is *never*
+ * permitted to mean "alarming"; amber and red are never permitted to be decorative.
+ *
+ * Blue is gone from the system. It used to carry informational and nominal states, and against
+ * an eggplant ground it read as a third meaning nobody had assigned. Those states are now
+ * purple, which is the correct statement: they are structure, not judgement.
+ *
+ * Aetos is a dark-only interface, deliberately. A light theme is not a missing feature — the
+ * display is designed for low-light operations rooms and the status contrast relationships are
+ * calibrated against a near-black ground. Re-deriving them for a light background would be a
+ * separate design pass, not a token swap.
  */
 
 :root {
-  /* ---- Surfaces. Near-black through to panel grey. ---- */
-  --surface-void: #07090b;      /* behind everything; the map's ground */
-  --surface-base: #0b0e12;      /* application background */
-  --surface-panel: #12171d;     /* panels and cards */
-  --surface-raised: #1a2028;    /* headers within panels, hover states */
-  --surface-inset: #090c10;     /* wells, code, log rows */
+  /* ---- Brand. The mark's own colours. Identity and structure, never severity. ---- */
+  --brand-deep: #3d1f3d;        /* gradients, borders, the launch wipe */
+  --brand-mid: #6b4a6b;         /* the mark itself, at rest */
+  --brand-accent: #b892c4;      /* highlight: active nav, focus, hover, live values */
+  --brand-accent-dim: #b892c433;
+  --brand-wash: #3d1f3d40;      /* the radial ground behind the shell */
+
+  /* ---- Surfaces. Near-black through to panel, warmed very slightly toward the brand. ---- */
+  --surface-void: #050406;      /* behind everything; the map's ground */
+  --surface-base: #0a0709;      /* application background */
+  --surface-panel: #141016;     /* panels and cards */
+  --surface-raised: #1e1822;    /* headers within panels, hover states */
+  --surface-inset: #080609;     /* wells, code, log rows */
 
   /* ---- Lines. Structure comes from hairlines, not shadows or rounding. ---- */
-  --line-subtle: #1c232c;
-  --line: #263039;
-  --line-strong: #37444f;
+  --line-subtle: #1d1720;
+  --line: #2a2130;
+  --line-strong: #453349;
 
   /* ---- Type. ---- */
-  --text-primary: #dfe6ed;
-  --text-secondary: #93a1b0;
-  --text-muted: #61707f;
-  --text-disabled: #43505c;
+  --text-primary: #cfc6d1;
+  --text-secondary: #8a7a90;
+  --text-muted: #5c4f60;
+  --text-disabled: #443a48;
 
-  /* ---- Status. The only saturated colours in the system. ---- */
-  --status-nominal: #3fb98f;    /* healthy, connected */
-  --status-info: #4ba3d9;       /* normal sensor data, informational */
-  --status-notice: #6fb3d6;
+  /* ---- Status. The only saturated colours in the system, and they mean something. ---- */
+  --status-nominal: #7fae9b;    /* healthy, connected — desaturated so it recedes */
+  --status-info: #b892c4;       /* informational; the brand accent, deliberately */
+  --status-notice: #c9a9d2;
   --status-warning: #d99b3f;    /* attention required */
   --status-elevated: #e07a3f;
   --status-critical: #d9534f;   /* severe */
-  --status-inert: #5a6875;      /* not built, not connected — deliberately colourless */
+  --status-inert: #5c4f60;      /* not built, not connected — deliberately colourless */
 
   /* Dimmed variants, for fills and trails behind their solid counterparts. */
-  --status-nominal-dim: #3fb98f26;
-  --status-info-dim: #4ba3d926;
+  --status-nominal-dim: #7fae9b26;
+  --status-info-dim: #b892c426;
   --status-warning-dim: #d99b3f26;
   --status-critical-dim: #d9534f26;
 
   /* ---- Track and instrument colours. ---- */
-  --track-default: #4ba3d9;
-  --track-selected: #e8f1f8;
-  --track-stale: #8a97a3;
-  --track-lost: #55606b;
-  --track-trail: #4ba3d966;
-  --track-prediction: #4ba3d94d;
+  --track-default: #b892c4;
+  --track-selected: #f2e9f5;
+  --track-stale: #7d6f83;
+  --track-lost: #504654;
+  --track-trail: #b892c466;
+  --track-prediction: #b892c44d;
 
-  --grid-line: #1a232b;
-  --grid-line-major: #2b3946;
-  --grid-label: #5d6b78;
+  --grid-line: #1c1620;
+  --grid-line-major: #33253a;
+  --grid-label: #6b5c71;
 
   /* The scope face. A shallow radial fall-off from centre to rim, so the area the display
      actually covers reads as a lit surface against the void rather than being distinguished
      from it only by the outer ring. Kept very dark — this sits behind live tracks, and
      contrast belongs to them. */
-  --scope-face-inner: #0d151c;
-  --scope-face-mid: #0a1117;
-  --scope-face-outer: #070c11;
-  --sensor-marker: #3fb98f;
-  --sensor-coverage: #3fb98f14;
+  --scope-face-inner: #150f19;
+  --scope-face-mid: #0f0a12;
+  --scope-face-outer: #08060a;
+  --sensor-marker: #7fae9b;
+  --sensor-coverage: #7fae9b14;
 
   --zone-protected: #d9534f;
   --zone-restricted: #d99b3f;
-  --zone-monitored: #4ba3d9;
+  --zone-monitored: #b892c4;
+
+  /* ---- Type families. ----
+     Both are vendored under public/fonts and declared in global.css. They are not linked from
+     a font CDN: a console for a defence site should not make a third-party request on load,
+     and it has to render correctly with no outbound network at all. */
+  --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* ---- Type scale. Small and dense: this is an instrument, not a landing page. ---- */
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-
   --text-2xs: 10px;
   --text-xs: 11px;
   --text-sm: 12px;
@@ -112,8 +146,14 @@
 }
 
 /*
- * Aetos is a dark-only interface, deliberately. A light theme is not a missing feature: the
- * display is designed for low-light operations rooms, and the status palette's contrast
- * relationships are calibrated against a near-black ground. Re-deriving them for a light
- * background would be a separate design pass, not a token swap.
+ * Anyone who has asked their system not to animate things is asking for a reason, and a
+ * counter-UAS console is a bad place to overrule them. Every duration collapses; nothing that
+ * conveys information is hidden, because no information in this interface is carried by motion
+ * alone.
  */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+    --transition: 0ms;
+  }
+}
