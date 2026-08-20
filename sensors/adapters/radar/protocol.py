@@ -280,6 +280,15 @@ def decode_target_frame(payload: bytes, *, approaching_code: int = 1) -> TargetF
     """
     if approaching_code not in (0, 1):
         raise ValueError(f"approaching_code must be 0 or 1, not {approaching_code}")
+
+    if len(payload) == 0:
+        # Observed on real hardware: some units send a genuinely empty payload — header,
+        # zero-length field, footer, nothing between — as their "nothing to report" heartbeat,
+        # rather than the alarm-byte-plus-zero-count form other units use. Both mean the same
+        # thing, and treating one of them as malformed would turn every idle cycle on such a
+        # unit into a stream of errors instead of the empty report it actually is (FM-010).
+        return TargetFrame(alarm=0, targets=())
+
     if len(payload) < TARGET_HEADER_LENGTH:
         raise ProtocolError(
             f"target payload is {len(payload)} bytes, too short to carry an alarm byte and a "

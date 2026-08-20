@@ -151,6 +151,20 @@ def test_an_empty_report_is_a_frame_and_not_a_dropped_one() -> None:
     assert decoded.alarm == 0
 
 
+def test_a_zero_length_payload_is_also_an_empty_report() -> None:
+    """Observed on real hardware: some units send no alarm/count bytes at all when idle.
+
+    Header, a length field of zero, footer, nothing in between. It means exactly what the
+    alarm-byte-plus-zero-count form means on other units, and must decode the same way rather
+    than being rejected as malformed — a device sitting there working correctly would
+    otherwise look like a stream of protocol errors on every idle cycle.
+    """
+    decoded = decode_target_frame(b"")
+
+    assert decoded.targets == ()
+    assert decoded.alarm == 0
+
+
 def test_a_target_count_the_payload_cannot_support_is_rejected() -> None:
     payload = bytes((1, 3)) + bytes(5)
 
