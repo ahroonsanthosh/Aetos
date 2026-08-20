@@ -19,7 +19,9 @@
   white-space: nowrap;
   user-select: none;
   transform: translateX(14px);
-  transition: background 160ms ease;
+  transition:
+    background 160ms ease,
+    opacity 180ms ease;
 }
 
 .labelSelected {

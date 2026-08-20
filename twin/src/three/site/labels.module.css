@@ -17,7 +17,10 @@
   user-select: none;
   transition:
     background 160ms ease,
-    transform 160ms ease;
+    transform 160ms ease,
+    /* Driven imperatively by the declutter pass. A label winking out instantly as the
+       camera turns reads as a glitch; a short fade reads as decluttering. */
+    opacity 180ms ease;
 }
 
 .label:hover {

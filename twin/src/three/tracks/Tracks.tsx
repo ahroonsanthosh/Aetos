@@ -24,6 +24,8 @@ import { clamp } from '@/lib/geometry';
 import { labelFor } from '@/simulation/threat';
 import { interpolatedPosition } from '@/state/buffer';
 import { useAetos } from '@/state/store';
+import { LabelPriority } from '../labels/registry';
+import { useLabel } from '../labels/useLabel';
 import styles from './tracks.module.css';
 
 export function Tracks() {
@@ -62,6 +64,23 @@ function TrackObject({ track }: { track: Track }) {
   const colour = threatColour[track.threat.level];
   const intensity = threatIntensity[track.threat.level];
 
+  /**
+   * Track labels outrank every asset label. An asset is where it has always been and the
+   * operator can find it again; a track is the thing that changed, and its rank follows
+   * how much it warrants attention.
+   */
+  const label = useLabel(
+    selected
+      ? LabelPriority.SELECTED
+      : track.threat.level === 'critical'
+        ? LabelPriority.TRACK_CRITICAL
+        : track.threat.level === 'high'
+          ? LabelPriority.TRACK_HIGH
+          : track.threat.level === 'medium'
+            ? LabelPriority.TRACK_MEDIUM
+            : LabelPriority.TRACK_LOW,
+  );
+
   // Threat and selection add weight on top of the distance-normalised size, so severity
   // still reads as size rather than only as colour.
   const scale = 1 + intensity * 0.16 + (selected ? 0.28 : 0);
@@ -99,7 +118,13 @@ function TrackObject({ track }: { track: Track }) {
       const normalised = clamp(distance * 0.002, 0.6, 9);
       symbol.current.scale.setScalar(normalised * scale);
       // Keep the label clear of the symbol at every zoom, without scaling the anchor.
-      if (labelAnchor.current) labelAnchor.current.position.y = 6 + normalised * 11;
+      if (labelAnchor.current) {
+        const offset = 6 + normalised * 11;
+        labelAnchor.current.position.y = offset;
+        // The declutter pass needs where this label *is*, and a track's anchor moves every
+        // frame, so it is written here rather than once in an effect.
+        label.world.set(x, y + offset, z);
+      }
     }
     if (shadow.current) {
       const groundDistance = state.camera.position.distanceTo(shadow.current.position);
@@ -200,6 +225,7 @@ function TrackObject({ track }: { track: Track }) {
             style={{ pointerEvents: 'none' }}
           >
             <div
+              ref={label.setElement}
               className={`${styles.label} ${selected ? styles.labelSelected : ''}`}
               style={{ borderColor: markerColour, color: markerColour }}
             >

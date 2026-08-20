@@ -18,6 +18,7 @@ import { useAetos } from '@/state/store';
 import { Atmosphere } from './Atmosphere';
 import { CameraRig } from './CameraRig';
 import { CoverageMap } from './sensors/CoverageMap';
+import { LabelDeclutter } from './labels/LabelDeclutter';
 import { Labels } from './site/Labels';
 import { SensorNodes } from './sensors/SensorNodes';
 import { SolarField } from './site/SolarField';
@@ -90,6 +91,10 @@ export function Scene() {
         <ProtectedZones />
         <Tracks />
         <Labels />
+
+        {/* Last on purpose: R3F runs useFrame callbacks in mount order, so the label
+            placement pass reads anchors that everything above has already updated. */}
+        <LabelDeclutter />
       </group>
 
       <Atmosphere />
