@@ -163,15 +163,19 @@ is not.
 Deliberately generic. No manufacturer, model or product name appears in this enum or anywhere
 else in the codebase, and a test asserts it.
 
-| Simulated | Reserved for future real adapters |
+| Simulated | Real |
 |---|---|
-| `simulated_radar` | `radar` |
-| `simulated_eo_ir` | `eo_ir` |
-| `simulated_rf` | `rf` |
-| `simulated_acoustic` | `acoustic` |
+| `simulated_radar` | `radar` — one adapter, a short-range serial module (`sensors/adapters/radar/`) |
+| `simulated_eo_ir` | `eo_ir` — reserved, no implementation |
+| `simulated_rf` | `rf` — reserved, no implementation |
+| `simulated_acoustic` | `acoustic` — reserved, no implementation |
 
-The right-hand column is a **schema reservation, not a capability claim**. No real sensor
-integration exists.
+Three of the four right-hand values remain a **schema reservation, not a capability claim**.
+The fourth is real: `radar` is produced by the serial adapter described in
+`docs/hardware_radar_bench.md`, and it is what `GET /system/mode` counts when it reports
+whether anything on screen is a measurement. A sensor's own `sensor_type` is the *only*
+channel carrying simulated-versus-real; provenance is not (ADR 0012), and neither is anything
+about how a detection looks.
 
 ## Classification labels
 

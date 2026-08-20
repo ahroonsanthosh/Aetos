@@ -80,6 +80,19 @@ class ConfigPaths:
     def sensor_registry(self) -> Path:
         return self.config_root / "sensor_registry"
 
+    @property
+    def hardware(self) -> Path:
+        """Documents describing physically fitted sensors.
+
+        Separate from `sensor_registry/`, which holds simulation profiles, because the two are
+        different kinds of document with different consequences: one says how to degrade
+        ground truth, the other says how to reach a device and how much to believe it. Keeping
+        them in one directory would let a placement fall back from a real sensor to a
+        simulated profile on a typo, which is the single most dangerous confusion this system
+        can make.
+        """
+        return self.config_root / "hardware"
+
     def site_file(self, name: str) -> Path:
         return self.sites / f"{_checked_name(name, 'site')}.json"
 
@@ -89,6 +102,10 @@ class ConfigPaths:
     def sensor_registry_file(self, registry_key: str) -> Path:
         """The registry document describing one sensor model. One file per key, named by it."""
         return self.sensor_registry / f"{_checked_name(registry_key, 'sensor registry')}.json"
+
+    def hardware_file(self, registry_key: str) -> Path:
+        """The document describing one fitted sensor. One file per key, named by it."""
+        return self.hardware / f"{_checked_name(registry_key, 'hardware')}.json"
 
     def resolve(self, configured_path: str) -> Path:
         """Interpret a path written in a configuration document.

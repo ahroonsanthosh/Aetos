@@ -7,6 +7,8 @@
 #   ./start.sh --list                   show the available scenarios
 #   ./start.sh --port 9000              serve somewhere else
 #   ./start.sh --no-scenario            serve an idle system, no synthetic data
+#   ./start.sh --live                   read the fitted radar instead of the simulator
+#   ./start.sh --live --radar-port /dev/ttyUSB1   ...on a port other than its configured one
 #   ./start.sh --no-auth                no login, localhost only (see ADR 0016)
 #
 # Sets up the Python environment, builds the operator interface if it is not already built,
@@ -65,6 +67,9 @@ SCENARIO="b_approaching_threat"
 PORT=8000
 HOST="127.0.0.1"
 NO_AUTH=0
+LIVE=0
+SITE=""
+RADAR_PORT=""
 
 # ---------------------------------------------------------------------------------------
 # Arguments
@@ -81,10 +86,16 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --no-scenario) SCENARIO=""; shift ;;
+    # Live mode reads a physically fitted sensor instead of the simulator. It defaults the
+    # site to the bench site, because the shipped simulation site places its sensors kilometres
+    # apart and a 100 m radar standing at one of them would look broken rather than short.
+    --live) LIVE=1; SCENARIO=""; shift ;;
+    --radar-port) RADAR_PORT="$2"; shift 2 ;;
+    --site) SITE="$2"; shift 2 ;;
     --no-auth) NO_AUTH=1; shift ;;
     --port) PORT="$2"; shift 2 ;;
     --host) HOST="$2"; shift 2 ;;
-    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "Unknown option: $1" >&2; exit 1 ;;
     *) SCENARIO="$1"; shift ;;
   esac
@@ -115,14 +126,22 @@ PY=".venv/bin/python"
 
 # Reinstall only when the dependency declaration is newer than the last install, so a repeat
 # run starts immediately instead of resolving packages every time.
+# Live mode needs the serial driver, which is an optional extra: a simulator run should not
+# install a driver for hardware it does not have.
+EXTRAS="."
 STAMP=".venv/.aetos-installed"
+if [[ "$LIVE" == "1" ]]; then
+  EXTRAS=".[hardware]"
+  STAMP=".venv/.aetos-installed-hardware"
+fi
+
 if [[ ! -f "$STAMP" || pyproject.toml -nt "$STAMP" ]]; then
   say "Installing backend dependencies"
   if command -v uv >/dev/null; then
-    uv pip install --quiet -e .
+    uv pip install --quiet -e "$EXTRAS"
   else
     "$PY" -m pip install --quiet --upgrade pip
-    "$PY" -m pip install --quiet -e .
+    "$PY" -m pip install --quiet -e "$EXTRAS"
   fi
   touch "$STAMP"
 fi
@@ -268,5 +287,11 @@ echo
 ARGS=(--host "$HOST" --port "$PORT")
 [[ "$NO_AUTH" == "1" ]] && ARGS+=(--no-auth)
 [[ -n "$SCENARIO" ]] && ARGS+=(--scenario "$SCENARIO")
+if [[ "$LIVE" == "1" ]]; then
+  ARGS+=(--live)
+  [[ -z "$SITE" ]] && SITE="bench_radar_test"
+  [[ -n "$RADAR_PORT" ]] && ARGS+=(--radar-port "$RADAR_PORT")
+fi
+[[ -n "$SITE" ]] && ARGS+=(--site "$SITE")
 
 exec "$PY" -m backend.main "${ARGS[@]}"

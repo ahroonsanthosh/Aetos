@@ -89,6 +89,18 @@ longer exists.
 health is marked degraded; if sensor count or aggregate confidence drops below the usable
 threshold, degraded mode activates and is stated visibly in the UI.
 
+**Partial handling now exists at the adapter, for the one real sensor.** The serial radar
+distinguishes a link carrying empty reports from a link carrying nothing at all: the device
+frames on its own cadence whether or not it sees anything, so silence on the wire is the link
+failing, not an empty sky. Past `silence_timeout_s` the adapter reports itself DEGRADED with
+that distinction in its reason, and a failed read reports OFFLINE naming the error. Two related
+refusals sit upstream of it: a port that will not open stops startup rather than presenting an
+unopened port as a quiet sky, and reports arriving from outside the configured coverage are
+rejected rather than drawn.
+
+This is the adapter half only. The watchdog that turns these health records into degraded mode
+is still unbuilt, so nothing yet acts on a DEGRADED sensor beyond reporting it.
+
 ### FM-011 — Malformed detection data
 **Status:** Open — target of build stage 12
 

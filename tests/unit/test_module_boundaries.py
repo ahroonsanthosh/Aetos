@@ -138,7 +138,26 @@ def test_no_effector_or_weapons_vocabulary_in_the_codebase() -> None:
 
 @pytest.mark.parametrize(
     "vendor_term",
-    ["echodyne", "dedrone", "robin radar", "sentrion", "aaronia", "hensoldt"],
+    [
+        "echodyne",
+        "dedrone",
+        "robin radar",
+        "sentrion",
+        "aaronia",
+        "hensoldt",
+        # The device actually fitted, and the USB adapter it is read through. Listed because
+        # this is where the rule stops being hypothetical: a real integration exists, and the
+        # temptation to name the part in the code that reads it is real with it. The adapter
+        # describes what the device does — a UART target-report radar — and the model name
+        # lives in configuration and in docs/hardware_radar_bench.md, where an operator holding
+        # the part needs to read it.
+        "hi-link",
+        "hilink",
+        "hlk",
+        "ld2451",
+        "paradisetronic",
+        "cp2102",
+    ],
 )
 def test_no_sensor_vendor_names_in_the_codebase(vendor_term: str) -> None:
     """The system must never depend on, or appear to depend on, a particular manufacturer.

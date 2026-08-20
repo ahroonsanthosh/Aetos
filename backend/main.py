@@ -48,6 +48,10 @@ from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
+from sensors.adapters.interface import SensorAdapter
+from sensors.adapters.radar.adapter import UartRadarAdapter
+from sensors.adapters.radar.config import hardware_keys, load_radar_hardware
+from sensors.adapters.radar.transport import SerialTransport, TransportError
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
 from sensors.schemas.detection import Detection
@@ -109,7 +113,7 @@ class Pipeline:
         # alert, and an operator cannot tell an empty feed from a quiet sky.
         self.alerting.rebuild()
 
-        self._adapters: list[SimulatedSensorAdapter] = []
+        self._adapters: list[SensorAdapter] = []
 
         # The site and its sensors are configuration the API reads back, so they are persisted
         # once at startup rather than being loaded independently by every request.
@@ -163,6 +167,100 @@ class Pipeline:
         ]
         for adapter in self._adapters:
             adapter.start()
+
+    def attach_live_sensors(self, port_override: str | None = None) -> int:
+        """Open every physically fitted sensor this site declares. Returns how many started.
+
+        A placement is *fitted* when its `registry_key` names a document in `config/hardware/`
+        rather than a profile in `config/sensor_registry/`. That is the whole of the
+        simulated-versus-real decision, and it is made from configuration rather than from a
+        flag, so a site cannot be running a real sensor while the configuration a reviewer
+        reads says otherwise.
+
+        Failures propagate. A port that will not open is not a sensor watching an empty sky,
+        and starting the system with one silently absent would put an operator in front of a
+        display showing exactly what a working sensor sees over an empty field (FM-010).
+        """
+        fitted = hardware_keys()
+        placements = [
+            placement
+            for placement in self.geometry.site.sensors
+            if placement.enabled and placement.registry_key in fitted
+        ]
+        if not placements:
+            raise StartupRefused(
+                f"site {self.geometry.site.site_id!r} declares no fitted sensors: no enabled "
+                f"placement names a document in config/hardware/. Configured keys there are "
+                f"{sorted(fitted) or 'none'}."
+            )
+
+        positions = self.geometry.site.sensor_positions_enu()
+        # Kept alongside its port so a failure names the port that failed rather than whichever
+        # one the loop happened to end on.
+        adapters: list[tuple[SensorAdapter, str]] = []
+        for placement in placements:
+            config = load_radar_hardware(placement.registry_key)
+            port = port_override or config.link.port
+            adapters.append((
+                UartRadarAdapter(
+                    clock=self.clock,
+                    sensor_id=placement.sensor_id,
+                    config=config,
+                    transport=SerialTransport(
+                        port=port,
+                        baud_rate=config.link.baud_rate,
+                        read_timeout_s=config.link.read_timeout_s,
+                    ),
+                    position_enu=positions[placement.sensor_id],
+                    frame=self.geometry.frame,
+                    boresight_deg=placement.boresight_deg,
+                ),
+                port,
+            ))
+
+        for adapter, port in adapters:
+            try:
+                adapter.start()
+            except TransportError as exc:
+                # Refused rather than skipped. An adapter quietly left out produces a display
+                # identical to a working sensor over an empty field (FM-010), and the whole
+                # point of starting in live mode is that what is on screen is a measurement.
+                for started, _ in adapters:
+                    started.stop()
+                raise StartupRefused(
+                    f"sensor {adapter.sensor_id!r} could not be opened: {exc}\n"
+                    "  Check the cabling and the port, then prove the link with:\n"
+                    f"    python -m scripts.radar_probe --port {port}\n"
+                    "  See docs/hardware_radar_bench.md."
+                ) from exc
+            _LOG.info("Sensor %s started on %s", adapter.sensor_id, port)
+            self.attach(adapter)
+
+        return len(adapters)
+
+    def attach(self, adapter: SensorAdapter) -> None:
+        """Add an already-constructed, already-started source.
+
+        The seam the tests use to drive the whole pipeline from a fake transport, and the one
+        `attach_live_sensors` builds on. Deliberately typed against `SensorAdapter` and not
+        against either concrete adapter: the moment this signature names a kind of sensor, the
+        pipeline knows something about its sources that it is not supposed to know.
+        """
+        self._adapters.append(adapter)
+
+    @property
+    def has_sources(self) -> bool:
+        """Whether anything is feeding the pipeline. Nothing attached means nothing to step."""
+        return bool(self._adapters)
+
+    def real_adapter_count(self) -> int:
+        """Attached adapters that are reading real hardware rather than a simulation.
+
+        Counted from the adapters themselves rather than from the configured run mode, because
+        the two can disagree — a deployment declaring LIVE with an unplugged sensor is exactly
+        the case `GET /system/mode` exists to expose.
+        """
+        return sum(1 for adapter in self._adapters if not adapter.sensor_type.is_simulated)
 
     def step(self) -> int:
         """Run one cycle. Returns how many detections were accepted.
@@ -275,6 +373,8 @@ def build_application(
     data_dir: Path | None = None,
     tick_s: float = DEFAULT_TICK_S,
     authenticated: bool = True,
+    live: bool = False,
+    radar_port: str | None = None,
 ):
     """Assemble the pipeline and the API around it.
 
@@ -282,7 +382,21 @@ def build_application(
     off loopback; False attributes everything to one local operator with no login at all
     (ADR 0008, FM-001) and exists for a single-user machine. `guard_bind` refuses to combine it
     with a network interface.
+
+    `live` opens the sensors the site declares as fitted instead of driving simulated ones from
+    a scenario. The two are refused together: they would put synthetic and real detections on
+    one display, and the mode indicator can then only be a half-truth. A genuine hybrid — real
+    sensors alongside a synthetic target for training — is a HYBRID-mode question with its own
+    answers about how the interface marks each track, and it is not answered by letting the
+    flags combine.
     """
+    if live and scenario:
+        raise StartupRefused(
+            "--live and --scenario cannot be combined: real and synthetic detections would "
+            "share one display with nothing on screen distinguishing them. Run one or the "
+            "other."
+        )
+
     clock = SystemClock()
     geometry = load_site_geometry(site)
     resolved = data_dir or ConfigPaths.default().repo_root / "data"
@@ -290,6 +404,9 @@ def build_application(
     pipeline = Pipeline(clock, geometry, resolved)
     if scenario:
         pipeline.attach_scenario(scenario)
+    if live:
+        started = pipeline.attach_live_sensors(radar_port)
+        _LOG.info("Live mode: %d fitted sensor(s) reading at site %s", started, site)
 
     services = ApiServices(
         clock=clock,
@@ -309,11 +426,12 @@ def build_application(
         alerts=pipeline.alerting,
         classification_running=True,
         situation=pipeline.risk,
-        run_mode=RunMode.SIMULATION,
+        run_mode=RunMode.LIVE if live else RunMode.SIMULATION,
+        real_adapters=pipeline.real_adapter_count,
     )
 
     app = create_app(services)
-    _attach_pipeline_task(app, pipeline, scenario, tick_s)
+    _attach_pipeline_task(app, pipeline, tick_s)
 
     # After the routers, so the interface's catch-all can only ever match paths the API did
     # not claim.
@@ -321,7 +439,7 @@ def build_application(
     return app
 
 
-def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s: float) -> None:
+def _attach_pipeline_task(app, pipeline: Pipeline, tick_s: float) -> None:
     """Run the pipeline on the event loop for as long as the server is up.
 
     Composed into the application's existing lifespan rather than registered with
@@ -339,7 +457,10 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
         async with existing_lifespan(scope_app):
             handle: asyncio.Task | None = None
 
-            if scenario:
+            # Whatever is attached — a scenario's simulated sensors or fitted hardware — is
+            # stepped by the same loop. Nothing below this line knows which it is, which is
+            # the governing principle holding at the one place it would be easiest to break.
+            if pipeline.has_sources:
 
                 async def run() -> None:
                     consecutive_failures = 0
@@ -399,6 +520,22 @@ def main() -> None:
     )
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "read the sensors this site declares as fitted (config/hardware/) instead of "
+            "driving simulated ones. Refuses to combine with --scenario."
+        ),
+    )
+    parser.add_argument(
+        "--radar-port",
+        default=None,
+        help=(
+            "serial port to read the fitted radar on, overriding the one in its hardware "
+            "document. For a bench run where the port moves between machines."
+        ),
+    )
+    parser.add_argument(
         "--behind-proxy",
         action="store_true",
         help=(
@@ -417,13 +554,20 @@ def main() -> None:
     arguments = parser.parse_args()
 
     authenticated = not arguments.no_auth
-    app = build_application(
-        site=arguments.site,
-        scenario=arguments.scenario,
-        data_dir=arguments.data_dir,
-        tick_s=arguments.tick,
-        authenticated=authenticated,
-    )
+    try:
+        app = build_application(
+            site=arguments.site,
+            scenario=arguments.scenario,
+            data_dir=arguments.data_dir,
+            tick_s=arguments.tick,
+            authenticated=authenticated,
+            live=arguments.live,
+            radar_port=arguments.radar_port,
+        )
+    except StartupRefused as refusal:
+        # A sensor that will not open, or a flag combination that would misrepresent what is
+        # on screen, stops the process here rather than surfacing as a quiet display later.
+        raise SystemExit(f"\n  {refusal}\n") from refusal
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.

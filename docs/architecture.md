@@ -30,7 +30,7 @@ The third is the one that actually holds the line. The first two are conventions
 
 ```
   ┌─────────────────────────────────────────────────────┐
-  │  SOURCE   simulated adapter  │  (future) real adapter │
+  │  SOURCE   simulated adapter  │  serial radar adapter  │
   └────────────────────┬────────────────────────────────┘
                        │  canonical Detection (WGS-84, UTC)
                        ▼
@@ -124,11 +124,17 @@ touching the others.
 
 Three modes are designed for; only the first is built.
 
-- **SIMULATION** — all detections synthetic. Current state.
-- **LIVE** — all detections from real sensor adapters. Not built. No real sensor integration
-  exists or is claimed.
+- **SIMULATION** — all detections synthetic. The default, and the only mode with a scenario
+  library behind it.
+- **LIVE** — all detections from real sensor adapters. **Partially built**, and the size of
+  the gap matters: one adapter exists, for a single short-range serial radar module, and it
+  is a bench-test integration rather than a fitted sensor suite. See
+  `docs/hardware_radar_bench.md` for what that device can and cannot do, and ADR 0017 for
+  what was decided in wiring it in.
 - **HYBRID** — real and simulated detections coexisting, for controlled testing against a
-  live baseline.
+  live baseline. Not built, and deliberately refused rather than half-allowed: `--live` and
+  `--scenario` together are rejected at startup, because one display carrying both kinds with
+  nothing marking which is which is the exact confusion the mode indicator exists to prevent.
 
 Because every source implements the same adapter interface and produces the same canonical
 Detection, mode selection is adapter registry configuration rather than a code path. Nothing

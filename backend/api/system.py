@@ -108,10 +108,10 @@ class ModeView(BaseModel):
 async def get_mode(services: ServicesDep) -> ModeView:
     """The run mode, as a fact rather than a frontend constant.
 
-    No real sensor adapter integration exists in this build, so `real_adapters_connected` is
-    structurally zero and `simulated` is structurally true. Both are computed rather than
-    hardcoded, so they will start telling the truth on their own the day an adapter registry
-    is wired in.
+    `real_adapters_connected` is read from the pipeline's attached adapters, so a deployment
+    started with `--live` and a sensor that failed to attach reports LIVE with zero real
+    adapters and `simulated` true — the disagreement stays visible instead of being resolved
+    in favour of the more reassuring of the two.
     """
     real_adapters = services.real_adapter_count()
 

@@ -14,6 +14,7 @@ lines and two apps can coexist in one process without discovering each other.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -115,15 +116,25 @@ class ApiServices:
     and a frontend-side toggle would let synthetic data be presented as real by editing one
     line."""
 
+    real_adapters: Callable[[], int] | None = None
+    """Where the count of attached real sensor adapters is read from.
+
+    A callable rather than a number because the answer changes while the process runs: an
+    adapter can be attached at startup and its device unplugged an hour later, and a count
+    frozen at construction would go on asserting a sensor that is no longer there. None means
+    no pipeline is attached at all, which is the case in tests that build an API over a bare
+    projection, and reads as zero.
+    """
+
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
-        Structurally zero: no real sensor adapter integration exists in this build, and there
-        is no adapter registry for the API to consult. Written as a method returning a
-        computed zero rather than a literal so that wiring in a registry later changes one
-        implementation instead of every caller that assumed the answer.
+        Read from the pipeline rather than inferred from the configured run mode, because the
+        two can disagree and the disagreement is the interesting case: an environment
+        declaring LIVE with nothing attached is a misconfiguration an operator must see, not
+        one the API should launder into a reassuring mode string.
         """
-        return 0
+        return self.real_adapters() if self.real_adapters is not None else 0
 
 
 class AlertSource(Protocol):

@@ -93,7 +93,8 @@ A point exactly on a zone boundary — on an edge or on a vertex — counts as *
 ```jsonc
 {
   "sensor_id": "radar_north",           // unique within the site
-  "registry_key": "sim_radar_medium",   // entry in config/sensor_registry/
+  "registry_key": "sim_radar_medium",   // config/sensor_registry/ (simulated) or
+                                        // config/hardware/ (a device on a real port)
   "position": { "latitude": …, "longitude": … },
   "height_m": 12.0,                     // above the site reference altitude: mast or rooftop
   "boresight_deg": 0.0,                 // clockwise from true north
@@ -105,6 +106,12 @@ Placement only. Range, field of view, update rate, uncertainty, probability of d
 false alarm rate belong to the sensor registry, because one sensor model is placed at many
 sites and one site is fitted with different sensors. `boresight_deg` is ignored by sensor models
 with full azimuthal coverage.
+
+Which directory `registry_key` resolves in decides whether the placement is simulated or real —
+see `config/hardware/README.md`. For a fitted sensor, `boresight_deg` and `height_m` stop being
+bookkeeping and become measurements: they are how a range and a bearing from the device become
+a position on the Earth, and an error in either is a systematic error in every detection it
+produces.
 
 ## The shipped site
 

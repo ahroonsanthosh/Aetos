@@ -12,6 +12,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+hardware = [
+    # Only needed to read a physically fitted serial sensor. Kept out of the base install so a
+    # laptop running the simulator does not carry a driver for hardware it does not have.
+    "pyserial>=3.5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

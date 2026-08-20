@@ -15,8 +15,13 @@ Aetos is **software only**. It stops at a human-facing recommendation.
   effector integration is a separate future system with its own authorisation and safety
   architecture, and does not belong in this codebase.
 
-At this stage all detections are **synthetic**, produced by a built-in simulator. No
-physical sensor integration exists or is claimed to exist.
+Detections are **synthetic by default**, produced by a built-in simulator. One real sensor
+integration now exists: a short-range 24 GHz serial radar module, read by
+`sensors/adapters/radar/`. It is a bench-test integration — one sensor, no elevation output,
+no classification, and no verified performance against a small airframe — and
+[docs/hardware_radar_bench.md](docs/hardware_radar_bench.md) states exactly what it can and
+cannot do. The interface reports which kind of data is on screen, from a fact the backend
+asserts rather than a constant the frontend carries.
 
 ## Core principle
 
@@ -52,11 +57,11 @@ a single combined pipeline function.
 | `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, simulated adapter, real-sensor stubs |
+| `sensors/` | `SensorAdapter` contract, simulated adapter, and the serial radar adapter |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
-| `config/` | Sites, sensor registry, environment configuration |
+| `config/` | Sites, simulation profiles, fitted hardware, environment configuration |
 | `tests/` | Unit, integration, scenario replay, chaos |
 
 ## Running it
@@ -76,6 +81,18 @@ interface, so there is no second terminal and no proxy to configure.
 ./start.sh --no-scenario           # idle system, no synthetic data
 ./start.sh --port 9000             # serve somewhere else
 ```
+
+### With the radar attached
+
+```bash
+./start.sh --live                            # read the fitted sensor instead of the simulator
+./start.sh --live --radar-port /dev/ttyUSB1  # ...on a different port
+```
+
+Read **[docs/hardware_radar_bench.md](docs/hardware_radar_bench.md)** first, and run
+`python -m scripts.radar_probe --port /dev/ttyUSB0` before this — it proves the link and
+settles the two sign conventions that are wrong in ways a map makes look plausible. A port
+that will not open stops startup rather than presenting an unopened port as a quiet sky.
 
 Needs Python 3.11+ and Node 20+. Re-running is cheap: it skips whatever is already done.
 

@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "site_id": "bench_radar_test",
+  "name": "Aetos Bench Radar Test",
+  "reference": {
+    "latitude": 51.8971,
+    "longitude": -8.4697,
+    "altitude_m": 5.0
+  },
+  "protected_radius_m": 40.0,
+  "zones": [
+    {
+      "zone_id": "bench_core",
+      "name": "Bench protected core",
+      "kind": "protected",
+      "geometry": {
+        "shape": "circle",
+        "centre": { "latitude": 51.8971, "longitude": -8.4697 },
+        "radius_m": 40.0
+      }
+    },
+    {
+      "zone_id": "bench_inner",
+      "name": "Bench restricted ring",
+      "kind": "restricted",
+      "geometry": {
+        "shape": "circle",
+        "centre": { "latitude": 51.8971, "longitude": -8.4697 },
+        "radius_m": 80.0
+      }
+    },
+    {
+      "zone_id": "bench_outer",
+      "name": "Bench monitored airspace",
+      "kind": "monitored",
+      "geometry": {
+        "shape": "circle",
+        "centre": { "latitude": 51.8971, "longitude": -8.4697 },
+        "radius_m": 150.0
+      }
+    }
+  ],
+  "sensors": [
+    {
+      "sensor_id": "bench_radar",
+      "registry_key": "bench_radar_uart",
+      "position": { "latitude": 51.8971, "longitude": -8.4697 },
+      "height_m": 1.5,
+      "boresight_deg": 0.0
+    }
+  ]
+}

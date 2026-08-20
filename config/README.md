@@ -9,7 +9,8 @@ they live here, are validated against Pydantic models at load, and fail loudly w
 |---|---|---|
 | `sites/` | Protected geography: reference point, zones, sensor placements | `backend/zones/site.py` |
 | `environments/` | Run mode, which site, event store path, queue and risk tuning | `backend/common/config.py` |
-| `sensor_registry/` | Detection characteristics per sensor model | owned by the sensor layer |
+| `sensor_registry/` | Simulation profiles: how a simulated sensor degrades ground truth | owned by the sensor layer |
+| `hardware/` | Physically fitted sensors: link settings, mounting, measured error | owned by the sensor layer |
 
 Each directory documents its own format in its own README.
 
@@ -29,6 +30,15 @@ ambient environment.
 There is no partial load and no silent default for a required field. A misconfigured site must
 stop the system at startup rather than produce a plausible-looking picture built on geometry
 nobody intended.
+
+## Simulated profiles and fitted hardware are different directories
+
+`sensor_registry/` and `hardware/` are both keyed by `registry_key` and a site placement names
+one key, so which directory the key is found in decides whether that placement is a simulation
+or a device on a serial port. They are kept apart rather than merged with a type field for one
+reason: a merged directory lets a typo fall back from a real sensor to a simulated profile,
+and an operator watching synthetic returns believing they are measurements is the single most
+dangerous state this system can reach.
 
 ## Naming rule
 
