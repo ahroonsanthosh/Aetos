@@ -25,11 +25,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import type { Asset, Ground, Site } from '@/types';
-import { polygonCentroid } from '@/lib/geometry';
 import { palette } from '@/lib/palette';
 import { KNOWN_ASSET_TYPES, labelForAssetType } from '@/site/assetTypes';
 import { pixelToGround, type Calibration, type ImagePoint } from '@/site/import/calibration';
 import { DEFAULT_IMPORT_RADIUS_M, fetchOsmSiteData } from '@/site/import/osm';
+import { geocode, type GeocodeResult } from '@/site/import/geocode';
+import { pointInPolygon, polygonCentroid } from '@/lib/geometry';
 import { generateDefaultResources, generateDefaultSensors, generateDefaultZones } from '@/site/generate';
 import { handOffSiteToCommand } from '@/site/handoff';
 import { parseSiteFile, parseSiteFileText, SiteFileError, serialiseSite } from '@/site/schema';
@@ -42,7 +43,10 @@ function emptyDraft(): Site {
     id: `SITE-${Date.now().toString(36).toUpperCase()}`,
     name: 'New Site',
     kind: 'Site',
-    datum: { latitude: 51.8985, longitude: -8.4756 },
+    // Deliberately null island until a place is chosen. The previous default was a real
+    // inhabited location, so pressing Import without editing the fields returned a
+    // neighbourhood of unrelated houses — the tool's single worst first impression.
+    datum: { latitude: 0, longitude: 0 },
     boundary: [],
     assets: [],
     sensors: [],
@@ -70,9 +74,11 @@ export function SiteEditor() {
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
   const [imageCalibration, setImageCalibration] = useState<Calibration | null>(null);
 
-  const [osmLat, setOsmLat] = useState(String(draft.datum.latitude));
-  const [osmLon, setOsmLon] = useState(String(draft.datum.longitude));
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeResults, setPlaceResults] = useState<GeocodeResult[] | null>(null);
+  const [located, setLocated] = useState<GeocodeResult | null>(null);
   const [osmRadius, setOsmRadius] = useState(String(DEFAULT_IMPORT_RADIUS_M));
+  const [showBasemap, setShowBasemap] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[] | null>(null);
@@ -114,31 +120,90 @@ export function SiteEditor() {
 
   // --- Import: OpenStreetMap ---------------------------------------------------------------
 
+  const searchPlace = async () => {
+    setBusy(true);
+    setStatus('Searching…');
+    setPlaceResults(null);
+    try {
+      const results = await geocode(placeQuery);
+      setPlaceResults(results);
+      setStatus(
+        results.length === 0
+          ? 'Nothing found. Try a more specific name, or a nearby town plus the site name.'
+          : `${results.length} match${results.length === 1 ? '' : 'es'} — pick one to centre the map.`,
+      );
+    } catch (err) {
+      setStatus(`Place search failed: ${(err as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Choosing a place sets the datum and moves the map there — but imports nothing. Seeing
+   * where you are before pulling in buildings is the entire point of the change; the old
+   * flow went straight from typed coordinates to a screenful of unrelated houses.
+   */
+  const choosePlace = (result: GeocodeResult) => {
+    setLocated(result);
+    setPlaceResults(null);
+    setOsmRadius(String(result.suggestedRadius));
+    setDraft((current) => ({
+      ...current,
+      name: current.name === 'New Site' ? result.label.split(',')[0]!.trim() : current.name,
+      datum: { latitude: result.latitude, longitude: result.longitude },
+    }));
+    // Frame roughly the suggested radius, so the map opens showing the whole place.
+    setView({
+      centreE: 0,
+      centreN: 0,
+      metresPerPixel: (result.suggestedRadius * 2.4) / Math.max(canvasSize.height, 1),
+    });
+    setStatus(`Centred on ${result.label}. Draw the boundary, then import buildings inside it.`);
+  };
+
   const importFromOsm = async () => {
-    const latitude = Number.parseFloat(osmLat);
-    const longitude = Number.parseFloat(osmLon);
     const radius = Number.parseFloat(osmRadius);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radius)) {
-      setStatus('Latitude, longitude and radius must all be numbers.');
+    if (!located || !Number.isFinite(radius)) {
+      setStatus('Search for a place first, so the import knows where to look.');
       return;
     }
 
     setBusy(true);
     setStatus('Querying OpenStreetMap…');
     try {
-      const result = await fetchOsmSiteData({ latitude, longitude }, radius);
+      const result = await fetchOsmSiteData(
+        { latitude: draft.datum.latitude, longitude: draft.datum.longitude },
+        radius,
+      );
+
+      // If a boundary has already been drawn, only buildings inside it are the site's.
+      // Without this the import is indiscriminate — every house, shed and garage within the
+      // radius arrives as an asset, which is what made the first version unusable.
+      const hasBoundary = draft.boundary.length >= 3;
+      const kept = hasBoundary
+        ? result.assets.filter((a) => pointInPolygon(a.position, draft.boundary))
+        : result.assets;
+      const rejected = result.assets.length - kept.length;
+
       setDraft((current) => ({
         ...current,
-        datum: current.assets.length === 0 && current.boundary.length === 0
-          ? { latitude, longitude }
-          : current.datum,
         boundary: current.boundary.length === 0 ? result.suggestedBoundary : current.boundary,
-        assets: [...current.assets, ...result.assets],
+        assets: [...current.assets, ...kept],
       }));
-      setView(fitViewTo(result.suggestedBoundary.length ? result.suggestedBoundary : [{ e: 0, n: 0 }], canvasSize.width, canvasSize.height));
+
+      const frame = hasBoundary ? draft.boundary : result.suggestedBoundary;
+      if (frame.length >= 3) setView(fitViewTo(frame, canvasSize.width, canvasSize.height));
+
       setStatus(
-        `Imported ${result.assets.length} building${result.assets.length === 1 ? '' : 's'}` +
-          (result.skipped ? `, skipped ${result.skipped} with no usable outline.` : '.'),
+        kept.length === 0
+          ? hasBoundary
+            ? `OpenStreetMap returned ${result.assets.length} building(s), none inside your boundary. Widen the boundary or the radius.`
+            : 'OpenStreetMap has no traced buildings here. Trace a reference image instead.'
+          : `Imported ${kept.length} building${kept.length === 1 ? '' : 's'}` +
+            (rejected ? `, ignored ${rejected} outside the boundary` : '') +
+            (result.skipped ? `, skipped ${result.skipped} with no usable outline` : '') +
+            '. Review and delete anything that is not yours.',
       );
     } catch (err) {
       setStatus(`OpenStreetMap import failed: ${(err as Error).message}`);
@@ -344,23 +409,78 @@ export function SiteEditor() {
 
       <div className={styles.body}>
         <aside className={styles.left}>
-          <Section title="Start from OpenStreetMap">
+          <Section title="1 · Find the site">
             <p className={styles.hint}>
-              Free, keyless, real building footprints — where a mapper has traced them.
-              Coverage is patchy outside urban areas.
+              Search by name or address — you should not need to know its coordinates. Powered
+              by OpenStreetMap&apos;s geocoder, not Google.
             </p>
-            <Field label="Latitude">
-              <input value={osmLat} onChange={(e) => setOsmLat(e.target.value)} />
-            </Field>
-            <Field label="Longitude">
-              <input value={osmLon} onChange={(e) => setOsmLon(e.target.value)} />
-            </Field>
-            <Field label="Radius (m)">
+            <div className={styles.searchRow}>
+              <input
+                value={placeQuery}
+                placeholder="e.g. Moneypoint Power Station, Clare"
+                onChange={(e) => setPlaceQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void searchPlace();
+                }}
+              />
+              <button className={styles.button} disabled={busy || !placeQuery.trim()} onClick={() => void searchPlace()}>
+                Search
+              </button>
+            </div>
+
+            {placeResults && placeResults.length > 0 && (
+              <ul className={styles.resultList}>
+                {placeResults.map((r, i) => (
+                  <li key={i}>
+                    <button className={styles.resultRow} onClick={() => choosePlace(r)}>
+                      {r.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {located && (
+              <p className={styles.located}>
+                📍 {located.label}
+                <br />
+                <span className={styles.hint}>
+                  {draft.datum.latitude.toFixed(5)}, {draft.datum.longitude.toFixed(5)}
+                </span>
+              </p>
+            )}
+
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                checked={showBasemap}
+                onChange={(e) => setShowBasemap(e.target.checked)}
+              />
+              Show map underneath
+            </label>
+          </Section>
+
+          <Section title="2 · Import buildings">
+            <p className={styles.hint}>
+              Draw the boundary first (toolbar above) and only buildings inside it are
+              imported. Without a boundary you get everything within the radius, which on a
+              populated map means a lot of houses.
+            </p>
+            <Field label="Search radius (m)">
               <input value={osmRadius} onChange={(e) => setOsmRadius(e.target.value)} />
             </Field>
-            <button className={styles.primaryButton} disabled={busy} onClick={() => void importFromOsm()}>
+            <button
+              className={styles.primaryButton}
+              disabled={busy || !located}
+              onClick={() => void importFromOsm()}
+            >
               Import from OpenStreetMap
             </button>
+            {!located && <p className={styles.hint}>Find a site first.</p>}
+            <p className={styles.hint}>
+              Coverage is patchy outside towns. If nothing comes back, trace a reference
+              image instead.
+            </p>
           </Section>
 
           <Section title="Trace a reference image">
@@ -450,6 +570,8 @@ export function SiteEditor() {
               onSelect={setSelectedId}
               onTraceComplete={onTraceComplete}
               onPlace={onPlace}
+              datum={draft.datum}
+              showBasemap={showBasemap && located !== null}
             />
           </div>
 

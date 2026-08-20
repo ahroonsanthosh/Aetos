@@ -280,3 +280,73 @@
   border-top: 1px solid var(--panel-edge);
   background: var(--panel-solid);
 }
+
+/* --- Place search ---------------------------------------------------------- */
+
+.searchRow {
+  display: flex;
+  gap: 4px;
+}
+
+.searchRow input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-edge);
+  background: var(--void);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11.5px;
+}
+
+.resultList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.resultRow {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-edge);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resultRow:hover {
+  border-color: var(--holo);
+  color: var(--text);
+}
+
+.located {
+  margin: 0;
+  padding: 7px 9px;
+  border-left: 2px solid var(--holo);
+  background: rgba(88, 216, 230, 0.07);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.checkRow input {
+  cursor: pointer;
+}

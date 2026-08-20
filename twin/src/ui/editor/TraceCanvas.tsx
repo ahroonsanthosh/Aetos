@@ -27,6 +27,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Ground } from '@/types';
 import { palette } from '@/lib/palette';
 import { pixelToGround, type Calibration, type ImagePoint } from '@/site/import/calibration';
+import { boundingBoxAround, enuToLatLon, type LatLon } from '@/site/import/geo';
+import { tileBoundsEnu, tilesForBounds, zoomForScale } from '@/site/import/tiles';
+import { getTile } from './basemap';
 import { enuToScreen, screenToEnu, type ViewTransform } from './viewTransform';
 
 export type TraceMode = 'view' | 'calibrate' | 'trace-boundary' | 'trace-asset' | 'place-asset';
@@ -58,6 +61,11 @@ interface Props {
   /** Fired in `place-asset` mode: a single click, not a traced polygon — for a small,
    *  roughly square asset (a gate, a transformer) that doesn't warrant tracing its outline. */
   onPlace: (point: Ground) => void;
+  /** The site datum, so ENU can be converted back to lat/lon for tile lookup. */
+  datum: LatLon;
+  /** Draw real map tiles under everything. The single change that turns the editor from
+   *  "type coordinates and hope" into something you can actually aim. */
+  showBasemap: boolean;
 }
 
 /** Fit an image inside a canvas, centred, without cropping — the calibration-mode layout. */
@@ -89,12 +97,16 @@ export function TraceCanvas({
   onSelect,
   onTraceComplete,
   onPlace,
+  datum,
+  showBasemap,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tracePoints, setTracePoints] = useState<Ground[]>([]);
   const [calibrationClick, setCalibrationClick] = useState<ImagePoint | null>(null);
   const [cursor, setCursor] = useState<Ground | null>(null);
   const dragRef = useRef<{ x: number; y: number; view: ViewTransform } | null>(null);
+  // Bumped when a tile finishes loading, purely to re-run the draw effect below.
+  const [tileTick, setTileTick] = useState(0);
 
   // A mode switch abandons whatever was mid-trace or mid-calibration — starting to draw a
   // building and then choosing "select" instead should not leave a half-built polygon live.
@@ -123,6 +135,11 @@ export function TraceCanvas({
     if (mode === 'calibrate' && backgroundImage) {
       drawCalibrationImage(ctx, backgroundImage, width, height, calibrationClick);
       return; // Calibration is its own screen — nothing ENU-based overlaps it.
+    }
+
+    // Basemap first, under everything — it is context, not content.
+    if (showBasemap) {
+      drawBasemap(ctx, view, width, height, datum, toScreen, () => setTileTick((t) => t + 1));
     }
 
     drawGrid(ctx, view, width, height);
@@ -159,6 +176,7 @@ export function TraceCanvas({
   }, [
     width, height, view, mode, backgroundImage, imageCalibration, calibrationClick,
     boundary, shapes, selectedId, tracePoints, cursor, toScreen,
+    showBasemap, datum, tileTick,
   ]);
 
   // --- Interaction -------------------------------------------------------------------------
@@ -324,6 +342,63 @@ function drawCalibratedImage(
   ctx.save();
   ctx.globalAlpha = 0.75;
   ctx.drawImage(image, topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+  ctx.restore();
+}
+
+/**
+ * Draw whatever map tiles are currently loaded for the visible area.
+ *
+ * Only tiles already in the cache are drawn; anything missing is requested and the canvas
+ * redraws when it arrives. The alternative — awaiting the fetches before painting — would
+ * freeze the editor on every pan against a slow tile server, for a layer that is context
+ * rather than content.
+ *
+ * Each tile is placed by converting its own lat/lon corners into ENU and projecting those,
+ * so the basemap stays registered with traced geometry rather than assuming the tile grid
+ * is linear in the local frame.
+ */
+function drawBasemap(
+  ctx: CanvasRenderingContext2D,
+  view: ViewTransform,
+  width: number,
+  height: number,
+  datum: LatLon,
+  toScreen: (p: Ground) => { x: number; y: number },
+  onTileLoad: () => void,
+) {
+  // The visible ENU rectangle, expressed as a lat/lon box around its centre. The radius is
+  // the half-diagonal, so the box covers the corners rather than just the axes.
+  const halfWidthM = (width / 2) * view.metresPerPixel;
+  const halfHeightM = (height / 2) * view.metresPerPixel;
+  const centre = enuToLatLon({ e: view.centreE, n: view.centreN }, datum);
+  const bounds = boundingBoxAround(centre, Math.hypot(halfWidthM, halfHeightM));
+
+  const zoom = zoomForScale(view.metresPerPixel, centre.latitude);
+  const tiles = tilesForBounds(bounds, zoom);
+
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.imageSmoothingEnabled = true;
+
+  for (const tile of tiles) {
+    const image = getTile(tile, onTileLoad);
+    if (!image) continue;
+
+    const enu = tileBoundsEnu(tile, datum);
+    const topLeft = toScreen({ e: enu.min.e, n: enu.max.n });
+    const bottomRight = toScreen({ e: enu.max.e, n: enu.min.n });
+
+    // +1 px on each dimension: adjacent tiles share an exact edge in ENU, but rounding to
+    // device pixels can leave a hairline gap between them otherwise.
+    ctx.drawImage(
+      image,
+      topLeft.x,
+      topLeft.y,
+      bottomRight.x - topLeft.x + 1,
+      bottomRight.y - topLeft.y + 1,
+    );
+  }
+
   ctx.restore();
 }
 
