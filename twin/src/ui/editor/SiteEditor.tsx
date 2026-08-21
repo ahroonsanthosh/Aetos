@@ -298,6 +298,9 @@ export function SiteEditor() {
         pointB,
         realDistanceMetres: distance,
         originPixel: { x: backgroundImage.width / 2, y: backgroundImage.height / 2 },
+        // Starts pinned to the datum — right only if the screenshot happens to be centred
+        // exactly on the searched point. "Align image" mode below moves it from here.
+        originGround: { e: 0, n: 0 },
         northBearing: 0,
       };
       setImageCalibration(calibration);
@@ -310,9 +313,13 @@ export function SiteEditor() {
         { x: 0, y: backgroundImage.height },
       ].map((p) => pixelToGround(p, calibration));
       setView(fitViewTo(corners, canvasSize.width, canvasSize.height));
-      setStatus('Image calibrated. Trace the boundary and any buildings on top of it.');
+      setStatus(
+        located
+          ? 'Image calibrated. If it looks off from the map, use "Align image" to drag it into place, then trace on top.'
+          : 'Image calibrated. Trace the boundary and any buildings on top of it.',
+      );
     },
-    [backgroundImage, canvasSize.width, canvasSize.height],
+    [backgroundImage, canvasSize.width, canvasSize.height, located],
   );
 
   // --- Tracing and placing -------------------------------------------------------------------
@@ -443,6 +450,33 @@ export function SiteEditor() {
       // allowing it would leave an asset that cannot be drawn or selected again.
       absolute.length <= 3 ? null : absolute.filter((_, i) => i !== index),
     );
+  };
+
+  // --- Aligning the calibrated reference image ------------------------------------------
+
+  /**
+   * Slide the calibrated image over the map. Calibration fixes scale, not position — the
+   * two-point click says nothing about where on Earth the image sits — so it starts pinned
+   * to the site datum, which is right only when the screenshot happens to be centred exactly
+   * on the searched point. This is how the operator corrects it afterwards, without
+   * re-doing the distance calibration.
+   */
+  const onMoveImage = (deltaE: number, deltaN: number) => {
+    setImageCalibration((current) =>
+      current
+        ? {
+            ...current,
+            originGround: {
+              e: (current.originGround?.e ?? 0) + deltaE,
+              n: (current.originGround?.n ?? 0) + deltaN,
+            },
+          }
+        : current,
+    );
+  };
+
+  const resetImagePosition = () => {
+    setImageCalibration((current) => (current ? { ...current, originGround: { e: 0, n: 0 } } : current));
   };
 
   // --- Editing the selected asset -----------------------------------------------------------
@@ -709,6 +743,18 @@ export function SiteEditor() {
                 Re-calibrate image
               </button>
             )}
+            {backgroundImage && imageCalibration && (
+              <>
+                <p className={styles.hint}>
+                  Calibration fixes scale, not position — it starts centred on the searched
+                  point, which is rarely where the screenshot actually is. Use &quot;Align
+                  image&quot; in the toolbar to drag it into place over the map.
+                </p>
+                <button className={styles.linkButton} onClick={resetImagePosition}>
+                  Reset image position
+                </button>
+              </>
+            )}
           </Section>
 
           <Section title="Load / continue editing">
@@ -743,11 +789,18 @@ export function SiteEditor() {
                 Calibrate image
               </ToolButton>
             )}
+            {backgroundImage && imageCalibration && (
+              <ToolButton active={mode === 'position-image'} onClick={() => setMode('position-image')}>
+                Align image
+              </ToolButton>
+            )}
             <span className={styles.toolbarSpacer} />
             <span className={styles.zoomHint}>
-              {mode === 'view' && selectedId
-                ? 'Drag the shape or its corners · alt-click a corner to remove it'
-                : 'Drag to pan · scroll to zoom'}
+              {mode === 'position-image'
+                ? 'Drag anywhere to slide the image over the map'
+                : mode === 'view' && selectedId
+                  ? 'Drag the shape or its corners · alt-click a corner to remove it'
+                  : 'Drag to pan · scroll to zoom'}
             </span>
             <button
               className={styles.tool}
@@ -801,6 +854,7 @@ export function SiteEditor() {
               onMoveVertex={onMoveVertex}
               onInsertVertex={onInsertVertex}
               onDeleteVertex={onDeleteVertex}
+              onMoveImage={onMoveImage}
             />
           </div>
 

@@ -42,7 +42,13 @@ import {
 /** Pointer travel, px, beyond which a press is a drag rather than a click. */
 const DRAG_THRESHOLD_PX = 4;
 
-export type TraceMode = 'view' | 'calibrate' | 'trace-boundary' | 'trace-asset' | 'place-asset';
+export type TraceMode =
+  | 'view'
+  | 'calibrate'
+  | 'position-image'
+  | 'trace-boundary'
+  | 'trace-asset'
+  | 'place-asset';
 
 export interface TraceShape {
   id: string;
@@ -90,6 +96,8 @@ interface Props {
   onInsertVertex: (id: string, afterIndex: number, point: Ground) => void;
   /** Remove a vertex. Ignored by the caller if it would leave fewer than three. */
   onDeleteVertex: (id: string, vertexIndex: number) => void;
+  /** Translate the calibrated background image by a ground delta — `position-image` mode. */
+  onMoveImage: (deltaE: number, deltaN: number) => void;
 }
 
 /** Fit an image inside a canvas, centred, without cropping — the calibration-mode layout. */
@@ -127,6 +135,7 @@ export function TraceCanvas({
   onMoveVertex,
   onInsertVertex,
   onDeleteVertex,
+  onMoveImage,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tracePoints, setTracePoints] = useState<Ground[]>([]);
@@ -150,7 +159,8 @@ export function TraceCanvas({
      *  case the drag edits geometry instead of moving the camera. */
     edit?:
       | { kind: 'vertex'; id: string; index: number }
-      | { kind: 'body'; id: string; lastE: number; lastN: number };
+      | { kind: 'body'; id: string; lastE: number; lastN: number }
+      | { kind: 'image'; lastE: number; lastN: number };
     /** The press already did its work on the way down — suppress the click action. */
     consumed?: boolean;
   } | null>(null);
@@ -313,6 +323,18 @@ export function TraceCanvas({
       }
     }
 
+    // The whole surface drags the image in this mode — unlike the selected-shape handles
+    // above, there is nothing else worth hit-testing against while aligning it.
+    if (mode === 'position-image' && e.button === 0 && backgroundImage && imageCalibration) {
+      const ground = toGround(screen);
+      dragRef.current = {
+        x: e.clientX, y: e.clientY, view, moved: false, pans: false,
+        edit: { kind: 'image', lastE: ground.e, lastN: ground.n },
+      };
+      canvasRef.current?.setPointerCapture(e.pointerId);
+      return;
+    }
+
     // Every other press starts as a candidate: it becomes a pan if the pointer travels, and
     // the mode's own action if it does not. Classified on release, in `onPointerUp`.
     dragRef.current = { x: e.clientX, y: e.clientY, view, moved: false, pans: true };
@@ -344,6 +366,14 @@ export function TraceCanvas({
         // press point: the asset moves under the pointer without accumulating drift.
         const ground = toGround(screen);
         onMoveAsset(drag.edit.id, ground.e - drag.edit.lastE, ground.n - drag.edit.lastN);
+        drag.edit.lastE = ground.e;
+        drag.edit.lastN = ground.n;
+        return;
+      }
+
+      if (drag.edit?.kind === 'image') {
+        const ground = toGround(screen);
+        onMoveImage(ground.e - drag.edit.lastE, ground.n - drag.edit.lastN);
         drag.edit.lastE = ground.e;
         drag.edit.lastN = ground.n;
         return;
@@ -425,7 +455,10 @@ export function TraceCanvas({
       ref={canvasRef}
       width={width}
       height={height}
-      style={{ cursor: mode === 'view' ? 'default' : 'crosshair', touchAction: 'none' }}
+      style={{
+        cursor: mode === 'view' ? 'default' : mode === 'position-image' ? 'move' : 'crosshair',
+        touchAction: 'none',
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

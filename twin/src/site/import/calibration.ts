@@ -26,8 +26,17 @@ export interface Calibration {
   pointB: ImagePoint;
   /** The real-world distance between them, metres, as the operator entered it. */
   realDistanceMetres: number;
-  /** Where image-pixel (originPixel) maps to ENU (0, 0) — typically the site datum. */
+  /** Where image-pixel (originPixel) maps to, in ENU — see `originGround`. */
   originPixel: ImagePoint;
+  /**
+   * Where `originPixel` sits in ENU metres. Defaults to the site datum, (0, 0), which is
+   * right the instant scale is fixed — but a cropped screenshot is essentially never
+   * centred exactly on the search point, so the image reads as floating in the wrong spot
+   * over the real basemap until this is corrected. Kept separate from the scale
+   * calibration so it can be adjusted afterwards (dragging the image in "Align image" mode)
+   * without re-doing the two-point distance click.
+   */
+  originGround?: Ground;
   /**
    * Compass bearing, radians clockwise from north, that image "up" (−y) points toward.
    * Zero — the default — means north-up.
@@ -76,7 +85,9 @@ export function pixelToGround(point: ImagePoint, calibration: Calibration): Grou
   const scale = metresPerPixel(calibration);
   const xImg = (point.x - calibration.originPixel.x) * scale;
   const yImg = (point.y - calibration.originPixel.y) * scale;
-  return rotateImageToGround(xImg, yImg, calibration.northBearing);
+  const rotated = rotateImageToGround(xImg, yImg, calibration.northBearing);
+  const origin = calibration.originGround ?? { e: 0, n: 0 };
+  return { e: rotated.e + origin.e, n: rotated.n + origin.n };
 }
 
 /** Inverse of `pixelToGround` — used to draw the calibration's own reference points back
@@ -85,9 +96,16 @@ export function groundToPixel(point: Ground, calibration: Calibration): ImagePoi
   const scale = metresPerPixel(calibration);
   if (scale === 0) return calibration.originPixel;
 
+  const origin = calibration.originGround ?? { e: 0, n: 0 };
+
   // The transform is its own inverse (see rotateImageToGround) — same formula, e and n in
-  // place of xImg and yImg.
-  const { e: xImg, n: yImg } = rotateImageToGround(point.e, point.n, calibration.northBearing);
+  // place of xImg and yImg, applied to the point once it is shifted back into
+  // origin-relative ground space.
+  const { e: xImg, n: yImg } = rotateImageToGround(
+    point.e - origin.e,
+    point.n - origin.n,
+    calibration.northBearing,
+  );
 
   return {
     x: calibration.originPixel.x + xImg / scale,

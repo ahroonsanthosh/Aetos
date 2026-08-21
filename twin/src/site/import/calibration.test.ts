@@ -114,6 +114,49 @@ describe('pixelToGround / groundToPixel round trip', () => {
   }
 });
 
+describe('originGround', () => {
+  it('shifts the origin pixel to wherever the image was dragged, not always (0, 0)', () => {
+    const c = calibration({
+      pointA: { x: 0, y: 0 },
+      pointB: { x: 100, y: 0 },
+      realDistanceMetres: 100, // 1 m/px
+      originPixel: { x: 500, y: 500 },
+      originGround: { e: 40, n: -15 },
+    });
+    const g = pixelToGround({ x: 500, y: 500 }, c);
+    expect(g.e).toBeCloseTo(40, 6);
+    expect(g.n).toBeCloseTo(-15, 6);
+  });
+
+  it('still shifts an off-origin pixel by the same amount', () => {
+    const c = calibration({
+      pointA: { x: 0, y: 0 },
+      pointB: { x: 100, y: 0 },
+      realDistanceMetres: 100,
+      originPixel: { x: 500, y: 500 },
+      originGround: { e: 40, n: -15 },
+    });
+    const g = pixelToGround({ x: 600, y: 500 }, c);
+    expect(g.e).toBeCloseTo(140, 6);
+    expect(g.n).toBeCloseTo(-15, 6);
+  });
+
+  it('round-trips through groundToPixel with a non-zero origin', () => {
+    const c = calibration({
+      pointA: { x: 0, y: 0 },
+      pointB: { x: 100, y: 0 },
+      realDistanceMetres: 100,
+      originPixel: { x: 500, y: 500 },
+      originGround: { e: 40, n: -15 },
+      northBearing: 0.7,
+    });
+    const original = { x: 812, y: 233 };
+    const back = groundToPixel(pixelToGround(original, c), c);
+    expect(back.x).toBeCloseTo(original.x, 6);
+    expect(back.y).toBeCloseTo(original.y, 6);
+  });
+});
+
 describe('tracePolygonToGround', () => {
   it('converts every vertex of a traced polygon', () => {
     const c = calibration({
