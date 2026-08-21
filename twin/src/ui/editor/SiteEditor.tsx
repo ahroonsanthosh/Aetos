@@ -304,7 +304,6 @@ export function SiteEditor() {
         northBearing: 0,
       };
       setImageCalibration(calibration);
-      setMode('view');
 
       const corners = [
         { x: 0, y: 0 },
@@ -313,11 +312,20 @@ export function SiteEditor() {
         { x: 0, y: backgroundImage.height },
       ].map((p) => pixelToGround(p, calibration));
       setView(fitViewTo(corners, canvasSize.width, canvasSize.height));
-      setStatus(
-        located
-          ? 'Image calibrated. If it looks off from the map, use "Align image" to drag it into place, then trace on top.'
-          : 'Image calibrated. Trace the boundary and any buildings on top of it.',
-      );
+
+      if (located) {
+        // Scale is fixed but position is a guess (the datum) until the operator drags it
+        // onto the real building — drop straight into that mode rather than making them
+        // find the toolbar button first.
+        setMode('position-image');
+        setStatus(
+          'Image calibrated. Drag it onto the real site — drag empty space to look around instead. ' +
+            'Trace the boundary and buildings once it lines up.',
+        );
+      } else {
+        setMode('view');
+        setStatus('Image calibrated. Trace the boundary and any buildings on top of it.');
+      }
     },
     [backgroundImage, canvasSize.width, canvasSize.height, located],
   );
@@ -747,12 +755,21 @@ export function SiteEditor() {
               <>
                 <p className={styles.hint}>
                   Calibration fixes scale, not position — it starts centred on the searched
-                  point, which is rarely where the screenshot actually is. Use &quot;Align
-                  image&quot; in the toolbar to drag it into place over the map.
+                  point, which is rarely where the screenshot actually is. In &quot;Align
+                  image&quot; mode, drag the image itself to move it, or drag empty space to
+                  pan the map underneath it.
+                </p>
+                <p className={styles.hint}>
+                  Offset from the search point: {(imageCalibration.originGround?.e ?? 0).toFixed(1)} m
+                  east, {(imageCalibration.originGround?.n ?? 0).toFixed(1)} m north.
                 </p>
                 <button className={styles.linkButton} onClick={resetImagePosition}>
                   Reset image position
                 </button>
+                <p className={styles.hint}>
+                  If it is the wrong size rather than the wrong place, re-calibrate instead —
+                  scale comes from the two-point distance, not from dragging.
+                </p>
               </>
             )}
           </Section>
@@ -797,7 +814,7 @@ export function SiteEditor() {
             <span className={styles.toolbarSpacer} />
             <span className={styles.zoomHint}>
               {mode === 'position-image'
-                ? 'Drag anywhere to slide the image over the map'
+                ? 'Drag the image to move it · drag empty space to look around'
                 : mode === 'view' && selectedId
                   ? 'Drag the shape or its corners · alt-click a corner to remove it'
                   : 'Drag to pan · scroll to zoom'}

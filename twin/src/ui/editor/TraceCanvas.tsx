@@ -100,6 +100,17 @@ interface Props {
   onMoveImage: (deltaE: number, deltaN: number) => void;
 }
 
+/** The calibrated image's footprint in ENU, as an axis-aligned box (the render is always
+ *  north-up regardless of the calibration's bearing — see `drawCalibratedImage`). */
+function imageGroundBounds(image: HTMLImageElement, calibration: Calibration) {
+  const a = pixelToGround({ x: 0, y: 0 }, calibration);
+  const b = pixelToGround({ x: image.width, y: image.height }, calibration);
+  return {
+    minE: Math.min(a.e, b.e), maxE: Math.max(a.e, b.e),
+    minN: Math.min(a.n, b.n), maxN: Math.max(a.n, b.n),
+  };
+}
+
 /** Fit an image inside a canvas, centred, without cropping — the calibration-mode layout. */
 function fitImageToCanvas(image: HTMLImageElement, canvasWidth: number, canvasHeight: number) {
   const scale = Math.min(canvasWidth / image.width, canvasHeight / image.height);
@@ -323,16 +334,21 @@ export function TraceCanvas({
       }
     }
 
-    // The whole surface drags the image in this mode — unlike the selected-shape handles
-    // above, there is nothing else worth hit-testing against while aligning it.
+    // A press on the image itself drags it; a press anywhere else still pans, so aligning
+    // the image does not cost the operator the ability to look around while doing it — the
+    // whole reason this needs a drag in the first place is to see where the image should go
+    // relative to what is not currently under it.
     if (mode === 'position-image' && e.button === 0 && backgroundImage && imageCalibration) {
       const ground = toGround(screen);
-      dragRef.current = {
-        x: e.clientX, y: e.clientY, view, moved: false, pans: false,
-        edit: { kind: 'image', lastE: ground.e, lastN: ground.n },
-      };
-      canvasRef.current?.setPointerCapture(e.pointerId);
-      return;
+      const box = imageGroundBounds(backgroundImage, imageCalibration);
+      if (ground.e >= box.minE && ground.e <= box.maxE && ground.n >= box.minN && ground.n <= box.maxN) {
+        dragRef.current = {
+          x: e.clientX, y: e.clientY, view, moved: false, pans: false,
+          edit: { kind: 'image', lastE: ground.e, lastN: ground.n },
+        };
+        canvasRef.current?.setPointerCapture(e.pointerId);
+        return;
+      }
     }
 
     // Every other press starts as a candidate: it becomes a pan if the pointer travels, and
