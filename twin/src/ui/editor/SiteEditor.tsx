@@ -71,6 +71,15 @@ export function SiteEditor() {
   const [mode, setMode] = useState<TraceMode>('view');
   const [view, setView] = useState<ViewTransform>({ centreE: 0, centreN: 0, metresPerPixel: 1 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * Ticked rows, for operations on many assets at once.
+   *
+   * Separate from `selectedId`, which is the one asset being edited on the canvas and in
+   * the form. Conflating them would mean you could not tick fifteen buildings for deletion
+   * without the canvas trying to show fifteen sets of vertex handles.
+   */
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [assetFilter, setAssetFilter] = useState('');
 
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
   const [imageCalibration, setImageCalibration] = useState<Calibration | null>(null);
@@ -363,6 +372,79 @@ export function SiteEditor() {
     setMode('view');
   };
 
+  // --- Editing shape geometry -----------------------------------------------------------
+
+  /**
+   * Apply a change to one asset's outline, in absolute ground coordinates.
+   *
+   * The canvas works in absolute ground space; an asset stores its outline relative to its
+   * own position. This is the one place that conversion happens, and it re-derives the
+   * position and bounding footprint afterwards so the two never drift apart — a moved
+   * corner has to change the asset's centre and its width and depth, or the 3D view and the
+   * form would keep reporting the shape it used to be.
+   */
+  const updateOutline = (id: string, mutate: (absolute: Ground[]) => Ground[] | null) => {
+    setDraft((current) => ({
+      ...current,
+      assets: current.assets.map((asset) => {
+        if (asset.id !== id) return asset;
+
+        const absolute = absoluteOutline(asset);
+        const next = mutate(absolute);
+        if (!next || next.length < 3) return asset;
+
+        const centroid = polygonCentroid(next);
+        const es = next.map((p) => p.e);
+        const ns = next.map((p) => p.n);
+
+        return {
+          ...asset,
+          position: { ...asset.position, e: centroid.e, n: centroid.n },
+          footprint: {
+            ...asset.footprint,
+            width: Math.max(Math.max(...es) - Math.min(...es), 0.5),
+            depth: Math.max(Math.max(...ns) - Math.min(...ns), 0.5),
+          },
+          footprintPolygon: next.map((p) => ({ e: p.e - centroid.e, n: p.n - centroid.n })),
+          // A traced outline no longer sits square to anything, so a stored heading would
+          // rotate it a second time when drawn.
+          heading: 0,
+        };
+      }),
+    }));
+  };
+
+  const onMoveAsset = (id: string, deltaE: number, deltaN: number) => {
+    setDraft((current) => ({
+      ...current,
+      assets: current.assets.map((asset) =>
+        asset.id === id
+          ? { ...asset, position: { ...asset.position, e: asset.position.e + deltaE, n: asset.position.n + deltaN } }
+          : asset,
+      ),
+    }));
+  };
+
+  const onMoveVertex = (id: string, index: number, point: Ground) => {
+    updateOutline(id, (absolute) => absolute.map((p, i) => (i === index ? point : p)));
+  };
+
+  const onInsertVertex = (id: string, afterIndex: number, point: Ground) => {
+    updateOutline(id, (absolute) => {
+      const next = [...absolute];
+      next.splice(afterIndex + 1, 0, point);
+      return next;
+    });
+  };
+
+  const onDeleteVertex = (id: string, index: number) => {
+    updateOutline(id, (absolute) =>
+      // Refused below three: a polygon with two corners is not a shape, and silently
+      // allowing it would leave an asset that cannot be drawn or selected again.
+      absolute.length <= 3 ? null : absolute.filter((_, i) => i !== index),
+    );
+  };
+
   // --- Editing the selected asset -----------------------------------------------------------
 
   const updateSelected = (patch: Partial<Asset>) => {
@@ -377,6 +459,65 @@ export function SiteEditor() {
     if (!selectedId) return;
     setDraft((current) => ({ ...current, assets: current.assets.filter((a) => a.id !== selectedId) }));
     setSelectedId(null);
+  };
+
+  // --- Bulk asset operations --------------------------------------------------------------
+
+  /**
+   * An OSM import arrives as tens of identically-named buildings at a default criticality.
+   * Correcting those one at a time through the single-asset form was the slowest part of
+   * building a real site, so everything below works on the ticked set.
+   */
+  const visibleAssets = useMemo(() => {
+    const needle = assetFilter.trim().toLowerCase();
+    if (!needle) return draft.assets;
+    return draft.assets.filter(
+      (a) => a.name.toLowerCase().includes(needle) || a.type.toLowerCase().includes(needle),
+    );
+  }, [draft.assets, assetFilter]);
+
+  const toggleChecked = (id: string) => {
+    setCheckedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  /** Ticks or clears everything currently listed — the filter, not the whole site. */
+  const toggleAllVisible = () => {
+    const visibleIds = visibleAssets.map((a) => a.id);
+    const allTicked = visibleIds.length > 0 && visibleIds.every((id) => checkedIds.has(id));
+    setCheckedIds((current) => {
+      const next = new Set(current);
+      for (const id of visibleIds) {
+        if (allTicked) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const bulkPatch = (patch: Partial<Asset>) => {
+    if (checkedIds.size === 0) return;
+    setDraft((current) => ({
+      ...current,
+      assets: current.assets.map((a) => (checkedIds.has(a.id) ? { ...a, ...patch } : a)),
+    }));
+  };
+
+  const bulkDelete = () => {
+    if (checkedIds.size === 0) return;
+    if (!window.confirm(`Delete ${checkedIds.size} asset${checkedIds.size === 1 ? '' : 's'}?`)) return;
+
+    setDraft((current) => ({
+      ...current,
+      assets: current.assets.filter((a) => !checkedIds.has(a.id)),
+    }));
+    if (selectedId && checkedIds.has(selectedId)) setSelectedId(null);
+    setStatus(`Deleted ${checkedIds.size} asset${checkedIds.size === 1 ? '' : 's'}.`);
+    setCheckedIds(new Set());
   };
 
   // --- Defaults, export, preview -------------------------------------------------------------
@@ -603,7 +744,11 @@ export function SiteEditor() {
               </ToolButton>
             )}
             <span className={styles.toolbarSpacer} />
-            <span className={styles.zoomHint}>Drag to pan · scroll to zoom</span>
+            <span className={styles.zoomHint}>
+              {mode === 'view' && selectedId
+                ? 'Drag the shape or its corners · alt-click a corner to remove it'
+                : 'Drag to pan · scroll to zoom'}
+            </span>
             <button
               className={styles.tool}
               title="Zoom out"
@@ -652,6 +797,10 @@ export function SiteEditor() {
               onPlace={onPlace}
               datum={draft.datum}
               showBasemap={showBasemap && located !== null}
+              onMoveAsset={onMoveAsset}
+              onMoveVertex={onMoveVertex}
+              onInsertVertex={onInsertVertex}
+              onDeleteVertex={onDeleteVertex}
             />
           </div>
 
@@ -672,19 +821,108 @@ export function SiteEditor() {
             <Section title={`Assets (${draft.assets.length})`}>
               {draft.assets.length === 0 ? (
                 <p className={styles.hint}>
-                  Import from OpenStreetMap, trace an image, or use "Place asset" above.
+                  Import from OpenStreetMap, trace an image, or use &quot;Place asset&quot; above.
                 </p>
               ) : (
-                <ul className={styles.assetList}>
-                  {draft.assets.map((a) => (
-                    <li key={a.id}>
-                      <button className={styles.assetRow} onClick={() => setSelectedId(a.id)}>
-                        <span>{a.name}</span>
-                        <span className={styles.assetType}>{labelForAssetType(a.type)}</span>
+                <>
+                  {draft.assets.length > 6 && (
+                    <input
+                      className={styles.filterInput}
+                      value={assetFilter}
+                      placeholder="Filter by name or type…"
+                      onChange={(e) => setAssetFilter(e.target.value)}
+                    />
+                  )}
+
+                  <div className={styles.listHeader}>
+                    <label className={styles.checkRow}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          visibleAssets.length > 0 &&
+                          visibleAssets.every((a) => checkedIds.has(a.id))
+                        }
+                        onChange={toggleAllVisible}
+                      />
+                      Select all{assetFilter ? ' shown' : ''}
+                    </label>
+                    {checkedIds.size > 0 && (
+                      <span className={styles.checkedCount}>{checkedIds.size} ticked</span>
+                    )}
+                  </div>
+
+                  {checkedIds.size > 0 && (
+                    <div className={styles.bulkBar}>
+                      <label className={styles.field}>
+                        <span>Set type for {checkedIds.size}</span>
+                        <input
+                          list="asset-type-options"
+                          placeholder="e.g. substation"
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            const value = (e.target as HTMLInputElement).value.trim();
+                            if (value) bulkPatch({ type: value });
+                            (e.target as HTMLInputElement).value = '';
+                          }}
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Set criticality</span>
+                        <select
+                          className={styles.select}
+                          defaultValue=""
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            if (value) bulkPatch({ criticality: value as Asset['criticality'] });
+                            e.target.value = '';
+                          }}
+                        >
+                          <option value="">Choose…</option>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button className={styles.dangerButton} onClick={bulkDelete}>
+                        Delete {checkedIds.size} asset{checkedIds.size === 1 ? '' : 's'}
                       </button>
-                    </li>
-                  ))}
-                </ul>
+                    </div>
+                  )}
+
+                  <ul className={styles.assetList}>
+                    {visibleAssets.map((a) => (
+                      <li key={a.id} className={styles.assetItem}>
+                        <input
+                          type="checkbox"
+                          checked={checkedIds.has(a.id)}
+                          onChange={() => toggleChecked(a.id)}
+                          aria-label={`Select ${a.name}`}
+                        />
+                        <button
+                          className={`${styles.assetRow} ${a.id === selectedId ? styles.assetRowSelected : ''}`}
+                          onClick={() => setSelectedId(a.id)}
+                        >
+                          <span>{a.name}</span>
+                          <span className={styles.assetType}>
+                            {labelForAssetType(a.type)} · {a.criticality}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {visibleAssets.length === 0 && (
+                    <p className={styles.hint}>Nothing matches that filter.</p>
+                  )}
+
+                  <datalist id="asset-type-options">
+                    {KNOWN_ASSET_TYPES.map((t) => (
+                      <option key={t.type} value={t.type} />
+                    ))}
+                  </datalist>
+                </>
               )}
             </Section>
           )}
@@ -726,6 +964,24 @@ export function SiteEditor() {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * An asset's outline in absolute ground coordinates.
+ *
+ * An asset placed rather than traced has no `footprintPolygon`, only a width and depth. Its
+ * corners are derived from that box here, so dragging one converts it into a real traced
+ * outline on the spot — the operator does not have to know which kind of asset they have
+ * before they can adjust its shape.
+ */
+function absoluteOutline(asset: Asset): Ground[] {
+  if (asset.footprintPolygon && asset.footprintPolygon.length >= 3) {
+    return asset.footprintPolygon.map((p) => ({
+      e: p.e + asset.position.e,
+      n: p.n + asset.position.n,
+    }));
+  }
+  return rectangleFor(asset);
+}
 
 function rectangleFor(asset: Asset): Ground[] {
   const hw = asset.footprint.width / 2;

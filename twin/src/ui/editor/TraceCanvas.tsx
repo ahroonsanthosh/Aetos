@@ -76,6 +76,20 @@ interface Props {
   /** Draw real map tiles under everything. The single change that turns the editor from
    *  "type coordinates and hope" into something you can actually aim. */
   showBasemap: boolean;
+
+  /* --- Editing the selected shape ---------------------------------------------------
+   * All four take and return absolute ground coordinates; the caller owns the asset maths.
+   * A trace is dozens of clicks, and before these existed a misplaced corner meant
+   * deleting the whole thing and starting again.
+   */
+  /** Translate the whole asset by a ground delta. */
+  onMoveAsset: (id: string, deltaE: number, deltaN: number) => void;
+  /** Move one vertex to an absolute ground point. */
+  onMoveVertex: (id: string, vertexIndex: number, point: Ground) => void;
+  /** Insert a new vertex immediately after `afterIndex`. */
+  onInsertVertex: (id: string, afterIndex: number, point: Ground) => void;
+  /** Remove a vertex. Ignored by the caller if it would leave fewer than three. */
+  onDeleteVertex: (id: string, vertexIndex: number) => void;
 }
 
 /** Fit an image inside a canvas, centred, without cropping — the calibration-mode layout. */
@@ -109,6 +123,10 @@ export function TraceCanvas({
   onPlace,
   datum,
   showBasemap,
+  onMoveAsset,
+  onMoveVertex,
+  onInsertVertex,
+  onDeleteVertex,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tracePoints, setTracePoints] = useState<Ground[]>([]);
@@ -128,6 +146,13 @@ export function TraceCanvas({
     view: ViewTransform;
     moved: boolean;
     pans: boolean;
+    /** Set when the press landed on the selected shape or one of its handles, in which
+     *  case the drag edits geometry instead of moving the camera. */
+    edit?:
+      | { kind: 'vertex'; id: string; index: number }
+      | { kind: 'body'; id: string; lastE: number; lastN: number };
+    /** The press already did its work on the way down — suppress the click action. */
+    consumed?: boolean;
   } | null>(null);
   // Bumped when a tile finishes loading, purely to re-run the draw effect below.
   const [tileTick, setTileTick] = useState(0);
@@ -186,6 +211,13 @@ export function TraceCanvas({
       });
     }
 
+    // Handles on the selected shape, so a wrong trace can be corrected rather than redone.
+    // Only in select mode: they would compete with the click that adds a trace vertex.
+    if (mode === 'view' && selectedId) {
+      const shape = shapes.find((sh) => sh.id === selectedId);
+      if (shape) drawVertexHandles(ctx, shape.polygon.map(toScreen));
+    }
+
     if (mode === 'trace-boundary' || mode === 'trace-asset') {
       const live = cursor ? [...tracePoints, cursor] : tracePoints;
       drawPolygon(ctx, live.map(toScreen), {
@@ -232,8 +264,57 @@ export function TraceCanvas({
       return;
     }
 
-    // Every press starts as a candidate: it becomes a pan if the pointer travels, and the
-    // mode's own action if it does not. Classified on release, in `onPointerUp`.
+    // In select mode, a press on the selected shape's handles or body edits it rather than
+    // moving the camera — the ordinary direct-manipulation contract, and the reason a
+    // misplaced corner no longer means deleting the whole trace.
+    if (mode === 'view' && selectedId && e.button === 0) {
+      const shape = shapes.find((sh) => sh.id === selectedId);
+      if (shape) {
+        const hit = hitHandles(screen, shape.polygon.map(toScreen));
+
+        if (hit?.kind === 'vertex') {
+          if (e.altKey) {
+            // Alt-click removes a corner. The caller refuses if it would leave fewer
+            // than three, so a shape can never be edited into something undrawable.
+            onDeleteVertex(shape.id, hit.index);
+            dragRef.current = { x: e.clientX, y: e.clientY, view, moved: false, pans: false, consumed: true };
+            canvasRef.current?.setPointerCapture(e.pointerId);
+            return;
+          }
+          dragRef.current = {
+            x: e.clientX, y: e.clientY, view, moved: false, pans: false,
+            edit: { kind: 'vertex', id: shape.id, index: hit.index },
+          };
+          canvasRef.current?.setPointerCapture(e.pointerId);
+          return;
+        }
+
+        if (hit?.kind === 'midpoint') {
+          // Dragging an edge midpoint inserts a corner there and then moves it, which is
+          // how a trace that missed a corner gets one without starting over.
+          onInsertVertex(shape.id, hit.index, toGround(screen));
+          dragRef.current = {
+            x: e.clientX, y: e.clientY, view, moved: false, pans: false,
+            edit: { kind: 'vertex', id: shape.id, index: hit.index + 1 },
+          };
+          canvasRef.current?.setPointerCapture(e.pointerId);
+          return;
+        }
+
+        if (pointInPolygon(toGround(screen), shape.polygon)) {
+          const ground = toGround(screen);
+          dragRef.current = {
+            x: e.clientX, y: e.clientY, view, moved: false, pans: false,
+            edit: { kind: 'body', id: shape.id, lastE: ground.e, lastN: ground.n },
+          };
+          canvasRef.current?.setPointerCapture(e.pointerId);
+          return;
+        }
+      }
+    }
+
+    // Every other press starts as a candidate: it becomes a pan if the pointer travels, and
+    // the mode's own action if it does not. Classified on release, in `onPointerUp`.
     dragRef.current = { x: e.clientX, y: e.clientY, view, moved: false, pans: true };
     canvasRef.current?.setPointerCapture(e.pointerId);
     if (e.button === 1 || e.button === 2) e.preventDefault();
@@ -251,7 +332,24 @@ export function TraceCanvas({
       // A few pixels of slop, so a click with a shaky hand is still a click rather than a
       // one-pixel pan that swallows the action.
       if (!drag.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) drag.moved = true;
-      if (drag.moved && drag.pans) onViewChange(panByPixels(drag.view, dx, dy));
+      if (!drag.moved) return;
+
+      if (drag.edit?.kind === 'vertex') {
+        onMoveVertex(drag.edit.id, drag.edit.index, toGround(screen));
+        return;
+      }
+
+      if (drag.edit?.kind === 'body') {
+        // Translate by the ground movement since the last frame, rather than from the
+        // press point: the asset moves under the pointer without accumulating drift.
+        const ground = toGround(screen);
+        onMoveAsset(drag.edit.id, ground.e - drag.edit.lastE, ground.n - drag.edit.lastN);
+        drag.edit.lastE = ground.e;
+        drag.edit.lastN = ground.n;
+        return;
+      }
+
+      if (drag.pans) onViewChange(panByPixels(drag.view, dx, dy));
       return;
     }
 
@@ -265,9 +363,10 @@ export function TraceCanvas({
     dragRef.current = null;
     canvasRef.current?.releasePointerCapture(e.pointerId);
 
-    // A drag was a pan and nothing else; only a click carries the mode's action. Middle and
-    // right buttons pan exclusively, so they never act even when they do not move.
-    if (!drag || drag.moved || e.button !== 0) return;
+    // A drag was a pan or an edit, and neither carries the mode's action; nor does a press
+    // that already did its work on the way down. Middle and right buttons pan exclusively,
+    // so they never act even when they do not move.
+    if (!drag || drag.moved || drag.consumed || drag.edit || e.button !== 0) return;
 
     const rect = canvasRef.current!.getBoundingClientRect();
     const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -434,6 +533,77 @@ function drawBasemap(
 }
 
 /** A labelled bar in the bottom-left corner giving the current scale in metres. */
+/** Hit radii, px. Vertices win over midpoints where the two overlap on a short edge. */
+const VERTEX_HIT_PX = 9;
+const MIDPOINT_HIT_PX = 7;
+
+/**
+ * What, if anything, a press landed on among the selected shape's editing handles.
+ *
+ * Vertices are tested before midpoints: on a short edge the two are close together, and
+ * moving an existing corner is the more common intent than inserting a new one.
+ */
+function hitHandles(
+  screen: { x: number; y: number },
+  polygon: { x: number; y: number }[],
+): { kind: 'vertex' | 'midpoint'; index: number } | null {
+  for (let i = 0; i < polygon.length; i++) {
+    const p = polygon[i]!;
+    if (Math.hypot(screen.x - p.x, screen.y - p.y) <= VERTEX_HIT_PX) {
+      return { kind: 'vertex', index: i };
+    }
+  }
+
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]!;
+    const b = polygon[(i + 1) % polygon.length]!;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    if (Math.hypot(screen.x - mid.x, screen.y - mid.y) <= MIDPOINT_HIT_PX) {
+      return { kind: 'midpoint', index: i };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Corner handles filled, edge midpoints hollow.
+ *
+ * The difference is the affordance: a filled handle is a thing that exists and can be
+ * moved, a hollow one is a place where a corner could be added. Drawing them identically
+ * would make "insert" and "move" indistinguishable until after the drag.
+ */
+function drawVertexHandles(ctx: CanvasRenderingContext2D, polygon: { x: number; y: number }[]) {
+  ctx.save();
+
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]!;
+    const b = polygon[(i + 1) % polygon.length]!;
+
+    // Midpoints are only offered where the edge has room for a handle that is not sitting
+    // on top of the corners either side of it.
+    if (Math.hypot(b.x - a.x, b.y - a.y) > VERTEX_HIT_PX * 4) {
+      ctx.beginPath();
+      ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(216, 233, 242, 0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+
+  for (const p of polygon) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = palette.select;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(4, 9, 14, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawScaleBar(
   ctx: CanvasRenderingContext2D,
   view: ViewTransform,
