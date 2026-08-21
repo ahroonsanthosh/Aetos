@@ -816,7 +816,12 @@ export function SiteEditor() {
 
         <aside className={styles.right}>
           {selectedAsset ? (
-            <AssetForm asset={selectedAsset} onChange={updateSelected} onDelete={deleteSelected} />
+            <AssetForm
+              asset={selectedAsset}
+              onChange={updateSelected}
+              onDelete={deleteSelected}
+              onClose={() => setSelectedId(null)}
+            />
           ) : (
             <Section title={`Assets (${draft.assets.length})`}>
               {draft.assets.length === 0 ? (
@@ -1033,13 +1038,18 @@ function AssetForm({
   asset,
   onChange,
   onDelete,
+  onClose,
 }: {
   asset: Asset;
   onChange: (patch: Partial<Asset>) => void;
   onDelete: () => void;
+  onClose: () => void;
 }) {
   return (
     <Section title="Selected asset">
+      <button className={styles.linkButton} onClick={onClose}>
+        ← Back to asset list
+      </button>
       <Field label="Name">
         <input value={asset.name} onChange={(e) => onChange({ name: e.target.value })} />
       </Field>
