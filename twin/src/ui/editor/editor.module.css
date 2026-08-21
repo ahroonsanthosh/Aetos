@@ -350,3 +350,16 @@
 .checkRow input {
   cursor: pointer;
 }
+
+.zoomHint {
+  margin-right: 8px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.autosaveNote {
+  margin-right: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+}

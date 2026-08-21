@@ -33,9 +33,10 @@ import { geocode, type GeocodeResult } from '@/site/import/geocode';
 import { pointInPolygon, polygonCentroid } from '@/lib/geometry';
 import { generateDefaultResources, generateDefaultSensors, generateDefaultZones } from '@/site/generate';
 import { handOffSiteToCommand } from '@/site/handoff';
+import { clearDraft, draftIsWorthKeeping, loadDraft, saveDraft } from '@/site/draftStore';
 import { parseSiteFile, parseSiteFileText, SiteFileError, serialiseSite } from '@/site/schema';
 import { TraceCanvas, type TraceMode, type TraceShape } from './TraceCanvas';
-import { fitViewTo, type ViewTransform } from './viewTransform';
+import { fitViewTo, zoomByFactor, type ViewTransform } from './viewTransform';
 import styles from './editor.module.css';
 
 function emptyDraft(): Site {
@@ -100,6 +101,53 @@ export function SiteEditor() {
     observer.observe(host);
     return () => observer.disconnect();
   }, []);
+
+  /**
+   * Restore whatever was being edited last time.
+   *
+   * Runs once, on mount. Without it, going to the command view to look at a traced building
+   * and coming back destroyed the work — the draft lived only in React state, and this
+   * route unmounts.
+   */
+  useEffect(() => {
+    const stored = loadDraft();
+    if (!stored || !draftIsWorthKeeping(stored.site)) return;
+
+    setDraft(stored.site);
+    if (stored.site.boundary.length >= 3) {
+      setView(fitViewTo(stored.site.boundary, canvasSize.width, canvasSize.height));
+    }
+    // A datum that is not null island means a place was chosen before; treat the site as
+    // located so the basemap and the import button come back enabled.
+    if (stored.site.datum.latitude !== 0 || stored.site.datum.longitude !== 0) {
+      setLocated({
+        label: stored.site.name,
+        latitude: stored.site.datum.latitude,
+        longitude: stored.site.datum.longitude,
+        suggestedRadius: Number.parseFloat(osmRadius) || 400,
+      });
+    }
+    setStatus(
+      `Restored your unsaved work from ${new Date(stored.savedAt).toLocaleString()}. ` +
+        'Use "Start over" to discard it.',
+    );
+    // Deliberately once-only: this is a restore, not a subscription. Re-running it on a
+    // canvas resize would overwrite live edits with the last saved copy.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Autosave, debounced.
+   *
+   * A trace is a lot of clicks to lose, and there is no server to save to, so the draft is
+   * written to local storage a moment after each change rather than on an explicit save the
+   * operator has no reason to expect they need.
+   */
+  useEffect(() => {
+    if (!draftIsWorthKeeping(draft)) return;
+    const timer = setTimeout(() => saveDraft(draft), 400);
+    return () => clearTimeout(timer);
+  }, [draft]);
 
   // --- Derived shapes for the canvas ------------------------------------------------------
 
@@ -377,6 +425,23 @@ export function SiteEditor() {
     router.push('/');
   };
 
+  const startOver = () => {
+    if (draftIsWorthKeeping(draft) && !window.confirm('Discard the current site and start over?')) {
+      return;
+    }
+    clearDraft();
+    setDraft(emptyDraft());
+    setLocated(null);
+    setPlaceResults(null);
+    setPlaceQuery('');
+    setSelectedId(null);
+    setBackgroundImage(null);
+    setImageCalibration(null);
+    setErrors(null);
+    setView({ centreE: 0, centreN: 0, metresPerPixel: 1 });
+    setStatus('Cleared. Search for a site to begin.');
+  };
+
   const onLoadFile = async (file: File) => {
     try {
       const text = await file.text();
@@ -538,6 +603,21 @@ export function SiteEditor() {
               </ToolButton>
             )}
             <span className={styles.toolbarSpacer} />
+            <span className={styles.zoomHint}>Drag to pan · scroll to zoom</span>
+            <button
+              className={styles.tool}
+              title="Zoom out"
+              onClick={() => setView((v) => zoomByFactor(v, 1.4))}
+            >
+              −
+            </button>
+            <button
+              className={styles.tool}
+              title="Zoom in"
+              onClick={() => setView((v) => zoomByFactor(v, 1 / 1.4))}
+            >
+              +
+            </button>
             <button
               className={styles.button}
               onClick={() =>
@@ -628,6 +708,12 @@ export function SiteEditor() {
       </div>
 
       <footer className={styles.footer}>
+        <span className={styles.autosaveNote}>
+          Your work is saved in this browser automatically.
+        </span>
+        <button className={styles.button} onClick={startOver}>
+          Start over
+        </button>
         <button className={styles.button} onClick={exportJson}>
           Download site.json
         </button>

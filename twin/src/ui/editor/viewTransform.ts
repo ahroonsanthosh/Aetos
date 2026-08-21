@@ -74,3 +74,64 @@ export function fitViewTo(points: Ground[], canvasWidth: number, canvasHeight: n
     metresPerPixel: metresPerPixel || 1,
   };
 }
+
+/** Zoom limits, metres per pixel. Below the floor the basemap has no more detail to give;
+ *  above the ceiling a site is a dot. */
+export const MIN_METRES_PER_PIXEL = 0.05;
+export const MAX_METRES_PER_PIXEL = 200;
+
+export function clampScale(metresPerPixel: number): number {
+  return Math.min(MAX_METRES_PER_PIXEL, Math.max(MIN_METRES_PER_PIXEL, metresPerPixel));
+}
+
+/**
+ * Zoom while holding one screen point still.
+ *
+ * Anchoring on the cursor rather than the canvas centre is what makes wheel zoom feel like
+ * a map instead of a slideshow: you point at the thing you want a closer look at and it
+ * stays under the pointer, rather than sliding away as the centre magnifies.
+ *
+ * Derived by requiring `screenToEnu(anchor, after) === screenToEnu(anchor, before)` and
+ * solving for the new centre.
+ */
+export function zoomAt(
+  view: ViewTransform,
+  factor: number,
+  anchor: { x: number; y: number },
+  canvasWidth: number,
+  canvasHeight: number,
+): ViewTransform {
+  const ground = screenToEnu(anchor, view, canvasWidth, canvasHeight);
+  const metresPerPixel = clampScale(view.metresPerPixel * factor);
+
+  return {
+    metresPerPixel,
+    centreE: ground.e - (anchor.x - canvasWidth / 2) * metresPerPixel,
+    centreN: ground.n + (anchor.y - canvasHeight / 2) * metresPerPixel,
+  };
+}
+
+/** Zoom about the canvas centre — what the +/− buttons use, where there is no cursor. */
+export function zoomByFactor(view: ViewTransform, factor: number): ViewTransform {
+  return { ...view, metresPerPixel: clampScale(view.metresPerPixel * factor) };
+}
+
+/** Pan by a screen-pixel delta, as a drag produces. */
+export function panByPixels(view: ViewTransform, dx: number, dy: number): ViewTransform {
+  return {
+    ...view,
+    centreE: view.centreE - dx * view.metresPerPixel,
+    centreN: view.centreN + dy * view.metresPerPixel,
+  };
+}
+
+/**
+ * A round distance that occupies a sensible fraction of the canvas, plus its pixel length —
+ * everything a scale bar needs. Without one, "how big is this" is guesswork at every zoom.
+ */
+export function scaleBarFor(view: ViewTransform, canvasWidth: number): { metres: number; pixels: number } {
+  const target = canvasWidth * 0.18 * view.metresPerPixel;
+  const ladder = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10_000];
+  const metres = ladder.reduce((best, c) => (Math.abs(c - target) < Math.abs(best - target) ? c : best));
+  return { metres, pixels: metres / view.metresPerPixel };
+}

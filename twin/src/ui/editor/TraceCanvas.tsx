@@ -30,7 +30,17 @@ import { pixelToGround, type Calibration, type ImagePoint } from '@/site/import/
 import { boundingBoxAround, enuToLatLon, type LatLon } from '@/site/import/geo';
 import { tileBoundsEnu, tilesForBounds, zoomForScale } from '@/site/import/tiles';
 import { getTile } from './basemap';
-import { enuToScreen, screenToEnu, type ViewTransform } from './viewTransform';
+import {
+  enuToScreen,
+  panByPixels,
+  scaleBarFor,
+  screenToEnu,
+  zoomAt,
+  type ViewTransform,
+} from './viewTransform';
+
+/** Pointer travel, px, beyond which a press is a drag rather than a click. */
+const DRAG_THRESHOLD_PX = 4;
 
 export type TraceMode = 'view' | 'calibrate' | 'trace-boundary' | 'trace-asset' | 'place-asset';
 
@@ -104,7 +114,21 @@ export function TraceCanvas({
   const [tracePoints, setTracePoints] = useState<Ground[]>([]);
   const [calibrationClick, setCalibrationClick] = useState<ImagePoint | null>(null);
   const [cursor, setCursor] = useState<Ground | null>(null);
-  const dragRef = useRef<{ x: number; y: number; view: ViewTransform } | null>(null);
+  /**
+   * A pointer press that has not yet been classified.
+   *
+   * Left-drag pans in every mode and a left *click* performs the mode's action, so which
+   * of the two a press turns out to be is only known on release — after seeing whether the
+   * pointer travelled. Deciding on press instead would mean either no dragging or no
+   * clicking, and the map needs both.
+   */
+  const dragRef = useRef<{
+    x: number;
+    y: number;
+    view: ViewTransform;
+    moved: boolean;
+    pans: boolean;
+  } | null>(null);
   // Bumped when a tile finishes loading, purely to re-run the draw effect below.
   const [tileTick, setTileTick] = useState(0);
 
@@ -173,6 +197,9 @@ export function TraceCanvas({
       });
       for (const p of tracePoints) drawHandle(ctx, toScreen(p), palette.caution);
     }
+
+    // Last, over everything: without it, "how big is this" is guesswork at every zoom.
+    drawScaleBar(ctx, view, width, height);
   }, [
     width, height, view, mode, backgroundImage, imageCalibration, calibrationClick,
     boundary, shapes, selectedId, tracePoints, cursor, toScreen,
@@ -205,13 +232,45 @@ export function TraceCanvas({
       return;
     }
 
-    // Middle-drag or right-drag pans in every other mode, including mid-trace — the
-    // operator should never have to finish or cancel a shape just to reposition the view.
-    if (e.button === 1 || e.button === 2) {
-      dragRef.current = { x: e.clientX, y: e.clientY, view };
-      e.preventDefault();
+    // Every press starts as a candidate: it becomes a pan if the pointer travels, and the
+    // mode's own action if it does not. Classified on release, in `onPointerUp`.
+    dragRef.current = { x: e.clientX, y: e.clientY, view, moved: false, pans: true };
+    canvasRef.current?.setPointerCapture(e.pointerId);
+    if (e.button === 1 || e.button === 2) e.preventDefault();
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+    const drag = dragRef.current;
+    if (drag) {
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+
+      // A few pixels of slop, so a click with a shaky hand is still a click rather than a
+      // one-pixel pan that swallows the action.
+      if (!drag.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) drag.moved = true;
+      if (drag.moved && drag.pans) onViewChange(panByPixels(drag.view, dx, dy));
       return;
     }
+
+    if (mode === 'trace-boundary' || mode === 'trace-asset') {
+      setCursor(toGround(screen));
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    canvasRef.current?.releasePointerCapture(e.pointerId);
+
+    // A drag was a pan and nothing else; only a click carries the mode's action. Middle and
+    // right buttons pan exclusively, so they never act even when they do not move.
+    if (!drag || drag.moved || e.button !== 0) return;
+
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
     if (mode === 'trace-boundary' || mode === 'trace-asset') {
       setTracePoints((points) => [...points, toGround(screen)]);
@@ -226,31 +285,6 @@ export function TraceCanvas({
     const ground = toGround(screen);
     const hit = [...shapes].reverse().find((s) => pointInPolygon(ground, s.polygon));
     onSelect(hit?.id ?? null);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-
-    if (dragRef.current) {
-      const dx = e.clientX - dragRef.current.x;
-      const dy = e.clientY - dragRef.current.y;
-      const base = dragRef.current.view;
-      onViewChange({
-        ...base,
-        centreE: base.centreE - dx * base.metresPerPixel,
-        centreN: base.centreN + dy * base.metresPerPixel,
-      });
-      return;
-    }
-
-    if (mode === 'trace-boundary' || mode === 'trace-asset') {
-      setCursor(toGround(screen));
-    }
-  };
-
-  const onPointerUp = () => {
-    dragRef.current = null;
   };
 
   const onDoubleClick = () => {
@@ -281,9 +315,10 @@ export function TraceCanvas({
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     if (mode === 'calibrate') return;
-    e.preventDefault();
-    const factor = Math.exp(e.deltaY * 0.001);
-    onViewChange({ ...view, metresPerPixel: clampScale(view.metresPerPixel * factor) });
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    // Anchored on the cursor: the thing you point at is the thing that stays put.
+    onViewChange(zoomAt(view, Math.exp(e.deltaY * 0.001), anchor, width, height));
   };
 
   return (
@@ -301,10 +336,6 @@ export function TraceCanvas({
       onContextMenu={(e) => e.preventDefault()}
     />
   );
-}
-
-function clampScale(value: number): number {
-  return Math.min(200, Math.max(0.05, value));
 }
 
 function drawCalibrationImage(
@@ -399,6 +430,35 @@ function drawBasemap(
     );
   }
 
+  ctx.restore();
+}
+
+/** A labelled bar in the bottom-left corner giving the current scale in metres. */
+function drawScaleBar(
+  ctx: CanvasRenderingContext2D,
+  view: ViewTransform,
+  width: number,
+  height: number,
+) {
+  const { metres, pixels } = scaleBarFor(view, width);
+  const x = 14;
+  const y = height - 20;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(216, 233, 242, 0.75)';
+  ctx.fillStyle = 'rgba(216, 233, 242, 0.85)';
+  ctx.lineWidth = 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(x, y - 5);
+  ctx.lineTo(x, y);
+  ctx.lineTo(x + pixels, y);
+  ctx.lineTo(x + pixels, y - 5);
+  ctx.stroke();
+
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(metres >= 1000 ? `${metres / 1000} km` : `${metres} m`, x, y - 7);
   ctx.restore();
 }
 

@@ -118,6 +118,40 @@ export const siteSchema = z.object({
 
 export type SiteFile = z.infer<typeof siteSchema>;
 
+/**
+ * The same shape, with the boundary allowed to be incomplete.
+ *
+ * A finished site must have a real boundary — it is the perimeter zone, the import filter,
+ * and what the camera frames — so `siteSchema` requires three points and export enforces
+ * that. A site being *edited* legitimately has none yet: tracing a building before drawing
+ * the fence line is a normal order of work.
+ *
+ * Validating a draft against the strict schema was a real bug, not a theoretical one: the
+ * editor's autosave wrote a perfectly good draft, the restore rejected it for having no
+ * boundary, and the catch-all cleanup then deleted it. Tracing a building, looking at it in
+ * the command view and coming back lost the work every time.
+ */
+export const draftSiteSchema = siteSchema.extend({
+  boundary: z.array(groundSchema),
+});
+
+/** Parse a work-in-progress draft. Throws `SiteFileError` on anything genuinely malformed. */
+export function parseDraftSite(json: unknown): Site {
+  const result = draftSiteSchema.safeParse(json);
+  if (!result.success) {
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path.join('.') || '(root)',
+      message: issue.message,
+    }));
+    throw new SiteFileError(
+      `Draft has ${issues.length} problem${issues.length === 1 ? '' : 's'}: ` +
+        issues.map((i) => `${i.path} — ${i.message}`).join('; '),
+      issues,
+    );
+  }
+  return result.data as Site;
+}
+
 export class SiteFileError extends Error {
   constructor(
     message: string,
