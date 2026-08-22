@@ -33,8 +33,15 @@ import { geocode, type GeocodeResult } from '@/site/import/geocode';
 import { pointInPolygon, polygonCentroid } from '@/lib/geometry';
 import { generateDefaultResources, generateDefaultSensors, generateDefaultZones } from '@/site/generate';
 import { handOffSiteToCommand } from '@/site/handoff';
+import { PHOTO_FACADE_PROMPT } from '@/site/photoFacadePrompt';
 import { clearDraft, draftIsWorthKeeping, loadDraft, saveDraft } from '@/site/draftStore';
-import { parseSiteFile, parseSiteFileText, SiteFileError, serialiseSite } from '@/site/schema';
+import {
+  parseFacadeDesignText,
+  parseSiteFile,
+  parseSiteFileText,
+  SiteFileError,
+  serialiseSite,
+} from '@/site/schema';
 import { TraceCanvas, type TraceMode, type TraceShape } from './TraceCanvas';
 import { fitViewTo, zoomByFactor, type ViewTransform } from './viewTransform';
 import styles from './editor.module.css';
@@ -1276,8 +1283,83 @@ function AssetForm({
           </button>
         </p>
       )}
+      <FacadeSection asset={asset} onChange={onChange} />
       <button className={styles.dangerButton} onClick={onDelete}>
         Delete asset
+      </button>
+    </Section>
+  );
+}
+
+/**
+ * Attaching a facade transcribed from real photographs, in place of the automatic massing
+ * detail. The heavy lifting — actually looking at the photos — happens outside this app,
+ * in a chat with a vision-capable AI; this is just the other end of that round trip: hand
+ * over a prompt that produces the right shape of answer, then read whatever comes back.
+ */
+function FacadeSection({
+  asset,
+  onChange,
+}: {
+  asset: Asset;
+  onChange: (patch: Partial<Asset>) => void;
+}) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const wallsSet = Object.keys(asset.facade?.walls ?? {});
+
+  const copyPrompt = () => {
+    void navigator.clipboard.writeText(PHOTO_FACADE_PROMPT).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const applyFacade = () => {
+    try {
+      const facade = parseFacadeDesignText(text);
+      onChange({ facade });
+      setText('');
+      setError(null);
+    } catch (err) {
+      setError(err instanceof SiteFileError ? err.message : 'Could not read that as facade data.');
+    }
+  };
+
+  return (
+    <Section title="Photo-accurate facade">
+      <p className={styles.hint}>
+        Walk around the real building and photograph each wall straight-on. Copy the prompt
+        below into a chat with a vision-capable AI (Claude or otherwise) along with those
+        photos, telling it which compass direction each one faces. Paste whatever JSON it
+        gives back here.
+      </p>
+      <button className={styles.button} onClick={copyPrompt}>
+        {copied ? 'Copied ✓' : 'Copy photo-analysis prompt'}
+      </button>
+      {wallsSet.length > 0 && (
+        <p className={styles.hint}>
+          Facade set for: {wallsSet.join(', ')}. Walls not listed here still use the
+          automatic detail.{' '}
+          <button className={styles.linkButton} onClick={() => onChange({ facade: undefined })}>
+            Clear it, use automatic detail everywhere
+          </button>
+        </p>
+      )}
+      <Field label="Paste the AI's JSON response">
+        <textarea
+          className={styles.facadeTextarea}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder='{ "walls": { "north": { "windows": [...], "doors": [...] } } }'
+          rows={5}
+        />
+      </Field>
+      {error && <p className={styles.errors}>{error}</p>}
+      <button className={styles.primaryButton} disabled={!text.trim()} onClick={applyFacade}>
+        Apply facade
       </button>
     </Section>
   );

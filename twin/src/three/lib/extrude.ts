@@ -7,7 +7,8 @@
  */
 
 import { BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, Shape, Vector3 } from 'three';
-import type { Ground } from '@/types';
+import type { CompassDirection, Ground } from '@/types';
+import { angleDelta } from '@/lib/geometry';
 
 /**
  * Extrude a ground polygon upward into a volume.
@@ -186,6 +187,70 @@ export function sampleFacade(polygon: Ground[], spacing: number): FacadePoint[] 
   }
 
   return out;
+}
+
+export interface PolygonEdge {
+  a: Ground;
+  b: Ground;
+  length: number;
+  /** Outward unit normal, ground plane — same winding-independent convention as
+   *  `sampleFacade`. */
+  normal: { e: number; n: number };
+}
+
+/** A polygon's edges, each carrying its own length and outward normal — the unit a photo
+ *  transcription of one specific wall maps onto, as opposed to `sampleFacade`'s evenly
+ *  spaced points along the whole boundary. */
+export function polygonEdges(polygon: Ground[]): PolygonEdge[] {
+  const windingSign = Math.sign(polygonSignedArea(polygon)) || 1;
+  const edges: PolygonEdge[] = [];
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[j]!;
+    const b = polygon[i]!;
+    const de = b.e - a.e;
+    const dn = b.n - a.n;
+    const length = Math.hypot(de, dn);
+    if (length === 0) continue;
+
+    edges.push({
+      a,
+      b,
+      length,
+      normal: { e: (windingSign * dn) / length, n: (-windingSign * de) / length },
+    });
+  }
+
+  return edges;
+}
+
+const COMPASS_HEADINGS: Record<CompassDirection, number> = {
+  north: 0,
+  east: Math.PI / 2,
+  south: Math.PI,
+  west: (3 * Math.PI) / 2,
+};
+
+/**
+ * Which compass side a wall most nearly faces, given its outward normal — how a photo
+ * labelled "the north wall" gets matched back to whichever edge(s) of the traced or
+ * imported footprint actually face north, regardless of how many sides the building has
+ * or which way the operator happened to trace it.
+ */
+export function nearestCompassDirection(normal: { e: number; n: number }): CompassDirection {
+  const heading = Math.atan2(normal.e, normal.n);
+  let best: CompassDirection = 'north';
+  let bestDiff = Infinity;
+
+  for (const direction of Object.keys(COMPASS_HEADINGS) as CompassDirection[]) {
+    const diff = Math.abs(angleDelta(heading, COMPASS_HEADINGS[direction]));
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = direction;
+    }
+  }
+
+  return best;
 }
 
 /**

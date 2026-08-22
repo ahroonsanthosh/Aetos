@@ -90,6 +90,14 @@ export const glazingMaterial = new MeshStandardMaterial({
   emissiveIntensity: 0.4,
 });
 
+/** A door on a photo-transcribed facade — solid, not glazed, so it reads as distinct from
+ *  a window at a glance rather than as one more pane in the grid. */
+export const doorMaterial = new MeshStandardMaterial({
+  color: new Color('#182229'),
+  roughness: 0.7,
+  metalness: 0.08,
+});
+
 /** Edge highlight colour used across all structures. */
 export const EDGE_COLOUR = palette.holoDim;
 export const EDGE_COLOUR_SELECTED = palette.holo;

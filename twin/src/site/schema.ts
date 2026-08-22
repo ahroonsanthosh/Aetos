@@ -11,7 +11,7 @@
  */
 
 import { z } from 'zod';
-import type { Site } from '@/types';
+import type { FacadeDesign, Site } from '@/types';
 
 const groundSchema = z.object({ e: z.number(), n: z.number() });
 const enuSchema = z.object({ e: z.number(), n: z.number(), u: z.number() });
@@ -23,6 +23,41 @@ const footprintSchema = z.object({
   width: z.number().positive(),
   depth: z.number().positive(),
   height: z.number().positive(),
+});
+
+/** A fraction of a wall's own extent, not a metre measurement — see `FacadeOpening`. */
+const fractionSchema = z.number().min(0).max(1);
+
+const facadeOpeningSchema = z.object({
+  x: fractionSchema,
+  y: fractionSchema,
+  width: fractionSchema,
+  height: fractionSchema,
+});
+
+const wallFacadeSchema = z.object({
+  windows: z.array(facadeOpeningSchema).default([]),
+  doors: z.array(facadeOpeningSchema).default([]),
+});
+
+/**
+ * What a wall-by-wall photo transcription (see `photoFacadePrompt.ts`) produces.
+ * Every side is optional — a side that was not photographed, or the transcriber was not
+ * confident about, is simply absent, and `GenericAsset` draws that wall blank rather than
+ * inventing a pattern to fill it. Spelled out as four named optional fields rather than
+ * `z.record` over the compass enum: a record keyed by a finite enum infers as requiring
+ * every key, which is exactly the "every side must be photographed" requirement this
+ * schema needs to not have.
+ */
+export const facadeDesignSchema = z.object({
+  walls: z
+    .object({
+      north: wallFacadeSchema.optional(),
+      south: wallFacadeSchema.optional(),
+      east: wallFacadeSchema.optional(),
+      west: wallFacadeSchema.optional(),
+    })
+    .default({}),
 });
 
 const assetSchema = z.object({
@@ -42,6 +77,7 @@ const assetSchema = z.object({
   sensorsCovering: z.array(z.string()).default([]),
   activeThreats: z.array(z.string()).default([]),
   protectionScore: z.number().min(0).max(1).default(0),
+  facade: facadeDesignSchema.optional(),
 });
 
 const zoneSchema = z.object({
@@ -199,4 +235,46 @@ export function parseSiteFileText(text: string): Site {
 /** Serialise a site back to the file format. Stable key order, so diffs stay readable. */
 export function serialiseSite(site: Site): string {
   return JSON.stringify(site, null, 2);
+}
+
+/**
+ * Parse a facade design pasted into the editor. An AI's answer routinely arrives wrapped in
+ * a markdown code fence and a sentence either side of it ("Here's the JSON: ```json ... ```
+ * Let me know if...") — stripped here so the operator can paste the whole reply verbatim
+ * instead of hand-trimming it first.
+ */
+export function parseFacadeDesignText(text: string): FacadeDesign {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1]! : text;
+
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) {
+    throw new SiteFileError('No JSON object found in the pasted text.', [
+      { path: '(root)', message: 'expected a { ... } object' },
+    ]);
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(candidate.slice(start, end + 1));
+  } catch (error) {
+    throw new SiteFileError(`Not valid JSON: ${(error as Error).message}`, [
+      { path: '(root)', message: 'malformed JSON' },
+    ]);
+  }
+
+  const result = facadeDesignSchema.safeParse(json);
+  if (!result.success) {
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path.join('.') || '(root)',
+      message: issue.message,
+    }));
+    throw new SiteFileError(
+      `Facade data has ${issues.length} problem${issues.length === 1 ? '' : 's'}: ` +
+        issues.map((i) => `${i.path} — ${i.message}`).join('; '),
+      issues,
+    );
+  }
+  return result.data as FacadeDesign;
 }

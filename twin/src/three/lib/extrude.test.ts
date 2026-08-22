@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { Ground } from '@/types';
-import { polygonSignedArea, sampleFacade } from './extrude';
+import { nearestCompassDirection, polygonEdges, polygonSignedArea, sampleFacade } from './extrude';
 
 const ccwSquare: Ground[] = [
   { e: 0, n: 0 },
@@ -68,5 +68,50 @@ describe('sampleFacade', () => {
     for (const { normal } of sampleFacade(ccwSquare, 3)) {
       expect(Math.hypot(normal.e, normal.n)).toBeCloseTo(1, 6);
     }
+  });
+});
+
+describe('polygonEdges', () => {
+  it('returns one edge per side, each with its real length', () => {
+    const edges = polygonEdges(ccwSquare);
+    expect(edges).toHaveLength(4);
+    for (const edge of edges) expect(edge.length).toBeCloseTo(10, 6);
+  });
+
+  it('agrees with sampleFacade on which way is outward', () => {
+    const key = (n: { e: number; n: number }) => `${n.e.toFixed(3)},${n.n.toFixed(3)}`;
+    const edgeNormals = new Set(polygonEdges(ccwSquare).map((e) => key(e.normal)));
+    const sampledNormals = new Set(sampleFacade(ccwSquare, 3).map((p) => key(p.normal)));
+    expect(sampledNormals).toEqual(edgeNormals);
+  });
+});
+
+describe('nearestCompassDirection', () => {
+  it('classifies each side of a due-north-aligned square correctly', () => {
+    const byDirection = new Map(
+      polygonEdges(ccwSquare).map((edge) => [nearestCompassDirection(edge.normal), edge]),
+    );
+    // South (bottom, n=0), east (right, e=10), north (top, n=10), west (left, e=0).
+    expect(byDirection.get('south')!.a).toEqual({ e: 0, n: 0 });
+    expect(byDirection.get('east')!.a).toEqual({ e: 10, n: 0 });
+    expect(byDirection.get('north')!.a).toEqual({ e: 10, n: 10 });
+    expect(byDirection.get('west')!.a).toEqual({ e: 0, n: 10 });
+  });
+
+  it('picks the nearest side for an off-axis wall rather than refusing to classify it', () => {
+    // A wall facing 10° east of due north should still read as "north".
+    const angle = (10 * Math.PI) / 180;
+    expect(nearestCompassDirection({ e: Math.sin(angle), n: Math.cos(angle) })).toBe('north');
+  });
+
+  it('agrees regardless of the polygon\'s winding order', () => {
+    const cwSquare = [...ccwSquare].reverse();
+    const ccwDirections = polygonEdges(ccwSquare)
+      .map((e) => nearestCompassDirection(e.normal))
+      .sort();
+    const cwDirections = polygonEdges(cwSquare)
+      .map((e) => nearestCompassDirection(e.normal))
+      .sort();
+    expect(cwDirections).toEqual(ccwDirections);
   });
 });

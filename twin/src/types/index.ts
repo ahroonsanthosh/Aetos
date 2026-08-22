@@ -92,6 +92,40 @@ export interface Asset {
    * availability, coverage, health and response resources. Simulated in this prototype.
    */
   protectionScore: number;
+  /**
+   * A facade transcribed from real photographs of the building, wall by wall — see
+   * `site/photoFacadePrompt.ts`. When present, `GenericAsset` draws exactly these
+   * openings and nothing else: no procedural windows, no invented roof plant. A wall this
+   * doesn't cover (not photographed, or the operator wasn't confident about it) is drawn
+   * blank rather than guessed at.
+   */
+  facade?: FacadeDesign;
+}
+
+/** Compass side of a building a photograph was taken facing. */
+export type CompassDirection = 'north' | 'south' | 'east' | 'west';
+
+/**
+ * One opening (a window or a door) on a wall, in coordinates relative to *that wall* —
+ * fractions, not metres, because a photograph gives up relative position far more reliably
+ * than absolute size. `x` runs left-to-right as the wall is seen face-on from outside it;
+ * `y` runs 0 (ground) to 1 (roofline). All four values are expected in [0, 1].
+ */
+export interface FacadeOpening {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface WallFacade {
+  windows: FacadeOpening[];
+  doors: FacadeOpening[];
+}
+
+/** One entry per side actually photographed; a missing side is drawn blank, not guessed. */
+export interface FacadeDesign {
+  walls: Partial<Record<CompassDirection, WallFacade>>;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEMO_SITE } from './demo-site';
-import { parseSiteFile, parseSiteFileText, SiteFileError, serialiseSite } from './schema';
+import {
+  parseFacadeDesignText,
+  parseSiteFile,
+  parseSiteFileText,
+  SiteFileError,
+  serialiseSite,
+} from './schema';
 
 describe('parseSiteFile', () => {
   it('accepts the demo site unchanged', () => {
@@ -109,6 +115,45 @@ describe('serialiseSite / parseSiteFile round trip', () => {
     const parsed = parseSiteFileText(text);
     expect(parsed.assets.map((a) => a.id)).toEqual(DEMO_SITE.assets.map((a) => a.id));
     expect(parsed.zones.map((z) => z.id)).toEqual(DEMO_SITE.zones.map((z) => z.id));
+  });
+});
+
+describe('parseFacadeDesignText', () => {
+  const valid = JSON.stringify({
+    walls: {
+      north: { windows: [{ x: 0.1, y: 0.3, width: 0.08, height: 0.15 }], doors: [] },
+    },
+  });
+
+  it('parses a bare JSON object', () => {
+    const facade = parseFacadeDesignText(valid);
+    expect(facade.walls.north?.windows).toHaveLength(1);
+  });
+
+  it('strips a markdown code fence and any surrounding prose', () => {
+    const wrapped = `Here you go:\n\n\`\`\`json\n${valid}\n\`\`\`\n\nLet me know if you want changes.`;
+    const facade = parseFacadeDesignText(wrapped);
+    expect(facade.walls.north?.windows).toHaveLength(1);
+  });
+
+  it('leaves unmentioned sides absent rather than defaulting them to empty walls', () => {
+    const facade = parseFacadeDesignText(valid);
+    expect(facade.walls.south).toBeUndefined();
+    expect(facade.walls.east).toBeUndefined();
+    expect(facade.walls.west).toBeUndefined();
+  });
+
+  it('rejects a fraction outside [0, 1] rather than silently clamping it', () => {
+    const bad = JSON.stringify({ walls: { north: { windows: [{ x: 1.4, y: 0, width: 0.1, height: 0.1 }] } } });
+    expect(() => parseFacadeDesignText(bad)).toThrow(SiteFileError);
+  });
+
+  it('reports text with no JSON object at all, rather than throwing a raw parse error', () => {
+    expect(() => parseFacadeDesignText('Sorry, I could not analyse that image.')).toThrow(SiteFileError);
+  });
+
+  it('reports malformed JSON without throwing a raw SyntaxError', () => {
+    expect(() => parseFacadeDesignText('{ walls: not json }')).toThrow(SiteFileError);
   });
 });
 

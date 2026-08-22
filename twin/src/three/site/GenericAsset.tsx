@@ -71,7 +71,7 @@ export function GenericAsset({ asset }: { asset: Asset }) {
         </>
       )}
       <group position={[0, baseY, 0]}>
-        <BuildingDetail outline={outline} height={height} seed={asset.id} />
+        <BuildingDetail outline={outline} height={height} seed={asset.id} facade={asset.facade} />
       </group>
     </SelectableAsset>
   );

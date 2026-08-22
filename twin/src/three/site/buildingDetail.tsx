@@ -22,11 +22,17 @@ import { useMemo } from 'react';
 import { Edges } from '@react-three/drei';
 import { BoxGeometry, Euler, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
 
-import type { Ground } from '@/types';
+import type { FacadeDesign, Ground } from '@/types';
 import { polygonBounds, polygonCentroid, pointInPolygon } from '@/lib/geometry';
 import { yawFor } from '../frame';
-import { extrudedPolygon, sampleFacade } from '../lib/extrude';
-import { EDGE_COLOUR, concreteMaterial, enclosureMaterial, glazingMaterial } from '../materials/structure';
+import { extrudedPolygon, nearestCompassDirection, polygonEdges, sampleFacade } from '../lib/extrude';
+import {
+  EDGE_COLOUR,
+  concreteMaterial,
+  doorMaterial,
+  enclosureMaterial,
+  glazingMaterial,
+} from '../materials/structure';
 
 const FLOOR_HEIGHT = 3.2;
 const WINDOW_SPACING = 3.4;
@@ -42,7 +48,10 @@ const MIN_HEIGHT_M = 4;
 // Geometry is created once and shared across every building's instanced mesh; only the
 // instance count differs per building.
 const windowGeometry = new BoxGeometry(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_DEPTH);
-const roofUnitGeometry = new BoxGeometry(1, 1, 1);
+// A generic 1×1×1 box, scaled per instance — shared by roof units (random sizes) and photo
+// facade openings (whatever size the photo said), neither of which can share fixed-size
+// geometry the way the procedural window band does.
+const unitBoxGeometry = new BoxGeometry(1, 1, 1);
 
 /** Tiny deterministic string hash (djb2), so roof-unit placement is stable across
  *  re-renders and selection without needing to store anything on the asset. */
@@ -163,7 +172,7 @@ function RoofUnits({ outline, height, seed }: { outline: Ground[]; height: numbe
     }
     if (positions.length === 0) return null;
 
-    const instanced = new InstancedMesh(roofUnitGeometry, enclosureMaterial, positions.length);
+    const instanced = new InstancedMesh(unitBoxGeometry, enclosureMaterial, positions.length);
     const matrix = new Matrix4();
     const scale = new Vector3();
     const position = new Vector3();
@@ -189,18 +198,112 @@ function RoofUnits({ outline, height, seed }: { outline: Ground[]; height: numbe
 }
 
 /**
- * Entry point: everything above, gated behind `qualifiesForDetail` so a small imported
- * house never pays for or shows detail it was never going to need.
+ * An opening's world transform on one wall edge: centred at `xFrac` (+ half its width)
+ * along the edge and `yFrac` (+ half its height) up the building, sitting just proud of
+ * the wall face along its outward normal — the same placement rule `FacadeWindows` uses
+ * for a procedural row, just driven by a photo's fractions instead of even spacing.
+ */
+function openingMatrix(
+  edge: { a: Ground; b: Ground; length: number; normal: { e: number; n: number } },
+  height: number,
+  opening: { x: number; y: number; width: number; height: number },
+  clearance: number,
+  out: Matrix4,
+): void {
+  const centreFrac = opening.x + opening.width / 2;
+  const e = edge.a.e + (edge.b.e - edge.a.e) * centreFrac + edge.normal.e * clearance;
+  const n = edge.a.n + (edge.b.n - edge.a.n) * centreFrac + edge.normal.n * clearance;
+  const y = (opening.y + opening.height / 2) * height;
+
+  const position = new Vector3(e, y, -n);
+  const euler = new Euler(0, yawFor(Math.atan2(edge.normal.e, edge.normal.n)), 0);
+  const quaternion = new Quaternion().setFromEuler(euler);
+  const scale = new Vector3(Math.max(opening.width * edge.length, 0.1), Math.max(opening.height * height, 0.1), 1);
+  out.compose(position, quaternion, scale);
+}
+
+/**
+ * Windows and doors transcribed from real photographs — see `site/photoFacadePrompt.ts`
+ * for how the operator produces the JSON this reads. Each wall of the traced or imported
+ * footprint is matched to the compass side it most nearly faces; a side with no entry in
+ * `facade.walls` (not photographed, or the transcriber was not confident about it) is left
+ * blank rather than filled in with a guess.
+ *
+ * Unit geometry (a 1×1×1 box) is scaled per instance rather than shared like the
+ * procedural windows, since every opening here can be a different size — that is the
+ * entire point of reading it from a photo instead of a formula.
+ */
+function PhotoFacade({
+  outline,
+  height,
+  facade,
+}: {
+  outline: Ground[];
+  height: number;
+  facade: FacadeDesign;
+}) {
+  const { windows, doors } = useMemo(() => {
+    const windowMatrices: Matrix4[] = [];
+    const doorMatrices: Matrix4[] = [];
+    const scratch = new Matrix4();
+
+    for (const edge of polygonEdges(outline)) {
+      const wall = facade.walls[nearestCompassDirection(edge.normal)];
+      if (!wall) continue;
+
+      for (const opening of wall.windows) {
+        openingMatrix(edge, height, opening, WINDOW_DEPTH / 2 + 0.02, scratch);
+        windowMatrices.push(scratch.clone());
+      }
+      for (const opening of wall.doors) {
+        openingMatrix(edge, height, opening, 0.07, scratch);
+        doorMatrices.push(scratch.clone());
+      }
+    }
+
+    const build = (matrices: Matrix4[], material: typeof glazingMaterial) => {
+      if (matrices.length === 0) return null;
+      const instanced = new InstancedMesh(unitBoxGeometry, material, matrices.length);
+      matrices.forEach((m, i) => instanced.setMatrixAt(i, m));
+      instanced.instanceMatrix.needsUpdate = true;
+      instanced.frustumCulled = false;
+      return instanced;
+    };
+
+    return {
+      windows: build(windowMatrices, glazingMaterial),
+      doors: build(doorMatrices, doorMaterial),
+    };
+  }, [outline, height, facade]);
+
+  return (
+    <>
+      {windows && <primitive object={windows} />}
+      {doors && <primitive object={doors} />}
+    </>
+  );
+}
+
+/**
+ * Entry point. Two entirely separate paths, not a blend: a building with a photo facade
+ * shows exactly what was transcribed and nothing else — no procedural windows filling in
+ * gaps, no parapet, no invented roof plant — because the whole reason it exists is to stop
+ * short of anything that was not actually in the photographs. Everything else keeps the
+ * automatic massing detail, gated behind `qualifiesForDetail` as before.
  */
 export function BuildingDetail({
   outline,
   height,
   seed,
+  facade,
 }: {
   outline: Ground[];
   height: number;
   seed: string;
+  facade?: FacadeDesign;
 }) {
+  if (facade) return <PhotoFacade outline={outline} height={height} facade={facade} />;
+
   if (!qualifiesForDetail(outline, height)) return null;
 
   return (
