@@ -83,6 +83,11 @@ export function SiteEditor() {
 
   const [backgroundImage, setBackgroundImage] = useState<HTMLImageElement | null>(null);
   const [imageCalibration, setImageCalibration] = useState<Calibration | null>(null);
+  // The image is drawn see-through so the real map underneath stays visible for aligning
+  // it — but that same transparency makes the photo's own grass- or dirt-coloured edges
+  // blend into similarly-coloured map tiles, which reads as "the map got duplicated" when
+  // it's really just the photo's real content, softened. This lets the operator check.
+  const [imageFullOpacity, setImageFullOpacity] = useState(false);
 
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeResults, setPlaceResults] = useState<GeocodeResult[] | null>(null);
@@ -834,6 +839,20 @@ export function SiteEditor() {
                   If it is the wrong size rather than the wrong place or angle, re-calibrate
                   instead — scale comes from the two-point distance, not from dragging.
                 </p>
+                <label className={styles.checkRow}>
+                  <input
+                    type="checkbox"
+                    checked={imageFullOpacity}
+                    onChange={(e) => setImageFullOpacity(e.target.checked)}
+                  />
+                  Show image at full opacity
+                </label>
+                <p className={styles.hint}>
+                  The image is normally see-through so the real map stays visible underneath
+                  it for aligning — which also means its own grass- or dirt-coloured edges
+                  blend into similarly-coloured map tiles. Tick this to check what is really
+                  in the photo versus what the map is showing through it.
+                </p>
               </>
             )}
           </Section>
@@ -934,6 +953,7 @@ export function SiteEditor() {
               mode={mode}
               backgroundImage={backgroundImage}
               imageCalibration={imageCalibration}
+              imageFullOpacity={imageFullOpacity}
               onCalibrated={onCalibrated}
               boundary={draft.boundary}
               shapes={shapes}

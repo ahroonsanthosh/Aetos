@@ -65,6 +65,9 @@ interface Props {
   backgroundImage: HTMLImageElement | null;
   /** Present once the image has a real-world scale; drives ENU-space rendering. */
   imageCalibration: Calibration | null;
+  /** Draw the image fully opaque instead of see-through, so its own edge content can be
+   *  told apart from the map showing through it. */
+  imageFullOpacity: boolean;
   /** Fired with two RAW IMAGE PIXEL points once the operator has clicked both. The caller
    *  asks for the real-world distance and builds the `Calibration`. */
   onCalibrated: (pointA: ImagePoint, pointB: ImagePoint) => void;
@@ -121,6 +124,7 @@ export function TraceCanvas({
   mode,
   backgroundImage,
   imageCalibration,
+  imageFullOpacity,
   onCalibrated,
   boundary,
   shapes,
@@ -203,7 +207,7 @@ export function TraceCanvas({
     drawGrid(ctx, view, width, height);
 
     if (backgroundImage && imageCalibration) {
-      drawCalibratedImage(ctx, backgroundImage, imageCalibration, view, toScreen);
+      drawCalibratedImage(ctx, backgroundImage, imageCalibration, view, imageFullOpacity, toScreen);
     }
 
     if (boundary.length >= 2) {
@@ -242,7 +246,7 @@ export function TraceCanvas({
     // Last, over everything: without it, "how big is this" is guesswork at every zoom.
     drawScaleBar(ctx, view, width, height);
   }, [
-    width, height, view, mode, backgroundImage, imageCalibration, calibrationClick,
+    width, height, view, mode, backgroundImage, imageCalibration, imageFullOpacity, calibrationClick,
     boundary, shapes, selectedId, tracePoints, cursor, toScreen,
     showBasemap, datum, tileTick,
   ]);
@@ -520,6 +524,7 @@ function drawCalibratedImage(
   image: HTMLImageElement,
   calibration: Calibration,
   view: ViewTransform,
+  fullOpacity: boolean,
   toScreen: (p: Ground) => { x: number; y: number },
 ) {
   // Rotate about the image's own centre rather than project all four corners: canvas
@@ -539,7 +544,7 @@ function drawCalibratedImage(
   ctx.translate(centreScreen.x, centreScreen.y);
   ctx.rotate(calibration.northBearing);
 
-  ctx.globalAlpha = 0.75;
+  ctx.globalAlpha = fullOpacity ? 1 : 0.75;
   ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
 
   // A crisp, full-opacity frame around it — without one, a faded photo blended over real
