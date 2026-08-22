@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -47,7 +48,15 @@ def test_minimal_detection_is_valid_without_inferred_blocks() -> None:
 
 
 def test_schema_version_is_carried_on_every_detection() -> None:
-    assert make_detection().schema_version == "1.0.0"
+    """Asserted against the constant, not a literal.
+
+    What matters is that every detection records the version it was produced under, so an
+    adapter written against an older one stays identifiable. Pinning the string here would make
+    a routine additive bump fail a test that is not about the number, and the pressure would
+    then be on the number rather than on the change.
+    """
+    assert make_detection().schema_version == DETECTION_SCHEMA_VERSION
+    assert re.fullmatch(r"\d+\.\d+\.\d+", DETECTION_SCHEMA_VERSION)
 
 
 def test_detection_is_immutable() -> None:

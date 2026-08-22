@@ -123,6 +123,95 @@ More simultaneous objects than the system can process in real time.
 confirmed tracks keep updating; new-track acquisition degrades first. Every shed input is
 recorded as an event. Sustained shedding activates degraded mode.
 
+### FM-015 — Undetectable corruption on a link with no checksum
+**Status:** Partial · **Severity:** High where such hardware is used
+
+A great deal of affordable sensor hardware speaks a framed binary protocol over a raw serial
+line with **no checksum of any kind**. Corruption that changes a frame's length or alignment is
+caught by the framing; corruption that changes a payload byte **in place is not caught by
+anything in the protocol**. A single bit flip turns a target at 40 m into one at 168 m in a
+frame that is structurally perfect.
+
+The result is a phantom target at a plausible range, indistinguishable from a real detection,
+arriving through a source the operator has been told to trust. Integrity cannot be retrofitted
+onto a one-way stream by the receiver: there is no back-channel, no spare field for a CRC, and
+no way to make the transmitter compute something it does not compute.
+
+**Mitigation (ADR 0018).** Layered, and measured rather than asserted:
+
+- Structural validation catches every length-changing corruption with certainty.
+- A configured plausibility envelope is the only value check available, so it *is* the integrity
+  mechanism — and the probability of corruption surviving it is **computed** from the frame
+  layout and the configured bounds, not estimated. For the shipped configuration that residual
+  is 0.209. `tests/unit/test_ld2451_protocol.py` enumerates all 6,885 single-byte corruptions of
+  a three-target frame and verifies the computation against what the decoder actually accepts.
+- Every rejection is counted by reason. Undetected corruption is unobservable, but it shares a
+  physical cause with the corruption that is detected, so the observed reject rate estimates the
+  unobserved one.
+- Tightening the envelope measurably improves the link, which makes configuration an integrity
+  control rather than housekeeping.
+
+**What remains open.** The degradation half. The decoder counts; nothing yet turns a rising
+count into a DEGRADED or OFFLINE sensor state, because that lives in the adapter and the adapter
+needs the hardware. Physical mitigations dominate anyway and are not enforceable in software:
+short shielded leads, a solid common ground, distance from motors, and the lowest baud rate that
+meets the update-rate floor.
+
+### FM-016 — Coverage that has never been validated against the threat class
+**Status:** Partial · **Severity:** High if it occurs
+
+A sensor's declared coverage comes from a datasheet, and a datasheet range figure is quoted
+against a specific radar cross-section — usually one to two orders of magnitude larger than a
+small multirotor. **Whether a given sensor detects the actual threat class at all, at any range,
+is not established by buying it.**
+
+The hazard is not the sensor being poor. It is that coverage is what lets *silence* be
+interpreted: a sensor declaring 100 m of coverage and detecting nothing is read as 100 m of
+clear airspace, when the truth may be that it cannot see this target anywhere.
+
+**Mitigation.** `SensorCapabilities.coverage_validated` defaults to false and stays false until
+someone has flown the threat class at known ranges and recorded detection probability against
+range. The conformance suite reports an unvalidated sensor as a **gap** rather than a pass, in
+those words, and names this entry.
+
+**What remains open.** The consequence. Nothing downstream yet treats an unvalidated sensor's
+silence differently from a validated one's — that belongs with `backend/system_health`, which is
+not built. Until then the flag is a declaration and a report line, not an enforced behaviour.
+
+### FM-017 — Assumed altitude rendered as a measured figure
+**Status:** Partial · **Severity:** Medium
+
+`GeoPosition.altitude_m` is required, and many real sensors cannot measure it: a range-and-
+bearing sensor with no elevation channel, an RF direction-finder, most fixed cameras. Such an
+adapter must still populate the field, and the figure it puts there is an **assumption**.
+
+A field that always contains a number gives no way to distinguish a measurement from an
+assumption. The operator reads an altitude rendered identically to one a three-dimensional radar
+measured, and may check it against a zone floor or ceiling.
+
+**Mitigation (ADR 0019).** Three parts, two of them built:
+
+- The adapter assumes the target lies in the sensor's own horizontal plane — the least
+  committal assumption available, and one whose error is bounded by the beam rather than by
+  terrain data the system does not have.
+- `position_covariance_enu` carries a vertical variance derived from the beam's vertical extent
+  at that range, so the filter learns almost nothing about altitude and its own covariance says
+  so. A three-dimensional sensor observing the same object dominates the vertical estimate
+  automatically, with no special-casing.
+- `GeoPosition.altitude_source` marks the figure `assumed` per detection (schema 1.1.0,
+  additive and defaulted), and `SensorCapabilities.dimensions.reports_altitude` declares the
+  same fact statically. The conformance suite fails an adapter where the two disagree.
+
+**What remains open, and deliberately named.** The rendering rule. ADR 0019 §5 requires the
+interface to show an assumed altitude as not measured wherever altitude appears — the track
+list, the details panel, the map data block and the history page. That is not implemented,
+because `altitude_source` lives on a Detection and the interface renders a *Track*: carrying it
+through requires the tracker to propagate it, which is only testable once an adapter exists that
+can actually emit `assumed`. No detection in the system can produce a non-default value today,
+so the rule would be untestable decoration. It lands with the first live adapter, and applying
+it to three of the four places would be worse than not having it — which is why they are
+enumerated here rather than left to be remembered.
+
 ---
 
 ## Tracking failures

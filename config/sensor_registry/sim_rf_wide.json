@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0.0",
+  "kind": "simulated",
   "registry_key": "sim_rf_wide",
   "sensor_type": "simulated_rf",
   "description": "Generic wide-area simulated radio-frequency sensor. Long reach and full azimuthal coverage but coarse geolocation in every axis, and a low probability of detection because it only observes objects that emit. Simulation parameters only.",

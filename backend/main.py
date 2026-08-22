@@ -48,9 +48,16 @@ from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
-from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
-from sensors.adapters.simulated.registry import load_sensor_registry
-from sensors.schemas.detection import Detection
+from sensors.adapters.factory import (
+    AdapterFactoryError,
+    AdapterSet,
+    Placement,
+    SimulationContext,
+    build_adapters,
+)
+from sensors.adapters.interface import SensorAdapter
+from sensors.adapters.registry import load_sensor_registry
+from sensors.schemas.detection import Detection, SensorType
 
 _LOG = logging.getLogger("aetos.pipeline")
 
@@ -109,7 +116,13 @@ class Pipeline:
         # alert, and an operator cannot tell an empty feed from a quiet sky.
         self.alerting.rebuild()
 
-        self._adapters: list[SimulatedSensorAdapter] = []
+        self.registry = load_sensor_registry()
+        self.sources = AdapterSet()
+        """What is actually feeding the pipeline, and what was configured but not built.
+
+        Empty until `attach_sources` is called. The distinction between "no sensors configured"
+        and "sensors configured but nothing started" is carried in `AdapterSet.skipped` rather
+        than being lost in an empty list."""
 
         # The site and its sensors are configuration the API reads back, so they are persisted
         # once at startup rather than being loaded independently by every request.
@@ -122,6 +135,12 @@ class Pipeline:
         Without this the endpoint returns an empty list on a site that plainly has sensors,
         and the operator map draws none — which reads as "this site has no sensors" rather
         than "nobody told the database about them".
+
+        `sensor_type` is now filled in from the registry entry rather than left null. It was
+        null because nothing here loaded the registry, so a type would have been a guess; the
+        pipeline holds the registry now, so it is a read. That matters more than it looks: the
+        type is what tells the interface whether a sensor is simulated or real, and a null one
+        left the sensors page unable to say.
         """
         self.repositories.sensors.replace_for_site(
             self.geometry.site.site_id,
@@ -130,6 +149,7 @@ class Pipeline:
                     sensor_id=placement.sensor_id,
                     site_id=self.geometry.site.site_id,
                     registry_key=placement.registry_key,
+                    sensor_type=self._registered_type(placement.registry_key),
                     latitude=placement.position.latitude,
                     longitude=placement.position.longitude,
                     height_m=placement.height_m,
@@ -140,29 +160,61 @@ class Pipeline:
             ],
         )
 
-    def attach_scenario(self, scenario_id: str) -> None:
-        """Point the simulated sensors at a scenario's world."""
-        scenario = load_all()[scenario_id]
-        registry = load_sensor_registry()
-        world = ScenarioWorld(scenario, self.clock.now())
-        positions = self.geometry.site.sensor_positions_enu()
+    def _registered_type(self, registry_key: str) -> SensorType | None:
+        """The sensor type this key declares, or None if the registry does not define it.
 
-        self._adapters = [
-            SimulatedSensorAdapter(
-                clock=self.clock,
-                sensor_id=placement.sensor_id,
-                model=registry[placement.registry_key],
-                position_enu=positions[placement.sensor_id],
-                frame=self.geometry.frame,
-                truth_source=world,
+        None rather than raising: a placement naming an unknown key is caught loudly by the
+        adapter factory when sources are attached, with a message that names the known keys.
+        Failing here instead would refuse to start the API over a configuration problem the
+        operator could not then see, which is the worse of the two failures.
+        """
+        entry = self.registry.get(registry_key)
+        return entry.sensor_type if entry is not None else None
+
+    def attach_sources(self, run_mode: RunMode, scenario_id: str | None = None) -> AdapterSet:
+        """Build and start the adapters this run mode calls for.
+
+        Replaces the previous `attach_scenario`, which constructed simulated adapters directly
+        and had no path that could construct anything else. Which implementation a placement
+        resolves to is now the factory's decision, read from the registry — so LIVE and HYBRID
+        are configuration rather than code that does not exist.
+        """
+        simulation: SimulationContext | None = None
+        if scenario_id is not None:
+            scenario = load_all()[scenario_id]
+            simulation = SimulationContext(
+                truth_source=ScenarioWorld(scenario, self.clock.now()),
                 scenario_seed=scenario.seed,
-                boresight_deg=placement.boresight_deg,
             )
-            for placement in self.geometry.site.sensors
-            if placement.enabled
-        ]
-        for adapter in self._adapters:
+
+        positions = self.geometry.site.sensor_positions_enu()
+        self.sources = build_adapters(
+            [
+                Placement(
+                    sensor_id=placement.sensor_id,
+                    registry_key=placement.registry_key,
+                    position_enu=positions[placement.sensor_id],
+                    boresight_deg=placement.boresight_deg,
+                )
+                for placement in self.geometry.site.sensors
+                if placement.enabled
+            ],
+            self.registry,
+            clock=self.clock,
+            frame=self.geometry.frame,
+            run_mode=run_mode,
+            simulation=simulation,
+        )
+
+        for skip in self.sources.skipped:
+            _LOG.info("sensor %s not started: %s", skip.sensor_id, skip.reason)
+        for adapter in self.sources.adapters:
             adapter.start()
+        return self.sources
+
+    @property
+    def _adapters(self) -> tuple[SensorAdapter, ...]:
+        return self.sources.adapters
 
     def step(self) -> int:
         """Run one cycle. Returns how many detections were accepted.
@@ -222,7 +274,51 @@ laptop", and it means every interface including whatever the machine is plugged 
 
 
 class StartupRefused(RuntimeError):
-    """The requested configuration would expose the system. Raised instead of starting."""
+    """The requested configuration would expose the system, or would present it dishonestly.
+
+    Raised instead of starting. Both categories share the property that the failure is invisible
+    from inside: an exposed console looks like a working one, and a LIVE deployment with nothing
+    attached looks exactly like a quiet sky.
+    """
+
+
+def guard_sources(run_mode: RunMode, sources: AdapterSet) -> None:
+    """Refuse to start in a configuration that would misrepresent what the operator is seeing.
+
+    Two refusals.
+
+    1. **LIVE with no live adapter.** Every screen would say LIVE while nothing real was
+       feeding the pipeline, and an empty picture would read as clear airspace rather than as
+       a system that is not connected to anything. This is FM-010 at deployment scale: the
+       difference between "nothing is out there" and "nothing is looking" must never be
+       invisible, and it is least visible in exactly the mode that claims to be real.
+
+    2. **Nothing at all.** No adapter of any kind was built, so the pipeline is a display with
+       no input. Distinct from the first because it is also reachable in SIMULATION — a
+       scenario nobody attached — and the operator would see the same confident empty map.
+
+    Deliberately not a refusal: HYBRID or SIMULATION with *some* placements skipped. That is a
+    legitimate and common state — a live-fitted site running a training scenario, a bench test
+    of one sensor — and `AdapterSet.skipped` carries every one with its reason for the interface
+    to show. Refusing it would make the mechanism unusable for the cases it exists to serve.
+    """
+    if not sources.adapters:
+        detail = (
+            "; ".join(f"{s.sensor_id}: {s.reason}" for s in sources.skipped)
+            or "the site configuration defines no enabled sensors"
+        )
+        raise StartupRefused(
+            f"Refusing to start in {run_mode.value.upper()} mode with no sensor adapters "
+            f"running. The operator picture would be a confident empty map that reads as clear "
+            f"airspace rather than as a system with no input (FM-010). Reason(s) — {detail}"
+        )
+
+    if run_mode is RunMode.LIVE and sources.live_count == 0:
+        raise StartupRefused(
+            f"Refusing to start in LIVE mode with {sources.simulated_count} simulated adapter(s) "
+            "and no real ones. Every screen would say LIVE over synthetic data. Run in "
+            "SIMULATION or HYBRID, or attach a real sensor."
+        )
 
 
 def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count: int) -> None:
@@ -275,6 +371,7 @@ def build_application(
     data_dir: Path | None = None,
     tick_s: float = DEFAULT_TICK_S,
     authenticated: bool = True,
+    run_mode: RunMode = RunMode.SIMULATION,
 ):
     """Assemble the pipeline and the API around it.
 
@@ -282,14 +379,31 @@ def build_application(
     off loopback; False attributes everything to one local operator with no login at all
     (ADR 0008, FM-001) and exists for a single-user machine. `guard_bind` refuses to combine it
     with a network interface.
+
+    `run_mode` decides which kinds of adapter the factory builds, and is reported to the
+    interface as a fact the backend asserts rather than a constant the frontend carries. It
+    defaults to SIMULATION and, with no live driver registered, LIVE and HYBRID currently refuse
+    to start rather than pretending — which is the honest behaviour for a system that has the
+    seam but not yet the hardware.
     """
     clock = SystemClock()
     geometry = load_site_geometry(site)
     resolved = data_dir or ConfigPaths.default().repo_root / "data"
 
     pipeline = Pipeline(clock, geometry, resolved)
-    if scenario:
-        pipeline.attach_scenario(scenario)
+
+    # Sources are attached whenever the mode calls for any, not only when a scenario was named:
+    # a LIVE or HYBRID run has real sensors to start with no scenario in sight, and the previous
+    # "attach only if a scenario was given" rule would have left them unbuilt.
+    #
+    # SIMULATION with no scenario is the one case that deliberately skips both. It is
+    # `--no-scenario`: an idle system serving the interface over an empty log, which is a
+    # documented way to look at the application and not a claim that anything is being watched.
+    # `guard_sources` would refuse it for having no adapters, and would be right about a
+    # deployment and wrong about this.
+    if scenario is not None or run_mode is not RunMode.SIMULATION:
+        pipeline.attach_sources(run_mode, scenario)
+        guard_sources(run_mode, pipeline.sources)
 
     services = ApiServices(
         clock=clock,
@@ -309,11 +423,12 @@ def build_application(
         alerts=pipeline.alerting,
         classification_running=True,
         situation=pipeline.risk,
-        run_mode=RunMode.SIMULATION,
+        run_mode=run_mode,
+        sources=pipeline.sources,
     )
 
     app = create_app(services)
-    _attach_pipeline_task(app, pipeline, scenario, tick_s)
+    _attach_pipeline_task(app, pipeline, tick_s)
 
     # After the routers, so the interface's catch-all can only ever match paths the API did
     # not claim.
@@ -321,13 +436,18 @@ def build_application(
     return app
 
 
-def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s: float) -> None:
+def _attach_pipeline_task(app, pipeline: Pipeline, tick_s: float) -> None:
     """Run the pipeline on the event loop for as long as the server is up.
 
     Composed into the application's existing lifespan rather than registered with
     `@app.on_event`. FastAPI **silently ignores** startup and shutdown handlers when a
     lifespan context is supplied, and `create_app` supplies one — so the on_event form
     registers cleanly, runs never, and gives no indication of either.
+
+    The loop runs whenever *any* adapter is attached, rather than only when a scenario was
+    named. A LIVE or HYBRID deployment has real sensors and no scenario at all, and the
+    scenario-only condition this replaced would have served their detections to nobody: the
+    adapters would have been started and never polled.
     """
     existing_lifespan = app.router.lifespan_context
 
@@ -339,7 +459,7 @@ def _attach_pipeline_task(app, pipeline: Pipeline, scenario: str | None, tick_s:
         async with existing_lifespan(scope_app):
             handle: asyncio.Task | None = None
 
-            if scenario:
+            if pipeline.sources.adapters:
 
                 async def run() -> None:
                     consecutive_failures = 0
@@ -399,6 +519,17 @@ def main() -> None:
     )
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument(
+        "--mode",
+        default=RunMode.SIMULATION.value,
+        choices=[mode.value for mode in RunMode],
+        help=(
+            "which kinds of sensor adapter to build: 'simulation' builds only simulated "
+            "sensors, 'live' only real ones, 'hybrid' both. LIVE and HYBRID need a registry "
+            "entry of kind 'live' whose driver is registered, and the process refuses to start "
+            "in LIVE mode with nothing real attached."
+        ),
+    )
+    parser.add_argument(
         "--behind-proxy",
         action="store_true",
         help=(
@@ -417,13 +548,20 @@ def main() -> None:
     arguments = parser.parse_args()
 
     authenticated = not arguments.no_auth
-    app = build_application(
-        site=arguments.site,
-        scenario=arguments.scenario,
-        data_dir=arguments.data_dir,
-        tick_s=arguments.tick,
-        authenticated=authenticated,
-    )
+    try:
+        app = build_application(
+            site=arguments.site,
+            scenario=arguments.scenario,
+            data_dir=arguments.data_dir,
+            tick_s=arguments.tick,
+            authenticated=authenticated,
+            run_mode=RunMode(arguments.mode),
+        )
+    except (StartupRefused, AdapterFactoryError) as refusal:
+        # Both are configuration problems with an operator-readable explanation attached, and
+        # both are worth failing on rather than starting degraded. A stack trace would bury the
+        # sentence that says what to change.
+        raise SystemExit(f"\n  {refusal}\n") from refusal
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.

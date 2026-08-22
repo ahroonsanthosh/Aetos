@@ -16,48 +16,29 @@ in the adapter is what makes it reviewable.
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from sensors.adapters.capabilities import Coverage
 from sensors.schemas.detection import ClassificationLabel, SensorType
 
 SENSOR_MODEL_SCHEMA_VERSION = "1.0.0"
 
+__all__ = [
+    "SENSOR_MODEL_SCHEMA_VERSION",
+    "ClassificationConfusion",
+    "ConfidenceModel",
+    "Coverage",
+    "RadialVelocityModel",
+    "SensorModel",
+    "Uncertainty",
+]
 
-class Coverage(BaseModel):
-    """What the sensor can see, geometrically. Outside this, no detection is produced.
-
-    Elevation bounds are angles above the horizontal *at the sensor*, so a sensor mounted on a
-    mast still cannot see an object directly overhead unless its upper bound says it can. This
-    is the field that stops a wide-area sensor from implausibly detecting an object hovering
-    on top of it.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    max_range_m: float = Field(gt=0.0)
-    min_range_m: float = Field(default=0.0, ge=0.0)
-    """Blind zone. A real pulsed sensor cannot resolve returns closer than its own pulse
-    length, and a scenario that flies an object over the sensor should exercise that."""
-
-    azimuth_extent_deg: float = Field(gt=0.0, le=360.0)
-    """Total width of the azimuth sector, centred on the placement's boresight. 360 means full
-    azimuthal coverage, in which case boresight is meaningless and is ignored."""
-
-    elevation_min_deg: float = Field(ge=-90.0, le=90.0)
-    elevation_max_deg: float = Field(ge=-90.0, le=90.0)
-
-    @model_validator(mode="after")
-    def _bounds_are_ordered(self) -> Coverage:
-        if self.min_range_m >= self.max_range_m:
-            raise ValueError("min_range_m must be below max_range_m")
-        if self.elevation_min_deg >= self.elevation_max_deg:
-            raise ValueError("elevation_min_deg must be below elevation_max_deg")
-        return self
-
-    @property
-    def has_full_azimuth(self) -> bool:
-        return self.azimuth_extent_deg >= 360.0
+# `Coverage` is re-exported rather than defined here. It moved to `sensors/adapters/capabilities`
+# when live adapters arrived, because coverage is something *every* source declares — the
+# geometry of what a sensor can see is not a simulation parameter, and a live adapter needing it
+# must not have to import from the simulated package to get it.
 
 
 class Uncertainty(BaseModel):
@@ -112,8 +93,9 @@ class RadialVelocityModel(BaseModel):
 
     Unlike speed and heading, range rate is a quantity a Doppler-capable sensor genuinely
     measures, which is why the canonical schema carries it as its own field. The simulated
-    adapter still marks what it emits as `simulated_truth`, because however much noise is
-    applied the number originates in the simulator's own state. See the adapter for why.
+    adapter noises what it emits and marks it `measured`, exactly as a real Doppler adapter
+    would mark the same quantity — provenance records how a value was produced, not which
+    process produced it. See the adapter's module docstring for the full reasoning.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -163,6 +145,15 @@ class SensorModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: str = SENSOR_MODEL_SCHEMA_VERSION
+
+    kind: Literal["simulated"]
+    """Registry discriminator, pinned by type rather than imported from the loader.
+
+    A `Literal` rather than the loader's enum keeps the dependency pointing one way: the
+    registry knows about both kinds of entry, and neither kind needs to know about the
+    registry. Required, never defaulted — see `sensors/adapters/registry.py` for why an
+    undeclared discriminator is the one failure this loader must not have."""
+
     registry_key: str = Field(min_length=1, max_length=64)
     sensor_type: SensorType
     description: str = Field(min_length=1, max_length=512)

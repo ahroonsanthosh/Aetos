@@ -326,15 +326,50 @@ async def list_sensors(
     services: ServicesDep,
     site_id: Annotated[str | None, Query()] = None,
 ) -> SensorListResponse:
-    """Configured sensors and where they are.
+    """Configured sensors, where they are, and whether they are running.
 
-    Placement only. Whether a sensor is currently healthy, degraded or silent is
-    `backend/system_health`'s answer and that module does not exist, so no health field is
-    reported — a green light nothing computes is worse than no light.
+    Whether a *running* sensor has gone silent is `backend/system_health`'s answer and that
+    module does not exist, so no health field is reported — a green light nothing computes is
+    worse than no light.
+
+    Whether a sensor was **started at all** is a different question, and one the backend can
+    answer from a fact it holds rather than a status it would have to invent: the adapter
+    factory either built the placement or recorded why it did not. A live-fitted site running a
+    training scenario, or a bench test of one real sensor, legitimately starts fewer adapters
+    than the site defines — and the operator has to be able to see which, or a deliberate
+    coverage gap is indistinguishable from a smaller site.
     """
     records = services.sensors.list_all(site_id=site_id)
+    skipped = {s.sensor_id: s.reason for s in services.skipped_sources()}
+    running = services.running_sensor_ids()
+
+    # Running is decided by adapter membership, never by the absence of a skip reason. There are
+    # three ways a configured placement ends up not running and only one of them leaves a
+    # reason behind: disabled in the site document (never reaches the factory), skipped by the
+    # run mode (reason recorded), or no sources attached at all (an idle system, where there are
+    # neither adapters nor reasons). Reading "no reason" as "running" reports the whole site as
+    # live on a system polling nothing, which is the exact failure this column exists to stop.
+    def _status(record) -> tuple[bool | None, str | None]:
+        if running is None:
+            return None, None
+        if record.sensor_id in running:
+            return True, None
+        if not record.enabled:
+            return False, "disabled in the site configuration"
+        return False, skipped.get(
+            record.sensor_id, "no sensor sources are attached to this pipeline"
+        )
+
+    sensors = []
+    for record in records:
+        started, reason = _status(record)
+        sensors.append(
+            SensorView.from_record(record, started=started, not_started_reason=reason)
+        )
     return SensorListResponse(
-        sensors=[SensorView.from_record(r) for r in records], count=len(records)
+        sensors=sensors,
+        count=len(sensors),
+        running_count=sum(1 for s in sensors if s.started),
     )
 
 

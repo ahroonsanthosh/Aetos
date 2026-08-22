@@ -73,6 +73,24 @@
   line-height: 1.6;
 }
 
+/* A note that states a gap between what was configured and what is running. Coloured and ruled
+   rather than muted, because it says the operator's coverage is smaller than the site document
+   describes — which is exactly the kind of fact that must not read as boilerplate. */
+.page__note--warning {
+  color: var(--status-warning);
+  border-left: 2px solid var(--status-warning);
+  padding-left: var(--space-3);
+}
+
+.panel__title {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
 .panel {
   background: var(--surface-panel);
   border: 1px solid var(--line-subtle);

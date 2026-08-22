@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.1.0",
+  "kind": "live",
+  "registry_key": "ld2451_uart",
+  "sensor_type": "radar",
+  "description": "24GHz FMCW ranging module on a 3.3V TTL UART. Range and azimuth only, no elevation channel, so altitude is assumed and marked as such (ADR 0019). Vehicle-tuned detection threshold: coverage against small airframes is UNVERIFIED and every figure marked unconfirmed below must be measured before this is trusted. No driver is registered yet, so referencing this key from a site will refuse to start.",
+
+  "coverage": {
+    "max_range_m": 100.0,
+    "min_range_m": 0.5,
+    "azimuth_extent_deg": 40.0,
+    "elevation_min_deg": -15.0,
+    "elevation_max_deg": 15.0
+  },
+
+  "timing": {
+    "update_rate_hz": 10.0,
+    "max_latency_ms": 50.0,
+    "timestamp_uncertainty_ms": 50.0
+  },
+
+  "accuracy": {
+    "position_uncertainty_m": 15.5,
+    "reference_range_m": 100.0,
+    "angular_uncertainty_mrad": 155.0,
+    "anisotropy_ratio": 15.5,
+    "reports_covariance": true
+  },
+
+  "dimensions": {
+    "reports_range": true,
+    "reports_bearing": true,
+    "reports_elevation": false,
+    "reports_altitude": false,
+    "reports_radial_velocity": true
+  },
+
+  "classifies": false,
+  "coverage_validated": false,
+
+  "driver": "ld2451_uart",
+  "driver_config": {
+    "port": "/dev/ttyUSB0",
+    "baud_rate": 115200,
+    "baud_rate_candidates": [115200, 256000],
+    "vertical_aperture_deg": 30.0,
+    "range_sigma_m": 1.0,
+    "azimuth_sigma_deg": 3.0,
+    "plausibility": {
+      "max_azimuth_deg": 25,
+      "min_distance_m": 0,
+      "max_distance_m": 100,
+      "max_speed_kmh": 80,
+      "min_snr": 0,
+      "max_snr": 100,
+      "max_targets": 10
+    }
+  }
+}

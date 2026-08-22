@@ -51,6 +51,14 @@ from datetime import datetime
 from backend.common.clock import Clock
 from backend.common.geodesy import EnuPoint, LocalFrame
 from backend.common.identifiers import detection_id_generator
+from sensors.adapters.capabilities import (
+    AccuracyDeclaration,
+    DimensionsDeclaration,
+    SensorCapabilities,
+    TimingDeclaration,
+    TransportDeclaration,
+    TransportIntegrity,
+)
 from sensors.adapters.interface import (
     SensorAdapter,
     SensorAdapterError,
@@ -180,6 +188,88 @@ class SimulatedSensorAdapter(SensorAdapter):
             last_detection_time=self._last_detection_time,
             detections_emitted=self._detections_emitted,
             reason=reason,
+        )
+
+    def capabilities(self) -> SensorCapabilities:
+        """Declare this sensor as its model describes it, with nothing rounded in its favour.
+
+        Every figure here is read from the `SensorModel` the adapter actually degrades truth
+        through, not restated alongside it. A declaration derived from a second copy of the
+        numbers would drift from the behaviour it claims to describe, which is the failure this
+        whole mechanism exists to catch — arriving in the one adapter that should be beyond
+        suspicion.
+
+        The simulated adapter is held to the same contract as a real one deliberately. It is the
+        conformance suite's first subject, and a suite whose only subject was exempt from the
+        rules it enforces would be measuring nothing (ADR 0017).
+        """
+        model = self._model
+        coverage = model.coverage
+        uncertainty = model.uncertainty
+
+        # The declared figure must not be optimistic anywhere in the coverage volume, so the
+        # range-independent part is the *worst* of the three axes rather than the cross-range
+        # one. Vertical error dominates at short range for most of these profiles, and a
+        # declaration built from the cross-range floor alone would understate the sensor close
+        # in — precisely the direction the adapter contract forbids.
+        floor_sigma = max(
+            uncertainty.range_sigma_m,
+            uncertainty.cross_range_sigma_m,
+            uncertainty.vertical_sigma_m,
+        )
+        angular_term_m = coverage.max_range_m * uncertainty.cross_range_sigma_mrad * 1e-3
+
+        sigmas_at_max_range = (
+            uncertainty.range_sigma_m,
+            uncertainty.cross_range_sigma_at_m(coverage.max_range_m),
+            uncertainty.vertical_sigma_m,
+        )
+        positive_sigmas = [sigma for sigma in sigmas_at_max_range if sigma > 0.0]
+        smallest = min(positive_sigmas) if positive_sigmas else 0.0
+
+        return SensorCapabilities(
+            sensor_id=self.sensor_id,
+            sensor_type=self.sensor_type,
+            description=model.description,
+            coverage=coverage,
+            timing=TimingDeclaration(
+                update_rate_hz=model.update_rate_hz,
+                # An in-process source observes and reports within the same call, and its
+                # timestamp comes from the injected clock at the instant of observation. Both
+                # are genuinely zero rather than merely small — which is exactly why a
+                # simulated sensor is not a useful proxy for a real one's timing behaviour, and
+                # why the specification names timestamp accuracy as its own requirement.
+                max_latency_ms=0.0,
+                timestamp_uncertainty_ms=0.0,
+            ),
+            accuracy=AccuracyDeclaration(
+                position_uncertainty_m=math.hypot(floor_sigma, angular_term_m),
+                reference_range_m=coverage.max_range_m,
+                angular_uncertainty_mrad=uncertainty.cross_range_sigma_mrad,
+                anisotropy_ratio=(
+                    max(sigmas_at_max_range) / smallest if smallest > 0.0 else 1.0
+                ),
+                reports_covariance=True,
+            ),
+            dimensions=DimensionsDeclaration(
+                reports_range=True,
+                reports_bearing=True,
+                reports_elevation=True,
+                reports_altitude=True,
+                reports_radial_velocity=model.radial_velocity.reported,
+            ),
+            transport=TransportDeclaration(
+                kind="simulated",
+                # No wire exists. Detections are constructed in this process and handed
+                # straight to the caller, so there is nothing between observation and delivery
+                # that could corrupt a value.
+                integrity=TransportIntegrity.VERIFIED,
+            ),
+            classifies=model.classification is not None,
+            # The simulator's coverage is not a datasheet claim to be checked against reality —
+            # it is the definition the adapter enforces, and `_geometry` returns nothing outside
+            # it. This is the one source for which the flag is true by construction.
+            coverage_validated=True,
         )
 
     def get_detections(self) -> list[Detection]:

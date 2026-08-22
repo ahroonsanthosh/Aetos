@@ -33,6 +33,7 @@ from backend.database.repositories import (
 )
 from backend.events.store import EventStore
 from backend.risk.correlation import SituationAssessment
+from sensors.adapters.factory import AdapterSet, SkippedPlacement
 
 
 @dataclass(frozen=True)
@@ -115,15 +116,49 @@ class ApiServices:
     and a frontend-side toggle would let synthetic data be presented as real by editing one
     line."""
 
+    sources: AdapterSet | None = None
+    """The adapters actually feeding the pipeline, and the configured placements that were not
+    built.
+
+    Optional because a test may build an API over a bare projection with no pipeline behind it.
+    None means *nothing told the API what is attached*, which is reported as such rather than as
+    zero real adapters — the two are different claims, and the second one is a statement this
+    object would have no basis for.
+    """
+
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
-        Structurally zero: no real sensor adapter integration exists in this build, and there
-        is no adapter registry for the API to consult. Written as a method returning a
-        computed zero rather than a literal so that wiring in a registry later changes one
-        implementation instead of every caller that assumed the answer.
+        Read from the attached `AdapterSet` rather than computed from the configured mode. The
+        two can disagree, and that disagreement is precisely what an operator needs to see: an
+        environment declaring LIVE with nothing attached is a misconfiguration, not a claim the
+        API should launder into a mode string.
+
+        Zero when nothing is attached at all, which is also the answer for an API built over a
+        bare projection. `sources is None` is reported separately by the endpoints that care —
+        this method answers the count, and the count is genuinely zero either way.
         """
-        return 0
+        return self.sources.live_count if self.sources is not None else 0
+
+    def skipped_sources(self) -> tuple[SkippedPlacement, ...]:
+        """Placements that were configured and deliberately not started, with reasons.
+
+        The difference between the site document and what is running. Reported rather than
+        dropped: an absent sensor and a sensor that was never configured look identical in a
+        list that only shows what started, and the operator would read a coverage gap as a
+        smaller site.
+        """
+        return self.sources.skipped if self.sources is not None else ()
+
+    def running_sensor_ids(self) -> frozenset[str] | None:
+        """Which sensors are feeding the pipeline, or None when nothing told the API.
+
+        Read from adapter membership rather than from the absence of a skip reason. An
+        `AdapterSet` that was never populated — an idle system started with no scenario — has
+        neither adapters nor reasons, and inferring "running" from a missing reason would have
+        the sensors page report every configured sensor as running while none was.
+        """
+        return self.sources.running_ids if self.sources is not None else None
 
 
 class AlertSource(Protocol):

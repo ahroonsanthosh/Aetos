@@ -18,7 +18,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Semantic version of this schema. Bump minor for backwards-compatible additions, major for
 # breaking changes. Every Detection carries the version it was produced under so that a
 # future adapter written against an older version remains identifiable.
-DETECTION_SCHEMA_VERSION = "1.0.0"
+#
+# 1.1.0 added `GeoPosition.altitude_source` (ADR 0019). Additive and defaulted, so every
+# detection written under 1.0.0 — including everything already in the event log — reads back
+# with the correct meaning and no adapter had to change.
+DETECTION_SCHEMA_VERSION = "1.1.0"
 
 
 class SensorType(StrEnum):
@@ -64,6 +68,35 @@ class Provenance(StrEnum):
     tracker does not depend on it, and so operators can never be shown it as fact."""
 
 
+class AltitudeSource(StrEnum):
+    """Where a detection's altitude came from.
+
+    Separate from `Provenance` deliberately. `Provenance` marks how an *inferred* block —
+    kinematics, classification — came to hold its value, and the classification module weights
+    by it (ADR 0012); adding an altitude concept there would put a value into that weighting
+    that means nothing in it, and would attach altitude to two blocks that have no altitude.
+
+    Exists because `altitude_m` is required and many real sensors do not measure it. A
+    range-and-bearing sensor with no elevation channel must still populate the field, and the
+    figure it puts there is an assumption. Without this marker there is no way to tell that
+    apart from a measurement, and the operator interface would render both identically — which
+    is precisely what ADR 0011 forbids. See ADR 0019.
+    """
+
+    MEASURED = "measured"
+    """The sensor has an elevation channel and this altitude came from it."""
+
+    DERIVED = "derived"
+    """Computed by the adapter from that sensor's own measurements — a stereo pair, a
+    rangefinder combined with a depression angle."""
+
+    ASSUMED = "assumed"
+    """The sensor cannot measure altitude. The figure is the adapter's stated assumption, and
+    the vertical variance in `position_covariance_enu` says how little it is worth.
+
+    Must never be rendered as a measured figure."""
+
+
 class ClassificationLabel(StrEnum):
     """The closed set of labels any source or the classification module may assert."""
 
@@ -100,6 +133,18 @@ class GeoPosition(BaseModel):
     latitude: float = Field(ge=-90.0, le=90.0)
     longitude: float = Field(ge=-180.0, le=180.0)
     altitude_m: float
+
+    altitude_source: AltitudeSource = AltitudeSource.MEASURED
+    """Whether `altitude_m` was measured, derived, or assumed because the source cannot measure
+    it at all (ADR 0019).
+
+    Defaults to `measured`, which is what makes this a backwards-compatible addition: every
+    adapter written against schema 1.0.0, and every detection already in the event log, keeps
+    its existing meaning without modification.
+
+    Per-detection rather than per-sensor because a source can genuinely have both — a camera
+    with a rangefinder, a radar with an intermittent elevation channel — and a per-sensor flag
+    alone would force such a source to declare the pessimistic answer permanently."""
 
 
 class Kinematics(BaseModel):

@@ -9,9 +9,31 @@ they live here, are validated against Pydantic models at load, and fail loudly w
 |---|---|---|
 | `sites/` | Protected geography: reference point, zones, sensor placements | `backend/zones/site.py` |
 | `environments/` | Run mode, which site, event store path, queue and risk tuning | `backend/common/config.py` |
-| `sensor_registry/` | Detection characteristics per sensor model | owned by the sensor layer |
+| `sensor_registry/` | What each sensor model is, per model | owned by the sensor layer |
 
 Each directory documents its own format in its own README.
+
+## Two kinds of registry entry
+
+Every document in `sensor_registry/` declares a required `kind`, and the two kinds mean entirely
+different things:
+
+- **`"simulated"`** — simulation parameters. Noise, dropout, false-alarm rate, classification
+  confusion. None of it is a measurement of, a specification for, or a claim about any real
+  device; it is what the simulated adapter degrades ground truth through (ADR 0002).
+- **`"live"`** — claims about real hardware. Declared coverage, timing, accuracy and which
+  dimensions the device actually measures, plus the driver that talks to it. This is the
+  declaration a customer was shown, and the conformance suite measures the adapter against it
+  (ADR 0017).
+
+`kind` is required rather than defaulted. An undeclared discriminator would be read as the more
+permissive kind, and a live sensor loaded as simulated would run with a simulator's probability
+of detection quietly applied to it — with nothing to say so.
+
+Transport integrity is deliberately **not** in a live document. The residual corruption
+probability of a checksumless link is a property of the frame layout and the configured
+plausibility envelope, so it is computed by the decoder rather than asserted in a file
+(ADR 0018).
 
 ## How loading works
 

@@ -207,19 +207,29 @@ export interface SensorView {
   sensor_id: string
   site_id: string
   registry_key: string
-  /** Null when the backend has not established the sensor's type. The registry entry that
-   *  would state it has no loader behind the repository layer, and the backend leaves the
-   *  field null rather than inventing one — so the interface must render its absence. */
+  /** Null when the registry does not define this placement's key — which is a configuration
+   *  problem worth rendering as such, not a value to guess at. */
   sensor_type: string | null
   position: GeoPointView
   height_m: number
   boresight_deg: number
   enabled: boolean
+  /** Whether this source is synthetic. Null when the type is unknown; the interface must not
+   *  resolve that either way, because reading an unknown source as real is the worse error. */
+  simulated: boolean | null
+  /** Whether an adapter was built and started for this placement. Null means nothing told the
+   *  backend what is attached, which is rendered as unknown rather than as not running. */
+  started: boolean | null
+  /** Why it is not running, when it is not. Always present alongside `started === false`. */
+  not_started_reason: string | null
 }
 
 export interface SensorListResponse {
   sensors: SensorView[]
   count: number
+  /** How many are actually feeding the pipeline. Differs from `count` whenever a placement was
+   *  configured and deliberately not started, which is the case worth seeing. */
+  running_count: number
 }
 
 export type ZoneKind = 'monitored' | 'restricted' | 'protected'

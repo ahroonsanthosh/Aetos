@@ -419,11 +419,17 @@ class AlertListResponse(BaseModel):
 
 
 class SensorView(BaseModel):
-    """A sensor's placement and whether it is enabled.
+    """A sensor's placement, whether it is enabled, and whether it is actually running.
 
-    Note what is missing: operational health. Whether a sensor has gone silent belongs to
-    `backend/system_health`, which does not exist. Reporting a health field here would report
-    a status nothing computes.
+    Note what is still missing: operational health. Whether a running sensor has *gone silent*
+    belongs to `backend/system_health`, which does not exist, and a green light nothing computes
+    is worse than no light.
+
+    `started` is a different question and one the backend can answer from a fact it holds: the
+    adapter factory either built this placement or recorded why it did not. Reporting it is what
+    stops the sensors page silently disagreeing with the site document — a configured sensor
+    that was never started must not render the same as one that is running, and the difference
+    reads as a smaller site rather than as a coverage gap.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -437,17 +443,38 @@ class SensorView(BaseModel):
     boresight_deg: float
     enabled: bool
 
+    simulated: bool | None = None
+    """Whether this source is synthetic. None when the registry did not define its type, which
+    is itself a configuration problem worth showing rather than defaulting either way."""
+
+    started: bool | None = None
+    """Whether an adapter was built and started for this placement. None means nothing told the
+    API what is attached — a test harness over a bare projection — which is reported as unknown
+    rather than as false."""
+
+    not_started_reason: str | None = None
+    """Why it was not started, when it was not. Always populated alongside `started = False`."""
+
     @classmethod
-    def from_record(cls, record: SensorRecord) -> SensorView:
+    def from_record(
+        cls,
+        record: SensorRecord,
+        *,
+        started: bool | None = None,
+        not_started_reason: str | None = None,
+    ) -> SensorView:
         return cls(
             sensor_id=record.sensor_id,
             site_id=record.site_id,
             registry_key=record.registry_key,
             sensor_type=str(record.sensor_type) if record.sensor_type else None,
+            simulated=record.sensor_type.is_simulated if record.sensor_type else None,
             position=GeoPointView(latitude=record.latitude, longitude=record.longitude),
             height_m=record.height_m,
             boresight_deg=record.boresight_deg,
             enabled=record.enabled,
+            started=started,
+            not_started_reason=not_started_reason,
         )
 
 
@@ -456,6 +483,10 @@ class SensorListResponse(BaseModel):
 
     sensors: list[SensorView]
     count: int
+
+    running_count: int = 0
+    """How many of them are actually feeding the pipeline. Reported separately from `count`
+    because the two differing is the thing worth noticing."""
 
 
 class CircleGeometryView(BaseModel):

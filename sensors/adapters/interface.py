@@ -22,6 +22,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.common.clock import Clock
+from sensors.adapters.capabilities import SensorCapabilities
 from sensors.schemas.detection import Detection, SensorType
 
 
@@ -168,3 +169,23 @@ class SensorAdapter(ABC):
     @abstractmethod
     def health(self) -> SensorHealth:
         """Current self-report. Cheap to call — the watchdog polls it on every cycle."""
+
+    @abstractmethod
+    def capabilities(self) -> SensorCapabilities:
+        """What this source *is*, as against what it is currently doing.
+
+        Coverage, timing, accuracy, which dimensions it genuinely measures, and how trustworthy
+        the link carrying its data is. Static for the life of a run and available before the
+        adapter has been started, so a customer can be shown what a sensor will contribute
+        before anything is connected.
+
+        Deliberately separate from `health()`. Capability answers *what can this sensor do*;
+        health answers *is it doing it right now*. Folding them together would make a declared
+        specification appear to change when a cable came loose.
+
+        The declaration is the basis on which `sensors/adapters/conformance/` decides which
+        floor a source reaches. Declaring optimistically is the single most damaging thing an
+        adapter can do — the filter uses reported uncertainty as its gain — which is why the
+        contract is framed as honesty rather than accuracy. See ADR 0017 and
+        `docs/sensor_interface_specification.md`.
+        """

@@ -136,20 +136,84 @@ def test_no_effector_or_weapons_vocabulary_in_the_codebase() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "vendor_term",
-    ["echodyne", "dedrone", "robin radar", "sentrion", "aaronia", "hensoldt"],
-)
-def test_no_sensor_vendor_names_in_the_codebase(vendor_term: str) -> None:
+DRIVER_PACKAGES = SENSORS / "adapters"
+"""Where a driver package may live, and the only place a model or manufacturer name may appear.
+
+A driver's whole job is to know about one piece of hardware, so a blanket ban on naming it was
+never enforceable once a real one existed — the first live adapter would have had to either
+violate the rule or disguise what it talks to, and a driver whose name does not say what it
+drives is worse for a reader than one that does.
+
+The property actually worth enforcing is **containment**, which is stronger and is what the
+architecture always meant: vendor knowledge may exist in exactly one directory per device, and
+nowhere else in `backend/` or `sensors/`. That is checkable, and the check below is what stops
+`backend/tracking` acquiring a special case for a particular radar.
+"""
+
+VENDOR_TERMS = [
+    # Third-party systems the architecture must never appear to depend on. None of these is
+    # integrated; they are here so that adding one cannot happen quietly.
+    "echodyne",
+    "dedrone",
+    "robin radar",
+    "sentrion",
+    "aaronia",
+    "hensoldt",
+    # Hardware Aetos does drive. Permitted inside its own driver package and nowhere else.
+    "hi-link",
+    "hilink",
+    "ld2451",
+    "ld2450",
+    "paradisetronic",
+    "cp2102",
+]
+
+
+def _driver_package_of(source: Path) -> Path | None:
+    """The driver package a file belongs to, or None if it is not inside one.
+
+    A driver package is an immediate child directory of `sensors/adapters/`. Nesting deeper is
+    still contained, so the whole subtree of a driver counts as that driver.
+    """
+    try:
+        relative = source.relative_to(DRIVER_PACKAGES)
+    except ValueError:
+        return None
+    return DRIVER_PACKAGES / relative.parts[0] if len(relative.parts) > 1 else None
+
+
+@pytest.mark.parametrize("vendor_term", VENDOR_TERMS)
+def test_vendor_names_are_confined_to_their_own_driver_package(vendor_term: str) -> None:
     """The system must never depend on, or appear to depend on, a particular manufacturer.
 
-    A vendor name appearing anywhere in the source is a signal that vendor-specific
-    behaviour has leaked past the adapter boundary, which is where it must stay.
-    """
-    violations = [
-        str(source.relative_to(REPO_ROOT))
-        for source in _python_sources(BACKEND, SENSORS)
-        if source.name != "test_module_boundaries.py" and vendor_term in source.read_text().lower()
-    ]
+    A vendor or model name outside a driver package is a signal that hardware-specific
+    behaviour has leaked past the adapter boundary, which is where it must stay. Inside one it
+    is simply what a driver is.
 
-    assert not violations, f"vendor name {vendor_term!r} appears in: {violations}"
+    The failure this is aimed at is not a driver that names its hardware. It is `backend/risk`
+    acquiring a threshold that only makes sense for one radar, or `backend/api` branching on a
+    model number — each of which starts as one line and is invisible in review.
+    """
+    violations: list[str] = []
+
+    for source in _python_sources(BACKEND, SENSORS):
+        if source.name == "test_module_boundaries.py":
+            continue
+        if vendor_term not in source.read_text().lower():
+            continue
+
+        package = _driver_package_of(source)
+        if package is not None and package.name.lower().replace("_", "") in vendor_term.replace(
+            "-", ""
+        ):
+            # Named inside the driver package that exists to drive it. That is containment
+            # working, not a violation.
+            continue
+
+        violations.append(str(source.relative_to(REPO_ROOT)))
+
+    assert not violations, (
+        f"vendor or model name {vendor_term!r} appears outside its own driver package, in: "
+        f"{violations}. Hardware knowledge belongs in one directory under sensors/adapters/ and "
+        "nowhere else — see docs/sensor_interface_specification.md section 10."
+    )

@@ -24,9 +24,9 @@ from backend.tracking.track_manager.manager import IncomingDetection, TrackManag
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all, load_scenario, scenario_files
 from scenarios.world import ScenarioWorld
+from sensors.adapters.registry import load_sensor_registry
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
-from sensors.adapters.simulated.registry import load_sensor_registry
-from sensors.schemas.detection import Detection
+from sensors.schemas.detection import DETECTION_SCHEMA_VERSION, Detection
 
 EPOCH = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
 SITE_NAME = "fictional_test_range"
@@ -302,7 +302,7 @@ def test_detections_carry_the_canonical_schema_version(
         clock.advance(0.5)
 
     assert emitted
-    assert all(d.schema_version == "1.0.0" for d in emitted)
+    assert all(d.schema_version == DETECTION_SCHEMA_VERSION for d in emitted)
     assert all(d.sensor.sensor_type.is_simulated for d in emitted)
 
 

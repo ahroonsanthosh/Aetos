@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0.0",
+  "kind": "simulated",
   "registry_key": "sim_eo_ir_narrow",
   "sensor_type": "simulated_eo_ir",
   "description": "Generic narrow-field simulated electro-optical/infrared sensor. Very precise in bearing and poor in range, the inverse of the radar profile. Classifies with a vision model, so it reports a label with a confusion model. Simulation parameters only.",

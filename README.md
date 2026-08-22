@@ -39,7 +39,7 @@ a single combined pipeline function.
 
 | Path | Responsibility |
 |---|---|
-| `docs/` | Architecture, canonical schema, failure modes, decision records |
+| `docs/` | Architecture, canonical schema, sensor interface specification, failure modes, decision records |
 | `backend/common/` | Cross-cutting primitives: clock, geodesy, identifiers, config |
 | `backend/ingestion/` | Detection validation and normalisation; event-bus entry point |
 | `backend/tracking/` | Association, filtering, lifecycle, prediction |
@@ -52,7 +52,7 @@ a single combined pipeline function.
 | `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, simulated adapter, real-sensor stubs |
+| `sensors/` | `SensorAdapter` contract, capability declaration, conformance suite, adapter factory, simulated adapter, one device wire codec |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
@@ -103,6 +103,43 @@ docker compose up      # then http://localhost:8000
 pytest -q                      # backend
 cd frontend && npm test        # interface
 ```
+
+## Connecting your own sensors
+
+Aetos is hardware-agnostic, and that is meant as a checkable claim rather than a slogan. A
+customer connects the radar, cameras, RF sensors and ADS-B receiver they already own; they do
+not replace their infrastructure because they bought this.
+
+The system adds no error of its own and removes none — every stage propagates the uncertainty it
+was given rather than discarding it or replacing it with a convenient assumption. So the
+operator picture is exactly as good as the sensors feeding it, better sensors improve it the
+afternoon they are fitted, and the entry requirement is not accuracy but **honesty**:
+
+> Aetos does not require a good sensor. It requires a sensor that tells the truth about how
+> good it is.
+
+An honest 15-metre error is usable. A source claiming two metres and delivering fifteen is not,
+at any accuracy, because the filter believes it.
+
+What a source has to do is set out in
+**[docs/sensor_interface_specification.md](docs/sensor_interface_specification.md)** — three
+floors, one grade, and every threshold derived from the tracker's own tuning rather than written
+down. And it is a test result, not a claim:
+
+```bash
+python -m sensors.adapters.conformance                       # every sensor at the configured site
+python -m sensors.adapters.conformance --sensor radar_north  # just one
+```
+
+The suite reports the floor each source reaches, every requirement it failed, and — deliberately
+— every requirement it **could not check**. It establishes declared conformance and says so in
+those words: no test can determine that a sensor claiming three metres delivers it, and that is
+a measurement activity, not a software one.
+
+**No live sensor driver is registered yet.** The seam is finished and the hardware is not, so
+LIVE and HYBRID modes refuse to start rather than quietly falling back to the simulator. One
+device's wire codec is built and tested (`sensors/adapters/ld2451/`); its transport and adapter
+are not.
 
 ## Before you put this anywhere
 

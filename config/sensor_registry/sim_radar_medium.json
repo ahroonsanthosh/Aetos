@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0.0",
+  "kind": "simulated",
   "registry_key": "sim_radar_medium",
   "sensor_type": "simulated_radar",
   "description": "Generic medium-range simulated radar. Full azimuthal coverage, precise in range and imprecise in cross-range, reports range rate, does not classify. Simulation parameters only.",

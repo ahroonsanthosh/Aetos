@@ -25,6 +25,14 @@
 .sensor-table .is-enabled  { color: var(--status-nominal); }
 .sensor-table .is-disabled { color: var(--text-disabled); }
 
+/* Source provenance. REAL is deliberately the loud one: simulated is the safe default state and
+   the mistake worth making unmissable is synthetic data being read as real, never the reverse.
+   UNKNOWN carries the warning colour rather than the muted one, because a sensor whose type the
+   registry does not define is a configuration fault, not a quiet fact. */
+.sensor-table .is-simulated { color: var(--text-muted); }
+.sensor-table .is-real      { color: var(--status-nominal); font-weight: 600; }
+.sensor-table .is-unknown   { color: var(--status-warning); }
+
 .event-table__type { color: var(--text-primary); }
 
 .event-filter {

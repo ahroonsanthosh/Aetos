@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0.0",
+  "kind": "simulated",
   "registry_key": "sim_acoustic_short",
   "sensor_type": "simulated_acoustic",
   "description": "Generic short-range simulated acoustic array. Bearing is usable, range is barely estimated, and the false alarm rate is high because the environment is noisy. Classifies poorly and mostly coarsely. Simulation parameters only.",

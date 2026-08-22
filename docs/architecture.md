@@ -104,7 +104,7 @@ makes backend restart recoverable.
 | `backend/common` | Clock, geodesy, identifiers, config loading | Import any other backend module (ADR 0009) |
 | `backend/ingestion` | Validate, deduplicate, normalise, append to log | Make tracking decisions |
 | `backend/events` | Append-only log, sequence ordering, replay reads | Interpret payload meaning |
-| `backend/tracking` | Where things are: association, filtering, lifecycle, prediction | Decide what things are, or how dangerous |
+| `backend/tracking` | Where things are: association, filtering, lifecycle, prediction; and what it therefore requires of a sensor (`requirements.py`) | Decide what things are, or how dangerous |
 | `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
 | `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
@@ -122,18 +122,30 @@ touching the others.
 
 ## Run modes
 
-Three modes are designed for; only the first is built.
+Three modes, all three now real code paths. Which kinds of adapter get built is decided by
+`sensors/adapters/factory.py` from the registry, not by a branch in the pipeline.
 
-- **SIMULATION** — all detections synthetic. Current state.
-- **LIVE** — all detections from real sensor adapters. Not built. No real sensor integration
-  exists or is claimed.
-- **HYBRID** — real and simulated detections coexisting, for controlled testing against a
-  live baseline.
+| Mode | Simulated placements | Live placements |
+|---|---|---|
+| **SIMULATION** | built | skipped, and reported |
+| **LIVE** | skipped, and reported | built |
+| **HYBRID** | built | built |
 
 Because every source implements the same adapter interface and produces the same canonical
 Detection, mode selection is adapter registry configuration rather than a code path. Nothing
 downstream of ingestion is aware of which mode is running, except that sensor provenance is
 recorded on every detection.
+
+**No live sensor driver is registered yet**, so LIVE and HYBRID refuse to start rather than
+falling back to the simulator — `guard_sources` declines a LIVE run with no real adapter, on the
+grounds that every screen would say LIVE over synthetic data. The seam exists; the hardware does
+not. The LD2451 wire codec is built and tested (`sensors/adapters/ld2451/`); its transport and
+adapter are not.
+
+*Skipped, and reported* is load-bearing. A live-fitted site running a training scenario, or a
+bench test of one real sensor, legitimately starts fewer adapters than the site defines —
+`AdapterSet.skipped` carries every one with its reason, and `GET /sensors` reports it, because a
+configured sensor that was never started must not render the same as one that is running.
 
 ## Build order and current status
 
@@ -152,7 +164,7 @@ Per spec §20. Status updated as stages complete.
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
-| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
+| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface, capability declaration, conformance suite, adapter factory and run modes done (ADR 0017); one wire codec built and tested; no live adapter or transport yet |
 | 12 | Chaos hardening, degraded-mode UI states | not started |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
@@ -161,7 +173,14 @@ scores it from nine factors and hysteresis turns that into a level, decision tur
 into a recommendation for a human, alerting promotes the levels that warrant interrupting
 someone into alerts an operator can acknowledge, everything is recorded in the event log and
 projected into the database, and the API serves it to an interface that draws it. What is
-missing between here and a usable operator system is fusion.
+missing between here and a usable operator system is fusion, and a live sensor to feed it.
+
+The source boundary is finished in a way it was not before. Every adapter declares what it is
+(`SensorCapabilities`), the floors that declaration is measured against are computed from this
+module's own tuning rather than written down twice
+(`backend/tracking/requirements.py`), and `sensors/adapters/conformance/` turns
+"Aetos-compatible" into a command a customer's engineer can run against their own hardware. See
+`docs/sensor_interface_specification.md` and ADR 0017.
 
 Two of those stages produce values they do not own. Classification and risk each write their
 result back through the tracker, which holds it and carries it in the snapshot on every track
@@ -200,3 +219,6 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0014](adr/0014-optional-basemap.md) | An optional self-hosted basemap beneath the PPI |
 | [0015](adr/0015-alerting-as-promotion.md) | Alerting promotes risk levels; it does not assess |
 | [0016](adr/0016-authentication-and-authorisation.md) | Session authentication, three roles, and a startup guard |
+| [0017](adr/0017-sensor-capability-declaration.md) | Sensor capability declaration, and a compatibility floor that is a test result |
+| [0018](adr/0018-transport-integrity.md) | Transport integrity on links that have none |
+| [0019](adr/0019-assumed-altitude.md) | Altitude from sensors that do not measure it |
