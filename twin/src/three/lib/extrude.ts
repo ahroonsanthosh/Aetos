@@ -135,6 +135,59 @@ export function samplePerimeter(polygon: Ground[], spacing: number): Ground[] {
   return out;
 }
 
+/** Signed area of a ground polygon (shoelace formula). Positive for counter-clockwise. */
+export function polygonSignedArea(polygon: Ground[]): number {
+  let area = 0;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[j]!;
+    const b = polygon[i]!;
+    area += a.e * b.n - b.e * a.n;
+  }
+  return area / 2;
+}
+
+export interface FacadePoint {
+  point: Ground;
+  /** Outward unit normal, ground plane. */
+  normal: { e: number; n: number };
+}
+
+/**
+ * Evenly spaced points around a polygon's boundary, each carrying the outward-facing
+ * direction of the edge it sits on — for facade details (windows, cladding seams) that
+ * need to face away from the building, not just sit at a bare position.
+ *
+ * Winding-independent: outward is resolved from the polygon's own signed area, so a
+ * shape traced in whatever order the operator happened to click still faces its details
+ * away from the building instead of into it.
+ */
+export function sampleFacade(polygon: Ground[], spacing: number): FacadePoint[] {
+  const windingSign = Math.sign(polygonSignedArea(polygon)) || 1;
+  const out: FacadePoint[] = [];
+  let carry = 0;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[j]!;
+    const b = polygon[i]!;
+    const de = b.e - a.e;
+    const dn = b.n - a.n;
+    const length = Math.hypot(de, dn);
+    if (length === 0) continue;
+
+    const normal = { e: (windingSign * dn) / length, n: (-windingSign * de) / length };
+
+    for (let d = carry; d < length; d += spacing) {
+      const t = d / length;
+      out.push({ point: { e: a.e + de * t, n: a.n + dn * t }, normal });
+    }
+    // Carry the remainder into the next edge so spacing does not reset at every corner.
+    carry = (carry - length) % spacing;
+    if (carry < 0) carry += spacing;
+  }
+
+  return out;
+}
+
 /**
  * Ribbon geometry along a ground centreline, for roads.
  *

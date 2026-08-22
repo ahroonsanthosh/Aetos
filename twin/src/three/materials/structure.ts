@@ -77,6 +77,19 @@ export const roadMaterial = new MeshStandardMaterial({
   metalness: 0,
 });
 
+/**
+ * Window glazing on a generic building's facade. Faintly emissive, the same reasoning as
+ * `panelMaterial`: dead-flat glass at night reads as a missing texture, not as a window,
+ * but it stays well under bloom threshold since a building can carry dozens of these.
+ */
+export const glazingMaterial = new MeshStandardMaterial({
+  color: new Color('#0f2530'),
+  roughness: 0.3,
+  metalness: 0.1,
+  emissive: new Color('#1c4552'),
+  emissiveIntensity: 0.4,
+});
+
 /** Edge highlight colour used across all structures. */
 export const EDGE_COLOUR = palette.holoDim;
 export const EDGE_COLOUR_SELECTED = palette.holo;

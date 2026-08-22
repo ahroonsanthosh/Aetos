@@ -13,26 +13,45 @@
  *
  * Two shapes, depending on what the asset carries: a real traced or imported outline
  * (`footprintPolygon`) is extruded solid; anything with only a bounding `footprint` gets a
- * plain box, the same as the demo site's own hand-authored assets.
+ * plain box, the same as the demo site's own hand-authored assets. Either shape then gets
+ * `BuildingDetail` layered on top, at no cost to how the asset was authored — see that
+ * file for why.
  */
 
 import { useMemo } from 'react';
 import { Edges } from '@react-three/drei';
 import type { BufferGeometry } from 'three';
 
-import type { Asset } from '@/types';
+import type { Asset, Ground } from '@/types';
 import { EDGE_COLOUR, concreteMaterial } from '../materials/structure';
 import { extrudedPolygon } from '../lib/extrude';
+import { BuildingDetail } from './buildingDetail';
 import { Pad } from './parts';
 import { SelectableAsset } from './SelectableAsset';
 
 export function GenericAsset({ asset }: { asset: Asset }) {
   const { width, depth, height } = asset.footprint;
 
+  const polygon = asset.footprintPolygon;
+  const hasPolygon = !!polygon && polygon.length >= 3;
+
   const polygonGeometry = useMemo<BufferGeometry | null>(() => {
-    if (!asset.footprintPolygon || asset.footprintPolygon.length < 3) return null;
-    return extrudedPolygon(asset.footprintPolygon, height);
-  }, [asset.footprintPolygon, height]);
+    if (!hasPolygon) return null;
+    return extrudedPolygon(polygon!, height);
+  }, [hasPolygon, polygon, height]);
+
+  // The box variant sits on a raised pad; the polygon variant does not (see below). Detail
+  // is generated relative to "the building's own base", so it is wrapped at whichever
+  // height that base actually sits at, rather than baking the pad into every measurement.
+  const outline: Ground[] = hasPolygon
+    ? polygon!
+    : [
+        { e: -width / 2, n: -depth / 2 },
+        { e: width / 2, n: -depth / 2 },
+        { e: width / 2, n: depth / 2 },
+        { e: -width / 2, n: depth / 2 },
+      ];
+  const baseY = hasPolygon ? 0 : 0.25;
 
   return (
     <SelectableAsset asset={asset} ringRadius={Math.max(width, depth) * 0.62 + 6}>
@@ -51,6 +70,9 @@ export function GenericAsset({ asset }: { asset: Asset }) {
           </mesh>
         </>
       )}
+      <group position={[0, baseY, 0]}>
+        <BuildingDetail outline={outline} height={height} seed={asset.id} />
+      </group>
     </SelectableAsset>
   );
 }
