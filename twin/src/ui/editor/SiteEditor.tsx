@@ -305,24 +305,27 @@ export function SiteEditor() {
       };
       setImageCalibration(calibration);
 
-      const corners = [
-        { x: 0, y: 0 },
-        { x: backgroundImage.width, y: 0 },
-        { x: backgroundImage.width, y: backgroundImage.height },
-        { x: 0, y: backgroundImage.height },
-      ].map((p) => pixelToGround(p, calibration));
-      setView(fitViewTo(corners, canvasSize.width, canvasSize.height));
-
       if (located) {
-        // Scale is fixed but position is a guess (the datum) until the operator drags it
-        // onto the real building — drop straight into that mode rather than making them
-        // find the toolbar button first.
+        // A real basemap is in play, so the operator may already be looking at exactly
+        // where the image needs to go — recentring the camera on the image's *current*
+        // (wrong, datum-pinned) position would yank them away from that spot right before
+        // asking them to drag the image to it. Leave the view alone; only the site's own
+        // "Fit view" button or the mode switch below moves the camera from here on.
         setMode('position-image');
         setStatus(
           'Image calibrated. Drag it onto the real site — drag empty space to look around instead. ' +
             'Trace the boundary and buildings once it lines up.',
         );
       } else {
+        // No basemap to get lost in — the image itself is the whole working canvas, so
+        // framing it is helpful rather than disruptive.
+        const corners = [
+          { x: 0, y: 0 },
+          { x: backgroundImage.width, y: 0 },
+          { x: backgroundImage.width, y: backgroundImage.height },
+          { x: 0, y: backgroundImage.height },
+        ].map((p) => pixelToGround(p, calibration));
+        setView(fitViewTo(corners, canvasSize.width, canvasSize.height));
         setMode('view');
         setStatus('Image calibrated. Trace the boundary and any buildings on top of it.');
       }
@@ -485,6 +488,24 @@ export function SiteEditor() {
 
   const resetImagePosition = () => {
     setImageCalibration((current) => (current ? { ...current, originGround: { e: 0, n: 0 } } : current));
+  };
+
+  /**
+   * Jump the camera to frame the image, on request. Calibration itself no longer does this
+   * automatically — snapping the view to the image's position right after calibrating
+   * yanked the operator away from wherever they had already navigated to on the real map,
+   * which is exactly the wrong moment to move the camera when they are about to drag the
+   * image to that same spot.
+   */
+  const centreViewOnImage = () => {
+    if (!backgroundImage || !imageCalibration) return;
+    const corners = [
+      { x: 0, y: 0 },
+      { x: backgroundImage.width, y: 0 },
+      { x: backgroundImage.width, y: backgroundImage.height },
+      { x: 0, y: backgroundImage.height },
+    ].map((p) => pixelToGround(p, imageCalibration));
+    setView(fitViewTo(corners, canvasSize.width, canvasSize.height));
   };
 
   /**
@@ -779,9 +800,14 @@ export function SiteEditor() {
                   Offset from the search point: {(imageCalibration.originGround?.e ?? 0).toFixed(1)} m
                   east, {(imageCalibration.originGround?.n ?? 0).toFixed(1)} m north.
                 </p>
-                <button className={styles.linkButton} onClick={resetImagePosition}>
-                  Reset image position
-                </button>
+                <div className={styles.searchRow}>
+                  <button className={styles.linkButton} onClick={resetImagePosition}>
+                    Reset image position
+                  </button>
+                  <button className={styles.linkButton} onClick={centreViewOnImage}>
+                    Centre view on image
+                  </button>
+                </div>
                 <Field label="Rotation (° clockwise) — a screenshot is rarely north-up">
                   <input
                     type="number"
