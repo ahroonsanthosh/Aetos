@@ -536,10 +536,20 @@ function drawCalibratedImage(
   const drawHeight = image.height * scale;
 
   ctx.save();
-  ctx.globalAlpha = 0.75;
   ctx.translate(centreScreen.x, centreScreen.y);
   ctx.rotate(calibration.northBearing);
+
+  ctx.globalAlpha = 0.75;
   ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+
+  // A crisp, full-opacity frame around it — without one, a faded photo blended over real
+  // map tiles has no visible edge, and "where does my upload end and the real map begin"
+  // is not a question the operator should have to answer by eye while dragging it.
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = palette.select;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+
   ctx.restore();
 }
 
