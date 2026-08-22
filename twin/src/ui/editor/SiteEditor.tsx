@@ -487,6 +487,22 @@ export function SiteEditor() {
     setImageCalibration((current) => (current ? { ...current, originGround: { e: 0, n: 0 } } : current));
   };
 
+  /**
+   * Rotate the image about its own centre. A satellite screenshot is essentially never
+   * north-up, and translating it can only fix position — this is the other degree of
+   * freedom calibration leaves as a guess (`northBearing` defaults to 0).
+   */
+  const setImageRotationDegrees = (degrees: number) => {
+    if (!Number.isFinite(degrees)) return;
+    setImageCalibration((current) => (current ? { ...current, northBearing: (degrees * Math.PI) / 180 } : current));
+  };
+
+  const nudgeImageRotation = (deltaDegrees: number) => {
+    setImageCalibration((current) =>
+      current ? { ...current, northBearing: current.northBearing + (deltaDegrees * Math.PI) / 180 } : current,
+    );
+  };
+
   // --- Editing the selected asset -----------------------------------------------------------
 
   const updateSelected = (patch: Partial<Asset>) => {
@@ -766,9 +782,31 @@ export function SiteEditor() {
                 <button className={styles.linkButton} onClick={resetImagePosition}>
                   Reset image position
                 </button>
+                <Field label="Rotation (° clockwise) — a screenshot is rarely north-up">
+                  <input
+                    type="number"
+                    step={1}
+                    value={Math.round((imageCalibration.northBearing * 180) / Math.PI)}
+                    onChange={(e) => setImageRotationDegrees(Number(e.target.value))}
+                  />
+                </Field>
+                <div className={styles.searchRow}>
+                  <button className={styles.button} onClick={() => nudgeImageRotation(-5)}>
+                    −5°
+                  </button>
+                  <button className={styles.button} onClick={() => nudgeImageRotation(5)}>
+                    +5°
+                  </button>
+                  <button className={styles.button} onClick={() => nudgeImageRotation(-90)}>
+                    Rotate ↺ 90°
+                  </button>
+                  <button className={styles.button} onClick={() => nudgeImageRotation(90)}>
+                    Rotate ↻ 90°
+                  </button>
+                </div>
                 <p className={styles.hint}>
-                  If it is the wrong size rather than the wrong place, re-calibrate instead —
-                  scale comes from the two-point distance, not from dragging.
+                  If it is the wrong size rather than the wrong place or angle, re-calibrate
+                  instead — scale comes from the two-point distance, not from dragging.
                 </p>
               </>
             )}
@@ -814,7 +852,7 @@ export function SiteEditor() {
             <span className={styles.toolbarSpacer} />
             <span className={styles.zoomHint}>
               {mode === 'position-image'
-                ? 'Drag the image to move it · drag empty space to look around'
+                ? 'Drag to move the image · right-drag (or middle-drag) to look around instead'
                 : mode === 'view' && selectedId
                   ? 'Drag the shape or its corners · alt-click a corner to remove it'
                   : 'Drag to pan · scroll to zoom'}

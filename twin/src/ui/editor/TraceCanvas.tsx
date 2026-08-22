@@ -13,10 +13,9 @@
  *
  * **Editing** — everything (the calibrated image, the boundary, every traced or imported
  * building) is positioned in ENU metres and projected to the screen through the one
- * `ViewTransform` the operator pans and zooms. The image is placed north-up: a documented
- * simplification (see below), not an error in the underlying maths, which still applies a
- * calibration's full rotation when interpreting a *traced point* — only the raster preview
- * itself stays axis-aligned.
+ * `ViewTransform` the operator pans and zooms. The image is drawn rotated by the
+ * calibration's bearing about its own centre — a screenshot is almost never north-up, and a
+ * traced building only lines up with the real one if what you see matches what you traced.
  *
  * Trace modes (`trace-boundary` / `trace-asset`) work identically in both: click to add a
  * vertex, double-click, Enter, or "Finish shape" to close, Escape to cancel.
@@ -26,7 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Ground } from '@/types';
 import { palette } from '@/lib/palette';
-import { pixelToGround, type Calibration, type ImagePoint } from '@/site/import/calibration';
+import { metresPerPixel, pixelToGround, type Calibration, type ImagePoint } from '@/site/import/calibration';
 import { boundingBoxAround, enuToLatLon, type LatLon } from '@/site/import/geo';
 import { tileBoundsEnu, tilesForBounds, zoomForScale } from '@/site/import/tiles';
 import { getTile } from './basemap';
@@ -98,17 +97,6 @@ interface Props {
   onDeleteVertex: (id: string, vertexIndex: number) => void;
   /** Translate the calibrated background image by a ground delta — `position-image` mode. */
   onMoveImage: (deltaE: number, deltaN: number) => void;
-}
-
-/** The calibrated image's footprint in ENU, as an axis-aligned box (the render is always
- *  north-up regardless of the calibration's bearing — see `drawCalibratedImage`). */
-function imageGroundBounds(image: HTMLImageElement, calibration: Calibration) {
-  const a = pixelToGround({ x: 0, y: 0 }, calibration);
-  const b = pixelToGround({ x: image.width, y: image.height }, calibration);
-  return {
-    minE: Math.min(a.e, b.e), maxE: Math.max(a.e, b.e),
-    minN: Math.min(a.n, b.n), maxN: Math.max(a.n, b.n),
-  };
 }
 
 /** Fit an image inside a canvas, centred, without cropping — the calibration-mode layout. */
@@ -215,7 +203,7 @@ export function TraceCanvas({
     drawGrid(ctx, view, width, height);
 
     if (backgroundImage && imageCalibration) {
-      drawCalibratedImage(ctx, backgroundImage, imageCalibration, toScreen);
+      drawCalibratedImage(ctx, backgroundImage, imageCalibration, view, toScreen);
     }
 
     if (boundary.length >= 2) {
@@ -334,21 +322,21 @@ export function TraceCanvas({
       }
     }
 
-    // A press on the image itself drags it; a press anywhere else still pans, so aligning
-    // the image does not cost the operator the ability to look around while doing it — the
-    // whole reason this needs a drag in the first place is to see where the image should go
-    // relative to what is not currently under it.
+    // Every left-drag in this mode moves the image, full stop — no hit-test against its
+    // current bounds. A drag that has to land exactly on the image is a drag that
+    // sometimes misses and silently pans the whole view instead, which looks identical to
+    // a successful move (the image slides across the screen either way) right up until the
+    // operator notices it never actually got any closer to the real building. Panning is
+    // still available: middle- or right-drag, unaffected by this branch since it only
+    // claims button 0.
     if (mode === 'position-image' && e.button === 0 && backgroundImage && imageCalibration) {
       const ground = toGround(screen);
-      const box = imageGroundBounds(backgroundImage, imageCalibration);
-      if (ground.e >= box.minE && ground.e <= box.maxE && ground.n >= box.minN && ground.n <= box.maxN) {
-        dragRef.current = {
-          x: e.clientX, y: e.clientY, view, moved: false, pans: false,
-          edit: { kind: 'image', lastE: ground.e, lastN: ground.n },
-        };
-        canvasRef.current?.setPointerCapture(e.pointerId);
-        return;
-      }
+      dragRef.current = {
+        x: e.clientX, y: e.clientY, view, moved: false, pans: false,
+        edit: { kind: 'image', lastE: ground.e, lastN: ground.n },
+      };
+      canvasRef.current?.setPointerCapture(e.pointerId);
+      return;
     }
 
     // Every other press starts as a candidate: it becomes a pan if the pointer travels, and
@@ -509,18 +497,27 @@ function drawCalibratedImage(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   calibration: Calibration,
+  view: ViewTransform,
   toScreen: (p: Ground) => { x: number; y: number },
 ) {
-  // North-up placement: the image's four corners are converted through the calibration —
-  // rotation included — but drawn as an axis-aligned destination rectangle. Correct only
-  // when northBearing is 0, which is what every caller in this editor enforces; see the
-  // file-level comment for why that trade-off is made deliberately rather than by omission.
-  const topLeft = toScreen(pixelToGround({ x: 0, y: 0 }, calibration));
-  const bottomRight = toScreen(pixelToGround({ x: image.width, y: image.height }, calibration));
+  // Rotate about the image's own centre rather than project all four corners: canvas
+  // `rotate()` turns clockwise for a positive angle in a y-down space, which is exactly what
+  // `northBearing` already means (clockwise from north) — so the transform below and the
+  // ground maths in calibration.ts agree without needing a second, independent rotation.
+  const centreImg = { x: image.width / 2, y: image.height / 2 };
+  const centreScreen = toScreen(pixelToGround(centreImg, calibration));
+
+  // Screen pixels per image pixel: how many ground metres one image pixel covers, divided by
+  // how many ground metres one screen pixel covers at the current zoom.
+  const scale = metresPerPixel(calibration) / view.metresPerPixel;
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
 
   ctx.save();
   ctx.globalAlpha = 0.75;
-  ctx.drawImage(image, topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+  ctx.translate(centreScreen.x, centreScreen.y);
+  ctx.rotate(calibration.northBearing);
+  ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
   ctx.restore();
 }
 
