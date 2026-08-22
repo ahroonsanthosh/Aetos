@@ -339,6 +339,23 @@ export function TraceCanvas({
       return;
     }
 
+    // Placing a single asset or clicking down a trace vertex is a precise action, not a
+    // navigation gesture — the left button never pans here, the same reasoning as aligning
+    // the image above. Without this, an ordinary hand's few pixels of jitter between press
+    // and release nudged the whole view (dragging the map, and everything drawn on it,
+    // along with the cursor) while also cancelling the click that was supposed to happen —
+    // a building that silently failed to appear where clicked, on a map that had quietly
+    // moved a little. Panning stays available on the middle or right button, unaffected by
+    // this branch since it only claims button 0.
+    if (
+      (mode === 'trace-boundary' || mode === 'trace-asset' || mode === 'place-asset') &&
+      e.button === 0
+    ) {
+      dragRef.current = { x: e.clientX, y: e.clientY, view, moved: false, pans: false };
+      canvasRef.current?.setPointerCapture(e.pointerId);
+      return;
+    }
+
     // Every other press starts as a candidate: it becomes a pan if the pointer travels, and
     // the mode's own action if it does not. Classified on release, in `onPointerUp`.
     dragRef.current = { x: e.clientX, y: e.clientY, view, moved: false, pans: true };
@@ -397,10 +414,15 @@ export function TraceCanvas({
     dragRef.current = null;
     canvasRef.current?.releasePointerCapture(e.pointerId);
 
-    // A drag was a pan or an edit, and neither carries the mode's action; nor does a press
-    // that already did its work on the way down. Middle and right buttons pan exclusively,
-    // so they never act even when they do not move.
-    if (!drag || drag.moved || drag.consumed || drag.edit || e.button !== 0) return;
+    // An edit, or a press that already did its work on the way down, never carries a second
+    // action on release. Middle and right buttons pan exclusively, so they never act either.
+    if (!drag || drag.consumed || drag.edit || e.button !== 0) return;
+
+    // Everywhere else, a drag that moved is a pan, not a click, and should not also act —
+    // except trace/place modes, whose presses never pan in the first place (see
+    // `onPointerDown`), so a few pixels of hand jitter is still just a click there.
+    const clickOnlyMode = mode === 'trace-boundary' || mode === 'trace-asset' || mode === 'place-asset';
+    if (!clickOnlyMode && drag.moved) return;
 
     const rect = canvasRef.current!.getBoundingClientRect();
     const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };

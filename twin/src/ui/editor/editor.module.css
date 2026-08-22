@@ -90,14 +90,40 @@
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 4px 4px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--panel-edge);
 }
 
 .toolbarSpacer {
   flex: 1;
+}
+
+.toolbarRotate {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px;
+  border-left: 1px solid var(--panel-edge);
+  margin-left: 2px;
+}
+
+.toolbarRotateLabel {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.toolbarRotateInput {
+  width: 48px;
+  padding: 5px 6px;
+  border: 1px solid var(--panel-edge);
+  background: var(--void);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
 }
 
 .tool {

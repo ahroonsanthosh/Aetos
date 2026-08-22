@@ -849,6 +849,18 @@ export function SiteEditor() {
                 Align image
               </ToolButton>
             )}
+            {backgroundImage && imageCalibration && (
+              <span className={styles.toolbarRotate} title="Rotate the reference image">
+                <span className={styles.toolbarRotateLabel}>Rotate</span>
+                <input
+                  type="number"
+                  className={styles.toolbarRotateInput}
+                  value={Math.round((imageCalibration.northBearing * 180) / Math.PI)}
+                  onChange={(e) => setImageRotationDegrees(Number(e.target.value))}
+                />
+                <span className={styles.toolbarRotateLabel}>°</span>
+              </span>
+            )}
             <span className={styles.toolbarSpacer} />
             <span className={styles.zoomHint}>
               {mode === 'position-image'
