@@ -151,11 +151,17 @@ no way to make the transmitter compute something it does not compute.
 - Tightening the envelope measurably improves the link, which makes configuration an integrity
   control rather than housekeeping.
 
-**What remains open.** The degradation half. The decoder counts; nothing yet turns a rising
-count into a DEGRADED or OFFLINE sensor state, because that lives in the adapter and the adapter
-needs the hardware. Physical mitigations dominate anyway and are not enforceable in software:
-short shielded leads, a solid common ground, distance from motors, and the lowest baud rate that
-meets the update-rate floor.
+**The degradation half is now closed.** `sensors/adapters/ld2451/link.py` holds a sliding
+window over the decoder's counters — sliding, because a cumulative average still reads as clean
+an hour after a link started failing, and the last ten seconds are the part that matters. Past a
+configured windowed reject rate the adapter reports DEGRADED with the estimated undetected rate
+in words; past a second threshold it reports OFFLINE and **emits nothing at all**, because a
+source that is probably lying is worse than one that is quiet.
+
+**What remains open.** Physical mitigation is not enforceable in software and dominates
+everything above: short leads, a solid common ground, distance from motors and switching
+supplies, and the lowest baud rate that meets the update-rate floor. `BENCH.md` step 7 is the
+procedure, and the reject rate measured there is the baseline to compare against later.
 
 ### FM-016 — Coverage that has never been validated against the threat class
 **Status:** Partial · **Severity:** High if it occurs
@@ -211,6 +217,43 @@ can actually emit `assumed`. No detection in the system can produce a non-defaul
 so the rule would be untestable decoration. It lands with the first live adapter, and applying
 it to three of the four places would be worse than not having it — which is why they are
 enumerated here rather than left to be remembered.
+
+### FM-018 — A sensor faster than the pipeline tick fragmented its own target
+**Status:** Closed · **Severity:** was High on any live deployment
+
+**What it was.** `TrackManager.process` is one tracking cycle, and a cycle is one instant: it
+predicts every track forward, then runs a **single** association pass assigning at most one
+detection per track. Its docstring said so. Nothing tested it, because nothing could break it.
+
+A live adapter breaks it immediately. It reads on its own thread and hands over every frame that
+arrived since the last poll, so a 10 Hz sensor against a 0.5 s tick delivers five observations of
+the same object at once — and the four after the first could not be associated to the track the
+first had just updated, so each initiated a new one. **One target in front of the radar produced
+nine tracks.** On a counter-UAS picture, a swarm of phantoms is indistinguishable from the thing
+the system exists to detect.
+
+**Why nothing found it sooner.** The simulated adapter throttles itself to its configured update
+rate and is polled once per cycle, so it satisfies the assumption *by construction*. No scenario,
+no chaos test and no amount of provenance guarding could have produced the situation. It appeared
+within seconds of connecting real hardware.
+
+**Fix.** `backend/tracking/batching.py` splits a cycle's detections into groups holding at most
+one observation time per sensor, and `Pipeline.step` calls `process` once per group in time
+order. The rule is structural rather than numerical — detections from one frame share a timestamp
+exactly and stay together, successive frames from one sensor land in successive groups, and two
+*different* sensors stay together despite differing by microseconds, which is what preserves
+cross-sensor association. A tolerance-based rule would have got that last case wrong, and fusion
+would have quietly never happened.
+
+**What made it stay closed.** `tests/unit/test_tracking_batching.py` covers each case
+separately, including the multi-sensor one that an epsilon would have broken, and
+`tests/integration/test_live_radar.py` runs a real driver over a scripted link end to end. See
+ADR 0020.
+
+**The general lesson, recorded because it will apply again.** This was an architectural
+assumption that was true, undocumented, load-bearing, and false the moment real hardware
+arrived. The simulator could not have found it. That is the clearest evidence available for why
+connecting something is not the same as simulating it well.
 
 ---
 

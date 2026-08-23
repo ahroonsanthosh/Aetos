@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "site_id": "bench",
+  "name": "Bench — one real radar, nothing simulated",
+  "reference": {
+    "latitude": 51.8971,
+    "longitude": -8.4697,
+    "altitude_m": 5.0
+  },
+  "protected_radius_m": 60.0,
+  "zones": [
+    {
+      "zone_id": "bench_core",
+      "name": "Bench protected core",
+      "kind": "protected",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 51.8971,
+          "longitude": -8.4697
+        },
+        "radius_m": 60.0
+      }
+    },
+    {
+      "zone_id": "bench_monitored",
+      "name": "Bench monitored airspace",
+      "kind": "monitored",
+      "geometry": {
+        "shape": "circle",
+        "centre": {
+          "latitude": 51.8971,
+          "longitude": -8.4697
+        },
+        "radius_m": 100.0
+      }
+    }
+  ],
+  "sensors": [
+    {
+      "sensor_id": "radar_bench",
+      "registry_key": "ld2451_uart",
+      "position": {
+        "latitude": 51.8971,
+        "longitude": -8.4697
+      },
+      "height_m": 1.0,
+      "boresight_deg": 0.0
+    }
+  ]
+}

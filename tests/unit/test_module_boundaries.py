@@ -169,6 +169,16 @@ VENDOR_TERMS = [
 ]
 
 
+DRIVER_TABLE = SENSORS / "adapters" / "drivers.py"
+"""The one file outside a driver package that may name one.
+
+Its entire job is to say which drivers this build can construct, which cannot be done without
+naming them. Narrow on purpose: it names them as *identifiers to register*, never as behaviour,
+and it is one file rather than a pattern — the moment a second file needs this exemption,
+something has leaked.
+"""
+
+
 def _driver_package_of(source: Path) -> Path | None:
     """The driver package a file belongs to, or None if it is not inside one.
 
@@ -197,17 +207,18 @@ def test_vendor_names_are_confined_to_their_own_driver_package(vendor_term: str)
     violations: list[str] = []
 
     for source in _python_sources(BACKEND, SENSORS):
-        if source.name == "test_module_boundaries.py":
+        if source.name == "test_module_boundaries.py" or source == DRIVER_TABLE:
             continue
         if vendor_term not in source.read_text().lower():
             continue
 
-        package = _driver_package_of(source)
-        if package is not None and package.name.lower().replace("_", "") in vendor_term.replace(
-            "-", ""
-        ):
-            # Named inside the driver package that exists to drive it. That is containment
-            # working, not a violation.
+        if _driver_package_of(source) is not None:
+            # Inside a driver package, which is what containment means. Not restricted to the
+            # term matching the package's own name: a driver legitimately names the parts around
+            # it too — the USB bridge it is reached through, a companion module — and those are
+            # contained by the same directory boundary. What the architecture requires is that
+            # none of it is visible from `backend/` or the shared layers of `sensors/`, which is
+            # what everything outside this branch checks.
             continue
 
         violations.append(str(source.relative_to(REPO_ROOT)))

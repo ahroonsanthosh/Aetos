@@ -104,7 +104,7 @@ makes backend restart recoverable.
 | `backend/common` | Clock, geodesy, identifiers, config loading | Import any other backend module (ADR 0009) |
 | `backend/ingestion` | Validate, deduplicate, normalise, append to log | Make tracking decisions |
 | `backend/events` | Append-only log, sequence ordering, replay reads | Interpret payload meaning |
-| `backend/tracking` | Where things are: association, filtering, lifecycle, prediction; and what it therefore requires of a sensor (`requirements.py`) | Decide what things are, or how dangerous |
+| `backend/tracking` | Where things are: association, filtering, lifecycle, prediction; what one cycle means (`batching.py`); and what it therefore requires of a sensor (`requirements.py`) | Decide what things are, or how dangerous |
 | `backend/fusion` | Reconcile multi-sensor observations of one object | Re-run association |
 | `backend/classification` | What it is, how confident, and why | Estimate position or velocity, or hold track state |
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
@@ -136,11 +136,15 @@ Detection, mode selection is adapter registry configuration rather than a code p
 downstream of ingestion is aware of which mode is running, except that sensor provenance is
 recorded on every detection.
 
-**No live sensor driver is registered yet**, so LIVE and HYBRID refuse to start rather than
-falling back to the simulator — `guard_sources` declines a LIVE run with no real adapter, on the
-grounds that every screen would say LIVE over synthetic data. The seam exists; the hardware does
-not. The LD2451 wire codec is built and tested (`sensors/adapters/ld2451/`); its transport and
-adapter are not.
+**One live driver is registered.** A 24 GHz FMCW ranging module on a serial UART, built end to
+end: wire codec, transport, adapter, health and a hardware bench tool
+(`sensors/adapters/ld2451/`). `guard_sources` still declines a LIVE run with no real adapter, on
+the grounds that every screen would say LIVE over synthetic data.
+
+What is *not* established is what that sensor can actually see. Its declared coverage is a
+datasheet figure quoted against a car-sized target, `coverage_validated` is false, and the
+conformance suite reports it as a gap rather than a pass (FM-016). That measurement is a flight
+test, not a software task.
 
 *Skipped, and reported* is load-bearing. A live-fitted site running a training scenario, or a
 bench test of one real sensor, legitimately starts fewer adapters than the site defines —
@@ -164,7 +168,7 @@ Per spec §20. Status updated as stages complete.
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
-| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface, capability declaration, conformance suite, adapter factory and run modes done (ADR 0017); one wire codec built and tested; no live adapter or transport yet |
+| 11 | Sensor adapter framework finalised, real stubs in place | **done** — interface, capability declaration, conformance suite, adapter factory, run modes (ADR 0017), and one complete live driver against real hardware (ADR 0020). Coverage against the threat class is unmeasured, and declared as such |
 | 12 | Chaos hardening, degraded-mode UI states | not started |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
@@ -174,6 +178,13 @@ into a recommendation for a human, alerting promotes the levels that warrant int
 someone into alerts an operator can acknowledge, everything is recorded in the event log and
 projected into the database, and the API serves it to an interface that draws it. What is
 missing between here and a usable operator system is fusion, and a live sensor to feed it.
+
+A live sensor also found something the simulator structurally could not: a source faster than
+the pipeline tick delivers several observations of one object per cycle, and the tracker's
+single association pass turned each extra one into a new track — one target became nine.
+`backend/tracking/batching.py` and ADR 0020 record the fix and, more usefully, the class of
+assumption it belonged to: true, undocumented, load-bearing, and false the moment hardware
+arrived.
 
 The source boundary is finished in a way it was not before. Every adapter declares what it is
 (`SensorCapabilities`), the floors that declaration is measured against are computed from this
@@ -222,3 +233,4 @@ reason the sim/real interchangeability claim is stated as fact rather than inten
 | [0017](adr/0017-sensor-capability-declaration.md) | Sensor capability declaration, and a compatibility floor that is a test result |
 | [0018](adr/0018-transport-integrity.md) | Transport integrity on links that have none |
 | [0019](adr/0019-assumed-altitude.md) | Altitude from sensors that do not measure it |
+| [0020](adr/0020-live-adapter-threading-and-time.md) | Live adapters read on their own thread, and a cycle is still one instant |

@@ -210,6 +210,35 @@ class AccuracyDeclaration(BaseModel):
     Zero means the declared figure is range-independent, which is true of very few real sensors
     and should be left at zero only when it genuinely is."""
 
+    horizontal_uncertainty_m: float | None = Field(default=None, gt=0.0)
+    """One-sigma on the worst *horizontal* axis at `reference_range_m`, when it differs from the
+    worst axis overall.
+
+    Exists because of a perverse result the worst-axis figure produced on its own. A source with
+    no elevation channel assumes an altitude and declares a large vertical uncertainty to say how
+    little that assumption is worth (ADR 0019) — which is exactly the honest thing to do, and
+    which made the worst axis the assumption rather than any measurement. Judged on that, such a
+    source was failed for the size of a limitation it had correctly declared, while one that said
+    nothing about altitude passed. Under a floor whose whole premise is that honesty is the entry
+    requirement, that is backwards.
+
+    So the trackability requirement is judged horizontally, which is also what it is actually
+    about: `protected_radius_m` is a horizontal distance, and whether an object is inside a zone
+    footprint is a horizontal question. The vertical story is carried by `reports_altitude` and by
+    the covariance, where it belongs.
+
+    None means the source has no separate horizontal figure and the worst-axis one is used —
+    correct for any sensor that genuinely measures all three dimensions, which is most of them.
+    """
+
+    horizontal_angular_uncertainty_mrad: float | None = Field(default=None, ge=0.0)
+    """Cross-range growth of the horizontal error, when it differs from `angular_uncertainty_mrad`.
+
+    Separate for the same reason: for a source that assumes altitude, the worst-axis angular term
+    is the assumption growing with range, not the bearing error. None falls back to
+    `angular_uncertainty_mrad`.
+    """
+
     anisotropy_ratio: float = Field(default=1.0, ge=1.0)
     """Worst-axis one-sigma divided by best-axis. 1.0 asserts isotropic error.
 
@@ -233,6 +262,29 @@ class AccuracyDeclaration(BaseModel):
         floor = self.range_independent_floor_m()
         angular = range_m * self.angular_uncertainty_mrad * 1e-3
         return math.hypot(floor, angular)
+
+    def horizontal_uncertainty_at_m(self, range_m: float) -> float:
+        """One-sigma worst *horizontal* axis at an arbitrary range.
+
+        Falls back to the worst-axis figure when no horizontal one is declared, so a source that
+        measures all three dimensions needs to declare nothing extra and is judged exactly as it
+        was before this existed.
+        """
+        if self.horizontal_uncertainty_m is None:
+            return self.uncertainty_at_m(range_m)
+
+        angular_mrad = (
+            self.horizontal_angular_uncertainty_mrad
+            if self.horizontal_angular_uncertainty_mrad is not None
+            else self.angular_uncertainty_mrad
+        )
+        if angular_mrad <= 0.0:
+            return self.horizontal_uncertainty_m
+
+        angular_at_reference = self.reference_range_m * angular_mrad * 1e-3
+        residual = self.horizontal_uncertainty_m**2 - angular_at_reference**2
+        floor = math.sqrt(residual) if residual > 0.0 else 0.0
+        return math.hypot(floor, range_m * angular_mrad * 1e-3)
 
     def range_independent_floor_m(self) -> float:
         """The part of the declared uncertainty that does not grow with range.
@@ -437,6 +489,15 @@ class FloorAssessment:
     FUSABLE. Always populated when a floor was missed — a floor with no explanation cannot be
     acted on."""
 
+    assessed_range_m: float
+    """The range the uncertainty requirement was judged at.
+
+    The decision scale, or the sensor's own maximum range when that is nearer. Carried on the
+    assessment rather than recomputed by anything that reports it: a report showing the error at
+    a different range from the one the verdict used would read as contradicting its own
+    conclusion, which is worse than not showing it at all.
+    """
+
     discrimination_range_m: float
     """Furthest range at which two objects `minimum_separation_m` apart remain separable.
 
@@ -449,6 +510,19 @@ class FloorAssessment:
 
     def reaches(self, floor: SensorFloor) -> bool:
         return self.floor >= floor
+
+
+def assessed_range_m(
+    capabilities: SensorCapabilities, thresholds: FloorThresholds
+) -> float:
+    """The range the uncertainty requirement is judged at.
+
+    The decision scale, or the sensor's own maximum range when that is nearer. Extrapolating a
+    short-range sensor's angular error out to a site radius it cannot reach would compute an
+    uncertainty for a detection it can never produce, and fail it on that — rejecting every
+    close-in sensor at a large site for a reason that does not exist.
+    """
+    return min(thresholds.decision_scale_m, capabilities.coverage.max_range_m)
 
 
 def assess_floor(
@@ -467,6 +541,7 @@ def assess_floor(
             floor=SensorFloor.REJECTED,
             classifying=capabilities.classifies,
             shortfalls=tuple(ingestible_shortfalls),
+            assessed_range_m=assessed_range_m(capabilities, thresholds),
             discrimination_range_m=_discrimination_range(capabilities, thresholds),
         )
 
@@ -476,6 +551,7 @@ def assess_floor(
             floor=SensorFloor.INGESTIBLE,
             classifying=capabilities.classifies,
             shortfalls=tuple(trackable_shortfalls),
+            assessed_range_m=assessed_range_m(capabilities, thresholds),
             discrimination_range_m=_discrimination_range(capabilities, thresholds),
         )
 
@@ -486,6 +562,7 @@ def assess_floor(
         floor=floor,
         classifying=capabilities.classifies,
         shortfalls=tuple(fusable_shortfalls),
+        assessed_range_m=assessed_range_m(capabilities, thresholds),
         discrimination_range_m=_discrimination_range(capabilities, thresholds),
     )
 
@@ -541,16 +618,16 @@ def _trackable_shortfalls(
             "than one update stale"
         )
 
-    # Judged at the decision scale, or at the sensor's own maximum range when that is nearer.
-    # Extrapolating a short-range sensor's error out to a site radius it cannot reach would
-    # compute an uncertainty for a detection it can never produce, and fail it on that — which
-    # would reject every close-in sensor at a large site for a reason that does not exist.
-    assessed_range_m = min(thresholds.decision_scale_m, capabilities.coverage.max_range_m)
-    uncertainty_at_scale = capabilities.accuracy.uncertainty_at_m(assessed_range_m)
+    # Horizontal, not worst-axis. `protected_radius_m` is a horizontal distance and whether an
+    # object is inside a zone footprint is a horizontal question — and judging on the worst axis
+    # penalised a source for honestly declaring how uncertain its assumed altitude was, which is
+    # backwards under a floor built on honesty. See `AccuracyDeclaration.horizontal_uncertainty_m`.
+    judged_at = assessed_range_m(capabilities, thresholds)
+    uncertainty_at_scale = capabilities.accuracy.horizontal_uncertainty_at_m(judged_at)
 
     if uncertainty_at_scale > thresholds.position_uncertainty_ceiling_m:
         shortfalls.append(
-            f"R1.2: one-sigma of {uncertainty_at_scale:.1f} m at {assessed_range_m:.0f} m "
+            f"R1.2: horizontal one-sigma of {uncertainty_at_scale:.1f} m at {judged_at:.0f} m "
             f"exceeds the {thresholds.position_uncertainty_ceiling_m:.1f} m ceiling for a "
             f"{thresholds.decision_scale_m:.0f} m decision scale; a zone determination at that "
             "uncertainty is not a determination"

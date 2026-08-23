@@ -15,8 +15,14 @@ Aetos is **software only**. It stops at a human-facing recommendation.
   effector integration is a separate future system with its own authorisation and safety
   architecture, and does not belong in this codebase.
 
-At this stage all detections are **synthetic**, produced by a built-in simulator. No
-physical sensor integration exists or is claimed to exist.
+Detections come from a built-in simulator **or** from real hardware. One physical sensor is
+integrated — a 24 GHz FMCW ranging module on a serial UART — and the interface, conformance
+suite and adapter factory that admit any other are built (`docs/sensor_interface_specification.md`).
+
+What is **not** established is what that sensor can actually see. Its declared range is a
+datasheet figure quoted against a car-sized target; whether it detects a small airframe at all
+is unmeasured, `coverage_validated` is false, and the conformance suite reports that as a gap
+rather than a pass.
 
 ## Core principle
 
@@ -52,7 +58,7 @@ a single combined pipeline function.
 | `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, capability declaration, conformance suite, adapter factory, simulated adapter, one device wire codec |
+| `sensors/` | `SensorAdapter` contract, capability declaration, conformance suite, adapter factory, simulated adapter, one live hardware driver |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
@@ -136,10 +142,25 @@ The suite reports the floor each source reaches, every requirement it failed, an
 those words: no test can determine that a sensor claiming three metres delivers it, and that is
 a measurement activity, not a software one.
 
-**No live sensor driver is registered yet.** The seam is finished and the hardware is not, so
-LIVE and HYBRID modes refuse to start rather than quietly falling back to the simulator. One
-device's wire codec is built and tested (`sensors/adapters/ld2451/`); its transport and adapter
-are not.
+### One real sensor is integrated
+
+A 24 GHz FMCW ranging module on a serial UART, end to end: wire codec, transport, adapter,
+link-integrity health and a hardware bench tool (`sensors/adapters/ld2451/`).
+
+```bash
+python -m sensors.adapters.ld2451.bench --list                 # find the port
+python -m sensors.adapters.ld2451.bench --port /dev/ttyUSB0    # talk to the device
+python -m backend.main --site bench --mode live --no-scenario  # run the system on it
+```
+
+`sensors/adapters/ld2451/BENCH.md` is the procedure, in order, from an unopened box to a
+measured coverage figure. What that sensor can *actually see* is not established: its declared
+range is a datasheet figure quoted against a car, `coverage_validated` is false, and the
+conformance suite reports it as a gap rather than a pass. Closing it is a flight test, not a
+software task.
+
+LIVE and HYBRID still refuse to start with no real adapter attached, because every screen would
+say LIVE over synthetic data.
 
 ## Before you put this anywhere
 

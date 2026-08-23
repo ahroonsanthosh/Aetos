@@ -1,6 +1,6 @@
 # Aetos sensor interface specification
 
-**Current version: 1.0.0** · Companion to [`detection_schema.md`](detection_schema.md) ·
+**Current version: 1.1.0** · Companion to [`detection_schema.md`](detection_schema.md) ·
 Decision record: [ADR 0017](adr/0017-sensor-capability-declaration.md)
 
 This is the document a sensor vendor, a systems integrator, or a customer's engineer reads to
@@ -189,18 +189,23 @@ CONFIRMED, and an operator sees a stream of appearing-and-vanishing tentative tr
 one object.
 *Checked:* automated, computed against the deployment's actual tuning.
 
-**R1.2 — Position uncertainty below the discrimination ceiling.**
-One-sigma position uncertainty at maximum declared range must satisfy
+**R1.2 — Horizontal uncertainty small enough for a zone determination to mean something.**
+One-sigma **horizontal** uncertainty, judged at the site's decision scale or at the sensor's own
+maximum range if that is nearer, must stay below a tenth of the protected radius (§5, D2).
 
-```
-σ  ≤  minimum_separation_m / (2 × gate_radius_sigmas)
-```
+*Why horizontal, and not the worst axis.* `protected_radius_m` is a horizontal distance and
+whether an object is inside a zone footprint is a horizontal question. Judging the worst axis
+produced a perverse result the first time a real two-dimensional sensor was measured: a source
+with no elevation channel assumes an altitude and declares a large vertical uncertainty to say
+how little that assumption is worth (ADR 0019) — which is exactly the honest thing to do — and
+was then failed for the size of a limitation it had correctly declared, while a source that said
+nothing about altitude passed. Under a floor whose premise is that honesty is the entry
+requirement, that is backwards.
 
-which is **7.4 m** for a 50 m minimum separation at current tuning (§5).
-*Why:* association gates are sized from the covariance. Once two objects' gates overlap, the
-assignment that keeps them apart is no longer statistically determined and identities swap —
-FM-020, and the failure an operator is least able to detect.
-*Checked:* automated, computed against the deployment's configured separation.
+A source that measures all three dimensions declares nothing extra and is judged exactly as
+before; `horizontal_uncertainty_m` falls back to the worst-axis figure when it is absent.
+
+*Checked:* automated, computed against the deployment's own protected radius.
 
 **R1.3 — Bounded latency.**
 End-to-end latency from observation to `get_detections()` must not exceed one update period.
@@ -293,10 +298,18 @@ This is the constraint that decides whether a mechanically swept sensor is viabl
 much tighter than the coast window alone implies. A sweep with a 3 s revisit will hold tracks
 handed to it and will never originate one.
 
-### D2 — The uncertainty ceiling is 7.4 m at 50 m separation
+### D2 — Two different uncertainty figures, for two different questions
 
-The association gate admits a chi-squared probability mass of `gate_confidence = 0.99` over
-`MEASUREMENT_DOF = 3`:
+**The trackability ceiling is a tenth of the protected radius**, judged horizontally. At the
+shipped 800 m site that is 80 m; at a 60 m bench it is 6 m. It scales with the site rather than
+being a fixed number of metres because a 200 m compound and an 8 km aerodrome do not tolerate
+the same error, and it is judged at the sensor's own maximum range when that is nearer than the
+decision scale — extrapolating a 100 m sensor's angular error out to an 800 m radius computes an
+uncertainty for a detection it can never produce.
+
+**The discrimination ceiling is 7.4 m at 50 m separation**, and it is *reported* rather than
+gated on. The association gate admits a chi-squared probability mass of `gate_confidence = 0.99`
+over `MEASUREMENT_DOF = 3`:
 
 ```
 gate_threshold   =  chi2.ppf(0.99, 3)   =  11.3449
@@ -524,3 +537,4 @@ Stated so that an integrator does not build what is not needed.
 | Version | Change |
 |---|---|
 | 1.0.0 | Initial specification. Three floors, one grade, transport integrity declaration. |
+| 1.1.0 | R1.2 judged on **horizontal** uncertainty rather than the worst axis. Found by measuring the first real two-dimensional sensor, which was being penalised for honestly declaring how uncertain its assumed altitude was. |

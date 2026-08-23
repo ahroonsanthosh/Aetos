@@ -44,10 +44,12 @@ from backend.events.store import SqliteEventStore
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
+from backend.tracking.batching import group_by_observation
 from backend.tracking.track_manager.manager import TrackManager
 from backend.zones.geometry import SiteGeometry, load_site_geometry
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
+from sensors.adapters.drivers import register_builtin_drivers
 from sensors.adapters.factory import (
     AdapterFactoryError,
     AdapterSet,
@@ -115,6 +117,11 @@ class Pipeline:
         # first cycle is what makes that true — without it a restart discharges every open
         # alert, and an operator cannot tell an empty feed from a quiet sky.
         self.alerting.rebuild()
+
+        # Before anything can be built from configuration. Registration is explicit rather than
+        # an import side effect, so which hardware this process can talk to does not depend on
+        # what happened to get imported first (`sensors/adapters/drivers.py`).
+        register_builtin_drivers()
 
         self.registry = load_sensor_registry()
         self.sources = AdapterSet()
@@ -234,13 +241,30 @@ class Pipeline:
         # a track is, and must not reach the filter deciding where it is (ADR 0002).
         ingested = self.ingestion.ingest(detections)
 
-        tracks = self.tracker.process(ingested.for_tracking)
+        # One tracking call per observation instant, not one per pipeline cycle. A live adapter
+        # reads on its own thread and hands over every frame that arrived since the last poll,
+        # so a sensor faster than the tick delivers several observations of the same object at
+        # once — and `process` associates at most one detection per track, so every extra one
+        # initiated a new track. One drone became nine. See `backend/tracking/batching.py`.
+        #
+        # A deployment whose sensors are slower than its tick gets exactly one group and pays
+        # nothing, which is why this changes nothing for the simulator.
+        # `or [[]]` matters: a cycle with no detections must still run one tracking pass, because
+        # that is what coasts tracks, ages them to STALE and retires them. Skipping it on a quiet
+        # cycle would leave dead tracks on the operator's screen for as long as the sky stayed
+        # empty, which is the exact failure the lifecycle rules exist to prevent.
+        tracks = []
+        assignments: dict[str, str] = {}
+        for group in group_by_observation(ingested.for_tracking) or [[]]:
+            tracks = self.tracker.process(group)
+            # Merged across groups so classification still sees a hint for every track that was
+            # observed this cycle. Later groups win for a track observed more than once, which
+            # is the freshest evidence about it.
+            assignments.update(self.tracker.last_assignments)
 
         classified = self.classification.classify_cycle(
             tracks,
-            CycleEvidence.from_assignments(
-                self.tracker.last_assignments, ingested.hints, ingested.quality
-            ),
+            CycleEvidence.from_assignments(assignments, ingested.hints, ingested.quality),
         )
 
         now = self.clock.now()

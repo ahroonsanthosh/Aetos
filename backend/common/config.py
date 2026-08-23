@@ -169,11 +169,15 @@ def _describe_validation_failure(
 class RunMode(StrEnum):
     """Where detections come from.
 
-    Only SIMULATION is implemented. LIVE and HYBRID are named here so that configuration does
-    not have to change shape when real adapters exist — mode selection is adapter registry
-    configuration rather than a code path (docs/architecture.md, "Run modes"). Declaring LIVE
-    today buys nothing: no real sensor integration exists, and whatever wires adapters is
-    responsible for saying so. Config loading does not pretend to be that check.
+    All three are implemented. Mode selection decides which *kinds* of adapter the factory
+    builds, and is configuration rather than a code path (docs/architecture.md, "Run modes"):
+    SIMULATION builds simulated placements and reports live ones as skipped, LIVE does the
+    reverse, HYBRID builds both.
+
+    Declaring LIVE is not sufficient on its own. Whether a real adapter actually exists for a
+    placement depends on the registry entry and on a driver being registered, and
+    `backend/main.py` refuses to start a LIVE run with nothing real attached — every screen
+    would say LIVE over synthetic data. Config loading does not pretend to be that check.
     """
 
     SIMULATION = "simulation"

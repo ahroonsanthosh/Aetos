@@ -26,6 +26,7 @@ from scenarios.world import ScenarioWorld
 from sensors.adapters.conformance.checks import PlacementContext
 from sensors.adapters.conformance.report import ConformanceReport
 from sensors.adapters.conformance.runner import run_conformance
+from sensors.adapters.drivers import register_builtin_drivers
 from sensors.adapters.factory import Placement, SimulationContext, build_adapters
 from sensors.adapters.registry import load_sensor_registry
 
@@ -61,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--cycles", type=int, default=DEFAULT_CYCLES)
     arguments = parser.parse_args(argv)
+
+    # A deployment check must be able to build the live sensors it is checking.
+    register_builtin_drivers()
 
     geometry = load_site_geometry(arguments.site)
     thresholds = sensor_floor_thresholds(

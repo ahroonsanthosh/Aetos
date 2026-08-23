@@ -50,7 +50,8 @@ eventually exists. It runs in SIMULATION mode like the others.
 `simulation` is the only mode with anything behind it. `live` and `hybrid` are accepted by the
 schema so that configuration does not change shape when real adapters exist — mode selection is
 adapter registry configuration, not a code path (`docs/architecture.md`, "Run modes"). Declaring
-`live` today buys nothing: no real sensor integration exists, and whatever wires adapters is
+`live` requires a registry entry of kind `live` whose driver is registered, and the process
+refuses to start with nothing real attached; whatever wires adapters is
 responsible for refusing a mode it cannot serve. Config loading does not pretend to be that
 check, because a validation rule that says "this mode is unimplemented" is a rule someone has to
 remember to delete.

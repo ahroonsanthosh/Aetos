@@ -15,21 +15,34 @@ nothing downstream needs to change.
 
 | | Status |
 |---|---|
-| `protocol.py` — the wire codec and its integrity accounting | **built and tested** |
-| Serial transport | not built |
-| `SensorAdapter` implementation | not built |
-| Registry entry `config/sensor_registry/ld2451_uart.json` | written; **no driver registered**, so a site referencing it refuses to start |
+| `protocol.py` — wire codec and integrity accounting | **built and tested** |
+| `transport.py` — the serial port, behind a fakeable seam | **built and tested** |
+| `adapter.py` — `SensorAdapter`: time, geometry and trust | **built and tested** |
+| `bench.py` — hardware diagnostics | **built** |
+| Registry entry `config/sensor_registry/ld2451_uart.json` | **live**; set `port` and `azimuth_sign` for your unit |
+| Measured coverage against the threat class | **not done.** `coverage_validated` is false — `BENCH.md` step 9 |
 
-The codec was written first, deliberately. It is a pure function of bytes with no I/O at all,
-which is what lets it be tested exhaustively — against truncation, desynchronisation, byte-level
+The codec was written first, deliberately, and is a pure function of bytes with no I/O at all.
+That is what lets it be tested exhaustively — against truncation, desynchronisation, byte-level
 corruption and garbage — with no hardware present. A parser you can only test against a live
 device is a parser you cannot test.
 
-The adapter is not written ahead of the hardware, because most of what it must do cannot be
-decided without a unit on the bench: the real update rate, the real detection range against the
-threat class, the real serial latency. Writing it now would mean writing plausible numbers into
-a declaration, which is the exact failure `docs/sensor_interface_specification.md` exists to
-prevent.
+Everything except the last row can be exercised without the device: `FakeTransport` scripts a
+link, and `tests/integration/test_live_radar.py` runs the whole apparatus — factory, conformance
+suite, adapter, tracker — over one. The last row cannot, and that is the point of it.
+
+## Running it
+
+```bash
+python -m sensors.adapters.ld2451.bench --list                    # find the port
+python -m sensors.adapters.ld2451.bench --port /dev/ttyUSB0       # talk to the device
+python -m sensors.adapters.conformance --site bench               # check the declaration
+python -m backend.main --site bench --mode live --no-scenario     # run the system on it
+```
+
+**`BENCH.md` is the procedure**, in order, from an unopened box to a measured coverage figure.
+Step 6 — calibrating the azimuth sign — is the one that silently mirrors the whole picture if
+skipped.
 
 ## The frame
 
@@ -102,10 +115,18 @@ clear sky (FM-016).
 | File | Responsibility |
 |---|---|
 | `protocol.py` | Frame codec, plausibility envelope, integrity accounting, assumed-altitude uncertainty |
+| `transport.py` | The serial port behind a `Protocol`, plus the fake that makes the rest testable |
+| `config.py` | Driver parameters, and the invariants that keep the adapter inside its own declaration |
+| `link.py` | Sliding-window link quality — the evidence the sensor is degraded on |
+| `adapter.py` | Reader thread, observation time, geometry, covariance, health |
+| `bench.py` | Hardware diagnostics: port discovery, baud probe, live decode, raw recording |
+| `BENCH.md` | The bench procedure |
 
 ## Related
 
 - `docs/adr/0018-transport-integrity.md` — why a checksumless link is measured rather than trusted
 - `docs/adr/0019-assumed-altitude.md` — what a sensor with no elevation channel reports
+- `docs/adr/0020-live-adapter-threading-and-time.md` — the reader thread, observation time, and
+  the one-instant-per-cycle rule this device's update rate broke
 - `docs/sensor_interface_specification.md` — the floor this device is measured against
 - `tests/unit/test_ld2451_protocol.py` — the codec's proof, including the exhaustive corruption test

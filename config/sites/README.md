@@ -8,6 +8,24 @@ intersection chosen precisely because no such facility exists there, and every z
 placement around it was made up to exercise the model. Nothing in this directory should be read
 as a claim about any real place.
 
+## `bench.json` is different, and you must edit it before it means anything
+
+The bench site exists so a single real radar can be run against the full pipeline:
+
+```bash
+python -m backend.main --site bench --mode live --no-scenario
+```
+
+Its geography is a placeholder. **Set `reference` to where you are actually standing** before
+reading anything off the map — the sensor is placed at the reference point, so a reference that
+is a hundred kilometres away puts your detections a hundred kilometres away too. The zone radii
+are sized for a 100 m sensor rather than for a site: 60 m protected, 100 m monitored, so that a
+target walked toward the radar actually crosses something.
+
+It has one sensor and no simulated ones. That is deliberate — the point of a bench is that
+everything on the screen came off the wire — and it is why the run mode is LIVE rather than
+HYBRID. `sensors/adapters/ld2451/BENCH.md` is the procedure.
+
 ## Format
 
 Validated against `Site` in `backend/zones/site.py`. Unknown fields are rejected, so a typo is

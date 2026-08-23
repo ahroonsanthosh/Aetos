@@ -127,10 +127,11 @@ class ConformanceReport:
             f"   (declared {capabilities.timing.update_period_s:.2f} s)",
             f"  latency          <= {self.thresholds.latency_ceiling_ms:.0f} ms"
             f"   (declared {capabilities.timing.max_latency_ms:.0f} ms)",
-            f"  position sigma   <= {self.thresholds.position_uncertainty_ceiling_m:.1f} m"
-            f" at {self.thresholds.decision_scale_m:.0f} m"
+            f"  horizontal sigma <= {self.thresholds.position_uncertainty_ceiling_m:.1f} m"
+            f" at {assessment.assessed_range_m:.0f} m"
             f"   (declared "
-            f"{capabilities.accuracy.uncertainty_at_m(self.thresholds.decision_scale_m):.1f} m)",
+            f"{capabilities.accuracy.horizontal_uncertainty_at_m(assessment.assessed_range_m):.1f}"
+            " m)",
             f"  timestamp sigma  <= {self.thresholds.timestamp_uncertainty_ceiling_ms:.0f} ms"
             f"   (declared {capabilities.timing.timestamp_uncertainty_ms:.0f} ms)",
             "",

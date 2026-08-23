@@ -12,11 +12,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+serial = [
+    # Only needed to talk to a serial sensor. Kept out of the core install so that the wire
+    # codec, which needs nothing, imports on a machine that will never see hardware — and so
+    # that `pip install -e .` stays the same for everyone else. The transport imports it
+    # lazily and the error names this extra.
+    "pyserial>=3.5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",
     "ruff>=0.4",
+    "pyserial>=3.5",
 ]
 
 [build-system]
