@@ -44,10 +44,16 @@ _NOT_BUILT_PAGE = """<!doctype html>
     <p>The API is running, but the operator interface has not been built.</p>
     <p>Build it with <code>cd frontend &amp;&amp; npm ci &amp;&amp; npm run build</code>, then
        reload — or use <code>./start.sh</code>, which does it for you.</p>
-    <p>The API is available at <a href="{prefix}/docs">{prefix}/docs</a>.</p>
+    <p>The API is available at <a href="__PREFIX__/docs">__PREFIX__/docs</a>.</p>
   </div></body>
 </html>
 """
+# `str.replace`, not `.format()`. The page is CSS, and CSS's `{ }` are exactly the characters
+# `.format()` treats as field markers — it previously read `{ background:#0b0e12; ... }` as a
+# format field and raised `KeyError` on every request this page was meant to serve, which
+# means the one case this module exists to make harmless (no frontend built) crashed instead.
+# A marker with no brace in it can't collide with CSS ever again, by construction.
+assert "__PREFIX__" in _NOT_BUILT_PAGE  # the substitution this page exists to make
 
 
 def mount_frontend(app: FastAPI, dist: Path | None = None) -> bool:
@@ -60,10 +66,11 @@ def mount_frontend(app: FastAPI, dist: Path | None = None) -> bool:
     index = root / "index.html"
 
     if not index.is_file():
+        not_built_page = _NOT_BUILT_PAGE.replace("__PREFIX__", API_PREFIX)
 
         @app.get("/", include_in_schema=False)
         async def _not_built() -> HTMLResponse:
-            return HTMLResponse(_NOT_BUILT_PAGE.format(prefix=API_PREFIX), status_code=200)
+            return HTMLResponse(not_built_page, status_code=200)
 
         return False
 
