@@ -224,10 +224,7 @@ class TrackManager:
         self._predict_all(now)
         result = self._associator.associate(
             [TrackCandidate(t.track_id, t.filter_state) for t in self._active.values()],
-            [
-                Candidate(d.detection_id, d.position_enu, d.covariance)
-                for d in detections
-            ],
+            [Candidate(d.detection_id, d.position_enu, d.covariance) for d in detections],
         )
 
         # Recorded before the tracks are mutated, so it describes the pairing this cycle
@@ -470,9 +467,7 @@ class TrackManager:
         for track_id in [t.track_id for t in self._active.values() if t.state is TrackState.LOST]:
             del self._active[track_id]
 
-    def _emit_transition(
-        self, track: _ActiveTrack, previous: TrackState, now: datetime
-    ) -> None:
+    def _emit_transition(self, track: _ActiveTrack, previous: TrackState, now: datetime) -> None:
         event_type = {
             TrackState.CONFIRMED: EventType.TRACK_CONFIRMED,
             TrackState.STALE: EventType.TRACK_STALE,
@@ -537,9 +532,7 @@ class TrackManager:
             tracking=TrackMetadata(
                 first_seen=active.first_seen,
                 last_seen=active.last_seen,
-                seconds_since_detection=round(
-                    active.seconds_since_detection(self._clock.now()), 3
-                ),
+                seconds_since_detection=round(active.seconds_since_detection(self._clock.now()), 3),
                 detection_count=active.detection_count,
                 missed_updates=active.consecutive_misses,
                 track_confidence=self._confidence(active),
@@ -562,4 +555,3 @@ class TrackManager:
         support = min(1.0, active.detection_count / max(1, self._config.confirm_after_detections))
         penalty = 1.0 / (1.0 + active.consecutive_misses)
         return round(min(1.0, support * penalty), 4)
-

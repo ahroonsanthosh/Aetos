@@ -101,9 +101,7 @@ def _circular_zone(zone_id: str, kind: ZoneKind, radius_m: float) -> Zone:
         zone_id=zone_id,
         name=zone_id,
         kind=kind,
-        geometry=CircularGeometry(
-            centre=GeoPoint(latitude=45.0, longitude=0.0), radius_m=radius_m
-        ),
+        geometry=CircularGeometry(centre=GeoPoint(latitude=45.0, longitude=0.0), radius_m=radius_m),
     )
 
 

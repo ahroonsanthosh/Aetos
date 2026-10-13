@@ -60,6 +60,7 @@ def mount_frontend(app: FastAPI, dist: Path | None = None) -> bool:
     index = root / "index.html"
 
     if not index.is_file():
+
         @app.get("/", include_in_schema=False)
         async def _not_built() -> HTMLResponse:
             return HTMLResponse(_NOT_BUILT_PAGE.format(prefix=API_PREFIX), status_code=200)

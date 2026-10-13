@@ -233,9 +233,7 @@ class SqliteEventStore(EventStore):
 
     def read_for_track(self, track_id: str) -> Iterator[Event]:
         """Every event concerning one track, in order. The track's full history."""
-        yield from self._query(
-            "SELECT * FROM events WHERE track_id = ? ORDER BY seq", (track_id,)
-        )
+        yield from self._query("SELECT * FROM events WHERE track_id = ? ORDER BY seq", (track_id,))
 
     def latest_seq(self) -> int:
         row = self._conn.execute("SELECT MAX(seq) AS max_seq FROM events").fetchone()

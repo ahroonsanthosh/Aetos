@@ -37,9 +37,7 @@ def installation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         ConfigPaths,
         "default",
-        classmethod(
-            lambda cls: cls(repo_root=repo_root, config_root=real_default.config_root)
-        ),
+        classmethod(lambda cls: cls(repo_root=repo_root, config_root=real_default.config_root)),
     )
     return repo_root
 
@@ -85,9 +83,7 @@ def test_the_same_account_signs_in_to_every_run_mode(
         ("fictional_test_range", RunMode.SIMULATION),
         ("hardware_testbed", RunMode.LIVE),
     ):
-        app = build_application(
-            site=site, data_dir=installation / f"run-{mode.value}", mode=mode
-        )
+        app = build_application(site=site, data_dir=installation / f"run-{mode.value}", mode=mode)
         with TestClient(app) as client:
             response = client.post(
                 "/api/v1/auth/login", json={"username": USERNAME, "password": PASSWORD}

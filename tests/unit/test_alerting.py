@@ -157,9 +157,7 @@ def test_a_brief_dip_does_not_clear_the_alert(
     assert alert_events(events, EventType.ALERT_CLEARED) == []
 
 
-def test_a_sustained_drop_clears_the_alert(
-    service: AlertService, events: SqliteEventStore
-) -> None:
+def test_a_sustained_drop_clears_the_alert(service: AlertService, events: SqliteEventStore) -> None:
     service.review_cycle([track(level=RiskLevel.HIGH)], EPOCH)
     service.review_cycle([track(level=RiskLevel.LOW, score=20)], EPOCH + timedelta(seconds=1))
     service.review_cycle([track(level=RiskLevel.LOW, score=20)], EPOCH + timedelta(seconds=30))
@@ -241,9 +239,7 @@ def test_escalation_withdraws_an_acknowledgement(
     alert_id = service.active[0].alert_id
     service.acknowledge(alert_id, "op-1", EPOCH + timedelta(seconds=1))
 
-    service.review_cycle(
-        [track(level=RiskLevel.CRITICAL, score=95)], EPOCH + timedelta(seconds=2)
-    )
+    service.review_cycle([track(level=RiskLevel.CRITICAL, score=95)], EPOCH + timedelta(seconds=2))
 
     alert = service.active[0]
     assert alert.state is AlertState.ACTIVE
@@ -270,9 +266,7 @@ def test_peak_level_does_not_fall_with_the_current_level(service: AlertService) 
 # --------------------------------------------------------------------------------------
 
 
-def test_open_alerts_survive_a_restart(
-    policy: AlertPolicy, events: SqliteEventStore
-) -> None:
+def test_open_alerts_survive_a_restart(policy: AlertPolicy, events: SqliteEventStore) -> None:
     """An alert that vanished because the process bounced is indistinguishable, to the
     operator, from one that was dealt with."""
     first = AlertService(policy, events)

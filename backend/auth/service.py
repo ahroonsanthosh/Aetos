@@ -521,4 +521,3 @@ def hash_token(token: str) -> str:
     usable session.
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-

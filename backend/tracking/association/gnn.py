@@ -156,9 +156,7 @@ class GlobalNearestNeighbourAssociator:
             unassigned_detections=[
                 d.key for i, d in enumerate(detections) if i not in claimed_detections
             ],
-            unassigned_tracks=[
-                t.track_id for i, t in enumerate(tracks) if i not in claimed_tracks
-            ],
+            unassigned_tracks=[t.track_id for i, t in enumerate(tracks) if i not in claimed_tracks],
             costs=costs,
         )
 
