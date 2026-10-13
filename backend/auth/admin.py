@@ -84,8 +84,22 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     clock = SystemClock()
-    data_dir = arguments.data_dir or ConfigPaths.default().repo_root / "data"
-    repositories = SqliteRepositories(clock, data_dir / "aetos.db")
+    # Accounts are installation-wide and live outside the per-deployment data directories, so
+    # this resolves the identity database exactly the way the server does — from one function,
+    # rather than from two paths that agree until one of them changes. When they disagree the
+    # failure is silent and complete: accounts created successfully here, and a login screen
+    # that rejects every one of them.
+    data_dir = arguments.data_dir or ConfigPaths.default().repo_root / "data" / "admin"
+    identity_path = (
+        (arguments.data_dir / "identity.db")
+        if arguments.data_dir
+        else ConfigPaths.default().identity_db
+    )
+    identity_path.parent.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    arguments.identity_path = identity_path
+    repositories = SqliteRepositories(clock, data_dir / "admin.db", identity_path=identity_path)
     events = SqliteEventStore(clock, data_dir / "events.db")
 
     auth = AuthService(
@@ -108,7 +122,7 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
     command = arguments.command
 
     if command == "list":
-        return _list(repos)
+        return _list(repos, arguments.identity_path)
 
     if command == "add":
         password = _prompt_new_password()
@@ -124,7 +138,11 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        print(f"Created {user.username} ({user.role}).")
+        # Name the file. Both times this went wrong — a CLI and a server reading different
+        # databases, and later a CLI run from the wrong working directory — the symptom was
+        # "created successfully" followed by a login that failed, and the missing fact was
+        # always which file the account had gone into.
+        print(f"Created {user.username} ({user.role}) in {arguments.identity_path}.")
         return 0
 
     user = repos.users.by_username(arguments.username.strip().lower())
@@ -167,11 +185,14 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
     raise AssertionError(f"unhandled command {command!r}")
 
 
-def _list(repos: SqliteRepositories) -> int:
+def _list(repos: SqliteRepositories, identity_path: Path) -> int:
     users = repos.users.list_all()
     if not users:
-        print(f"No accounts. Create one with:\n  {sys.executable} -m backend.auth.admin add "
-              "--username <name> --role admin")
+        print(
+            f"No accounts in {identity_path}. Create one with:\n  "
+            f"{sys.executable} -m backend.auth.admin add "
+            "--username <name> --role admin"
+        )
         return 0
 
     print(f"{'USERNAME':<24} {'ROLE':<10} {'STATE':<10} CREATED")

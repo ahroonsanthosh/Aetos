@@ -30,7 +30,7 @@ The third is the one that actually holds the line. The first two are conventions
 
 ```
   ┌─────────────────────────────────────────────────────┐
-  │  SOURCE   simulated adapter  │  (future) real adapter │
+  │  SOURCE   simulated adapter  │  testbed radar adapter  │
   └────────────────────┬────────────────────────────────┘
                        │  canonical Detection (WGS-84, UTC)
                        ▼
@@ -110,7 +110,7 @@ makes backend restart recoverable.
 | `backend/zones` | Site geometry, geofencing, zone-crossing prediction | Score risk |
 | `backend/risk` | Score + confidence + reason codes + hysteresis; cycle-level situation findings | Recommend an action, or hold track state |
 | `backend/decision` | Recommendation category | Score risk, or execute anything, ever |
-| `backend/system_health` | Watchdog, degraded mode, self-test | Suppress alerts |
+| `backend/system_health` | Judge sensor silence against a window and a site policy; declare the posture | Suppress alerts, or change any assessment threshold |
 | `backend/api` | REST + WebSocket | Hold authoritative state |
 | `frontend` | Display and operator input | Be the source of truth for anything |
 
@@ -122,13 +122,15 @@ touching the others.
 
 ## Run modes
 
-Three modes are designed for; only the first is built.
+All three are built (ADR 0018). `--mode` selects one, and a mode the site's configuration
+cannot satisfy is refused rather than approximated.
 
-- **SIMULATION** — all detections synthetic. Current state.
-- **LIVE** — all detections from real sensor adapters. Not built. No real sensor integration
-  exists or is claimed.
+- **SIMULATION** — all detections synthetic, driven by a scenario. The default.
+- **LIVE** — all detections from the site's configured hardware. Built, and usable with one
+  radar today (`docs/live_mode.md`). What is *not* established is that the hardware behind it
+  is adequate: it is unvalidated against any real airframe (FM-050, FM-052).
 - **HYBRID** — real and simulated detections coexisting, for controlled testing against a
-  live baseline.
+  live baseline. Refused unless both halves are genuinely present.
 
 Because every source implements the same adapter interface and produces the same canonical
 Detection, mode selection is adapter registry configuration rather than a code path. Nothing
@@ -152,8 +154,8 @@ Per spec §20. Status updated as stages complete.
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
 | 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
-| 11 | Sensor adapter framework finalised, real stubs in place | partial — interface done; real stubs not written |
-| 12 | Chaos hardening, degraded-mode UI states | not started |
+| 11 | Sensor adapter framework finalised, real stubs in place | **done** — interface, one real driver (ADR 0017), and mode-selected wiring with per-sensor health (ADR 0018). The hardware itself remains unvalidated |
+| 12 | Chaos hardening, degraded-mode UI states | partial — the watchdog, the posture banner and the stall self-test are done (ADR 0019, FM-010); fault injection is not |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
 through ingestion into tracking, classification assesses each track from pooled evidence, risk

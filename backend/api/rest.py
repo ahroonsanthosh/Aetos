@@ -62,6 +62,14 @@ from backend.events.types import Event, EventType
 from backend.tracking.models import TrackState
 from sensors.schemas.detection import Detection
 
+MAX_HISTORY_POINTS = 10_000
+"""Ceiling on one track-history response.
+
+Track history is retained permanently (FM-022), so an unbounded read grows without limit for as
+long as a deployment runs. Ten thousand points is far more than any route needs to be legible,
+and small enough to serialise without holding the event loop.
+"""
+
 router = APIRouter(dependencies=[Depends(require_role(Role.VIEWER))])
 """Every route on this router requires at least `viewer`.
 
@@ -171,17 +179,25 @@ async def get_track(services: ServicesDep, track_id: Annotated[str, Path()]) -> 
 async def get_track_history(
     services: ServicesDep,
     track_id: Annotated[str, Path()],
-    limit: Annotated[int | None, Query(ge=1, le=10_000)] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_HISTORY_POINTS)] = MAX_HISTORY_POINTS,
 ) -> TrackHistoryResponse:
-    """Every recorded state of one track, oldest first.
+    """One track's recorded states, oldest first, most recent kept when truncated.
 
     Beyond the endpoints listed in spec §15, and included because the history it reads is
     retained permanently and would otherwise be unreachable: a track that has gone LOST keeps
     its history so that an object lost and reacquired is not presented as a new one (FM-022).
+
+    Bounded by default rather than on request. `limit` carried a ceiling that applied only when
+    a caller volunteered one, so the default was the whole of a permanently retained history —
+    a protective bound nobody was obliged to ask for is not a bound. Truncation keeps the most
+    recent points and says so in the response, because a partial route rendered as a complete
+    one is the failure this system is written against.
     """
     entries = services.track_history.for_track(track_id, limit=limit)
     if not entries and services.tracks.get(track_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no track {track_id!r}")
+
+    total = services.track_history.count_for_track(track_id)
 
     return TrackHistoryResponse(
         track_id=track_id,
@@ -202,6 +218,8 @@ async def get_track_history(
             for entry in entries
         ],
         count=len(entries),
+        total=total,
+        truncated=total > len(entries),
     )
 
 
@@ -296,8 +314,7 @@ async def acknowledge_alert(
         raise HTTPException(
             status_code=_NOT_IMPLEMENTED,
             detail=(
-                "Alerting is not running in this deployment, so there is no alert to "
-                "acknowledge."
+                "Alerting is not running in this deployment, so there is no alert to acknowledge."
             ),
         )
 
@@ -398,16 +415,24 @@ async def create_scenario(
 @router.post("/scenarios/{scenario_id}/start", status_code=_NOT_IMPLEMENTED, tags=["scenarios"])
 async def start_scenario(
     services: ServicesDep,
+    operator: RequireAdmin,
     scenario_id: Annotated[str, Path()],
 ) -> None:
     """Not implemented. Returns 501.
+
+    Gated at `admin` **now**, while it does nothing, rather than when it starts doing
+    something. The role was previously left to whoever implemented the engine — a note in this
+    docstring saying it "becomes an operator action" one day — which meant the route already
+    existed with viewer-level access and the gate depended on a future author reading a
+    comment. A viewer is not authorised to drive the simulation whether or not the engine that
+    would do it exists.
 
     It appends no event, because nothing started. A `SCENARIO_STARTED` event written by an
     endpoint that starts nothing would make the log a record of something that did not happen,
     and the log's entire value is that it is not that.
 
-    When a scenario engine exists this becomes an operator action and takes an
-    `OperatorContext` the way `create_scenario` already does.
+    When a scenario engine exists this takes an `OperatorContext` the way `create_scenario`
+    already does, so the action is attributable and not merely authorised.
     """
     _require_known_scenario(services, scenario_id)
     raise HTTPException(_NOT_IMPLEMENTED, _SCENARIO_ENGINE_ABSENT)
@@ -416,9 +441,10 @@ async def start_scenario(
 @router.post("/scenarios/{scenario_id}/stop", status_code=_NOT_IMPLEMENTED, tags=["scenarios"])
 async def stop_scenario(
     services: ServicesDep,
+    operator: RequireAdmin,
     scenario_id: Annotated[str, Path()],
 ) -> None:
-    """Not implemented. Returns 501. See `start_scenario`."""
+    """Not implemented. Returns 501. See `start_scenario`, including the role."""
     _require_known_scenario(services, scenario_id)
     raise HTTPException(_NOT_IMPLEMENTED, _SCENARIO_ENGINE_ABSENT)
 

@@ -7,6 +7,8 @@
 #   ./start.sh --list                   show the available scenarios
 #   ./start.sh --port 9000              serve somewhere else
 #   ./start.sh --no-scenario            serve an idle system, no synthetic data
+#   ./start.sh --live                   run against real hardware (see docs/live_mode.md)
+#   ./start.sh --site my_site           use a different site configuration
 #   ./start.sh --no-auth                no login, localhost only (see ADR 0016)
 #
 # Sets up the Python environment, builds the operator interface if it is not already built,
@@ -65,6 +67,11 @@ SCENARIO="b_approaching_threat"
 PORT=8000
 HOST="127.0.0.1"
 NO_AUTH=0
+MODE="simulation"
+SITE=""
+# --live defaults to the hardware testbed site, because the shipped fictional site has no
+# hardware fitted and would be refused. An explicit --site always wins.
+LIVE_DEFAULT_SITE="hardware_testbed"
 
 # ---------------------------------------------------------------------------------------
 # Arguments
@@ -81,6 +88,9 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --no-scenario) SCENARIO=""; shift ;;
+    --live) MODE="live"; SCENARIO=""; shift ;;
+    --hybrid) MODE="hybrid"; shift ;;
+    --site) SITE="$2"; shift 2 ;;
     --no-auth) NO_AUTH=1; shift ;;
     --port) PORT="$2"; shift 2 ;;
     --host) HOST="$2"; shift 2 ;;
@@ -89,6 +99,13 @@ while [[ $# -gt 0 ]]; do
     *) SCENARIO="$1"; shift ;;
   esac
 done
+
+# Resolved here rather than just before launch, because the banner prints it. A value the
+# banner reads must be settled before the banner runs, or it prints a blank where the site
+# should be — which is how "Site" came to be empty on every --live run.
+if [[ "$MODE" != "simulation" && -z "$SITE" ]]; then
+  SITE="$LIVE_DEFAULT_SITE"
+fi
 
 # ---------------------------------------------------------------------------------------
 # Prerequisites — checked up front, so a missing tool is reported before anything is built
@@ -115,16 +132,26 @@ PY=".venv/bin/python"
 
 # Reinstall only when the dependency declaration is newer than the last install, so a repeat
 # run starts immediately instead of resolving packages every time.
+# Live mode needs the serial library; simulation does not, and installing it for everyone
+# would make a laptop demo depend on a package it never calls. The stamp records which of the
+# two was installed, so switching to --live installs the extra rather than failing at the port.
 STAMP=".venv/.aetos-installed"
-if [[ ! -f "$STAMP" || pyproject.toml -nt "$STAMP" ]]; then
+EXTRAS="."
+WANTED="base"
+if [[ "$MODE" != "simulation" ]]; then
+  EXTRAS=".[hardware]"
+  WANTED="hardware"
+fi
+
+if [[ ! -f "$STAMP" || pyproject.toml -nt "$STAMP" || "$(cat "$STAMP" 2>/dev/null)" != "$WANTED" ]]; then
   say "Installing backend dependencies"
   if command -v uv >/dev/null; then
-    uv pip install --quiet -e .
+    uv pip install --quiet -e "$EXTRAS"
   else
     "$PY" -m pip install --quiet --upgrade pip
-    "$PY" -m pip install --quiet -e .
+    "$PY" -m pip install --quiet -e "$EXTRAS"
   fi
-  touch "$STAMP"
+  echo "$WANTED" > "$STAMP"
 fi
 
 # ---------------------------------------------------------------------------------------
@@ -194,7 +221,11 @@ from backend.common.clock import SystemClock
 from backend.common.config import ConfigPaths
 from backend.database.sqlite import SqliteRepositories
 
-repos = SqliteRepositories(SystemClock(), ConfigPaths.default().repo_root / "data" / "aetos.db")
+# The identity database, resolved the same way the server and the admin CLI resolve it.
+# Reading a different file here would report "no accounts" to someone who has one, or wave
+# through a run nobody can sign in to.
+paths = ConfigPaths.default()
+repos = SqliteRepositories(SystemClock(), paths.identity_db, identity_path=paths.identity_db)
 print(repos.users.count())
 repos.close()
 PY
@@ -204,6 +235,10 @@ fi
 if [[ "$ACCOUNTS" == "0" ]]; then
   echo
   printf '\033[33m!\033[0m No operator accounts exist yet, so nobody can sign in.\n'
+  # Name the database that was counted. When a login fails after an account was created
+  # successfully, the missing fact is always which file each side meant.
+  printf '  (checked %s)\n' \
+    "$("$PY" -c 'from backend.common.config import ConfigPaths; print(ConfigPaths.default().identity_db)' 2>/dev/null || echo 'the identity database')"
   echo
   printf '  Create one:\n'
   # "$PY", not "python". The dependencies live in .venv, and the bare interpreter on PATH
@@ -223,15 +258,26 @@ URL="http://${HOST}:${PORT}"
 echo
 printf '\033[1m  AETOS\033[0m  Counter-UAS / Sensor Fusion\n'
 echo
+printf '  Mode       %s\n' "$MODE"
 if [[ -n "$SCENARIO" ]]; then
   printf '  Scenario   %s\n' "$SCENARIO"
-else
+elif [[ "$MODE" == "simulation" ]]; then
   printf '  Scenario   none — the picture will stay empty\n'
+else
+  printf '  Site       %s\n' "$SITE"
 fi
 printf '  Interface  \033[36m%s\033[0m\n' "$URL"
 printf '  API docs   %s/api/v1/docs\n' "$URL"
 echo
-printf '  Data is \033[33mSIMULATED\033[0m. No real sensor is connected.\n'
+# This said SIMULATED unconditionally, so a live run announced itself as synthetic before the
+# backend could say otherwise — the one claim this system must never get backwards.
+if [[ "$MODE" == "simulation" ]]; then
+  printf '  Data is \033[33mSIMULATED\033[0m. No real sensor is connected.\n'
+else
+  printf '  Data is \033[33mLIVE\033[0m, from unvalidated testbed hardware. Its frame layout and\n'
+  printf '  baud rate are unconfirmed, and detection of a small airframe is unmeasured\n'
+  printf '  (FM-050, FM-052). Treat every track as evidence to check — docs/live_mode.md.\n'
+fi
 if [[ "$NO_AUTH" == "1" ]]; then
   printf '  \033[33mNo authentication\033[0m — anyone who can reach this port has full access.\n'
 else
@@ -265,8 +311,9 @@ echo
   done
 ) &
 
-ARGS=(--host "$HOST" --port "$PORT")
+ARGS=(--host "$HOST" --port "$PORT" --mode "$MODE")
 [[ "$NO_AUTH" == "1" ]] && ARGS+=(--no-auth)
+[[ -n "$SITE" ]] && ARGS+=(--site "$SITE")
 [[ -n "$SCENARIO" ]] && ARGS+=(--scenario "$SCENARIO")
 
 exec "$PY" -m backend.main "${ARGS[@]}"

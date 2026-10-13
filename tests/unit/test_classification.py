@@ -151,9 +151,7 @@ def test_kinematically_impossible_class_is_excluded_by_that_source() -> None:
             KinematicProfile(
                 label=VEHICLE,
                 speed_mps=Band(absolute_min=0, typical_min=1, typical_max=30, absolute_max=55),
-                altitude_m=Band(
-                    absolute_min=-30, typical_min=-5, typical_max=15, absolute_max=40
-                ),
+                altitude_m=Band(absolute_min=-30, typical_min=-5, typical_max=15, absolute_max=40),
                 vertical_rate_mps=Band(
                     absolute_min=-2, typical_min=-0.5, typical_max=0.5, absolute_max=2
                 ),
@@ -186,9 +184,7 @@ def test_confidence_is_not_the_top_probability(classifier: Classifier) -> None:
 def test_immature_track_is_less_confident_than_a_mature_one(classifier: Classifier) -> None:
     def confidence_at(detections: int) -> float:
         return classifier.classify(
-            evidence(
-                detection_count=detections, hints=(hint(SMALL, 0.9),), hint_quality=(0.9,)
-            )
+            evidence(detection_count=detections, hints=(hint(SMALL, 0.9),), hint_quality=(0.9,))
         ).confidence
 
     assert confidence_at(1) < confidence_at(4) < confidence_at(20)

@@ -15,8 +15,10 @@ Aetos is **software only**. It stops at a human-facing recommendation.
   effector integration is a separate future system with its own authorisation and safety
   architecture, and does not belong in this codebase.
 
-At this stage all detections are **synthetic**, produced by a built-in simulator. No
-physical sensor integration exists or is claimed to exist.
+By default every detection is **synthetic**, from a built-in simulator. Aetos can also run
+against a real radar — `./start.sh --live`, see **[docs/live_mode.md](docs/live_mode.md)** —
+but that hardware is a testbed unit whose detection performance has never been measured
+(FM-050, FM-052). Live mode makes the system usable; it does not make the sensor trustworthy.
 
 ## Core principle
 
@@ -49,10 +51,10 @@ a single combined pipeline function.
 | `backend/risk/` | Threat scoring with reason codes |
 | `backend/decision/` | Recommendation category only — never execution |
 | `backend/events/` | Append-only durable event store; replay |
-| `backend/system_health/` | Watchdog, degraded-mode controller, self-test |
+| `backend/system_health/` | Watchdog: judges sensor silence, declares the posture, detects a stalled pipeline |
 | `backend/database/` | Persistence adapters |
 | `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, simulated adapter, real-sensor stubs |
+| `sensors/` | `SensorAdapter` contract, simulated adapter, testbed radar driver |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
@@ -74,6 +76,7 @@ interface, so there is no second terminal and no proxy to configure.
 ./start.sh --list                  # show the nine scenarios and what each one is for
 ./start.sh h_track_crossing        # run a specific one
 ./start.sh --no-scenario           # idle system, no synthetic data
+./start.sh --live                  # real radar instead of the simulator
 ./start.sh --port 9000             # serve somewhere else
 ```
 
@@ -90,12 +93,6 @@ browser itself.
 There is no native PowerShell equivalent yet. If you'd rather not install or use Git Bash, say
 so and one can be added — but treat that as untested until it has actually been run on
 Windows, the same way the Docker path below is flagged.
-
-### Or with Docker, if you would rather not install either
-
-```bash
-docker compose up      # then http://localhost:8000
-```
 
 ### Tests
 

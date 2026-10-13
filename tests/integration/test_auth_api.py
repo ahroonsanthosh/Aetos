@@ -214,9 +214,7 @@ def test_wrong_password_and_unknown_user_are_indistinguishable(
     assert wrong.json()["detail"] == unknown.json()["detail"]
 
 
-def test_a_locked_out_account_is_not_told_that_it_is(
-    client: TestClient, auth: AuthService
-) -> None:
+def test_a_locked_out_account_is_not_told_that_it_is(client: TestClient, auth: AuthService) -> None:
     """Lockout is a free oracle for whether a username exists, so the detail stays in the log."""
     auth.create_user("alice", PASSWORD, Role.OPERATOR)
     for _ in range(6):
@@ -351,9 +349,7 @@ def test_the_stream_refuses_an_unauthenticated_upgrade(client: TestClient) -> No
     assert refused.value.code == WS_UNAUTHENTICATED
 
 
-def test_the_stream_accepts_an_authenticated_upgrade(
-    client: TestClient, auth: AuthService
-) -> None:
+def test_the_stream_accepts_an_authenticated_upgrade(client: TestClient, auth: AuthService) -> None:
     auth.create_user("alice", PASSWORD, Role.VIEWER)
     login(client, "alice")
 
@@ -402,9 +398,7 @@ def test_actions_are_attributed_to_the_authenticated_account(
         json={"name": "s", "description": "", "seed": 1, "definition": {}},
     )
 
-    logins = [
-        e for e in events.read_from(1) if e.event_type is EventType.OPERATOR_LOGIN_SUCCEEDED
-    ]
+    logins = [e for e in events.read_from(1) if e.event_type is EventType.OPERATOR_LOGIN_SUCCEEDED]
     assert logins
     assert logins[-1].payload["username"] == "alice"
 

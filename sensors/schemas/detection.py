@@ -148,9 +148,7 @@ class Measurement(BaseModel):
 
     @field_validator("position_covariance_enu")
     @classmethod
-    def _validate_covariance_shape(
-        cls, v: list[list[float]] | None
-    ) -> list[list[float]] | None:
+    def _validate_covariance_shape(cls, v: list[list[float]] | None) -> list[list[float]] | None:
         if v is None:
             return v
         if len(v) != 3 or any(len(row) != 3 for row in v):

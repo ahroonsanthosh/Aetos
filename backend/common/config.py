@@ -80,6 +80,21 @@ class ConfigPaths:
     def sensor_registry(self) -> Path:
         return self.config_root / "sensor_registry"
 
+    @property
+    def identity_db(self) -> Path:
+        """Where operator accounts live: `data/identity.db`, shared by every deployment.
+
+        Deliberately outside the per-deployment data directories that hold event logs and track
+        projections (ADR 0018). History belongs to one site in one run mode; an account belongs
+        to the person sitting in front of the machine, and making them create one per mode would
+        be friction with no safety behind it.
+
+        Resolved here so the server and the admin CLI cannot drift apart. When they disagree the
+        failure is silent and total: accounts created successfully by one, and a login screen
+        that rejects every one of them in the other.
+        """
+        return self.repo_root / "data" / "identity.db"
+
     def site_file(self, name: str) -> Path:
         return self.sites / f"{_checked_name(name, 'site')}.json"
 
@@ -125,8 +140,7 @@ def load_config(model: type[ModelT], path: Path) -> ModelT:
     document = _read_json(path)
     if not isinstance(document, dict):
         raise ConfigError(
-            f"{path}: expected a JSON object at the top level, found "
-            f"{type(document).__name__}"
+            f"{path}: expected a JSON object at the top level, found {type(document).__name__}"
         )
 
     try:
@@ -151,9 +165,7 @@ def _read_json(path: Path) -> object:
         ) from exc
 
 
-def _describe_validation_failure(
-    path: Path, model: type[BaseModel], exc: ValidationError
-) -> str:
+def _describe_validation_failure(path: Path, model: type[BaseModel], exc: ValidationError) -> str:
     """Turn a Pydantic error into something an operator can act on without reading a stack
     trace: the file, the model it failed against, and every offending field by name."""
     problems = exc.errors()

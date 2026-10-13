@@ -170,8 +170,10 @@ else in the codebase, and a test asserts it.
 | `simulated_rf` | `rf` |
 | `simulated_acoustic` | `acoustic` |
 
-The right-hand column is a **schema reservation, not a capability claim**. No real sensor
-integration exists.
+The right-hand column is a **schema reservation, not a capability claim**. One adapter emits
+`radar` — the testbed hardware driver in `sensors/adapters/uart_fmcw_radar/` (ADR 0017) — and
+it is wired into no run mode and validated against nothing. `eo_ir`, `rf` and `acoustic` have
+no implementation at all.
 
 ## Classification labels
 

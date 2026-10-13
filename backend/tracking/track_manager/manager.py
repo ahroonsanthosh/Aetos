@@ -31,7 +31,6 @@ from backend.tracking.association.gnn import (
 from backend.tracking.filters.kalman import (
     ConstantVelocityFilter,
     KalmanState,
-    isotropic_covariance,
 )
 from backend.tracking.models import (
     EnuState,
@@ -110,8 +109,32 @@ class _ActiveTrack:
     state: TrackState
     filter_state: KalmanState
     first_seen: datetime
+    """When the object was first observed, on the *sensor's* clock. Published as-is."""
+
     last_seen: datetime
+    """When it was most recently observed, on the sensor's clock. Published as-is, and
+    deliberately not used to measure staleness — see `last_supported`."""
+
+    last_supported: datetime
+    """When this track last received a detection, on the **pipeline's** clock.
+
+    Distinct from `last_seen` because the two are measured by different clocks, and the whole
+    point of a lifecycle threshold is that it means the duration it names.
+
+    Staleness used to be `now - last_seen`: a pipeline instant minus a sensor instant, so the
+    difference carried whatever skew existed between them. Ingestion accepts up to 30 s of it
+    (FM-012), so a sensor lagging 25 s produced tracks that were **retired on their first
+    missed cycle** instead of coasting for the configured six seconds — the object reappeared
+    as a new track with a new identity and a split history, which is precisely the
+    fragmentation `coast_seconds` exists to prevent (FM-022). Silently, and only for sites
+    whose sensors were not perfectly synchronised.
+
+    `last_updated` cannot serve this purpose: prediction advances it every cycle for coasting
+    tracks too, so it never grows."""
+
     last_updated: datetime
+    """When the filter state was last advanced, on the pipeline's clock. Prediction moves this
+    every cycle; it measures filter currency, not support."""
     detection_count: int = 0
     consecutive_misses: int = 0
     contributing_sensors: set[str] = field(default_factory=set)
@@ -138,7 +161,12 @@ class _ActiveTrack:
     `apply_classification` and passed through to `to_track`."""
 
     def seconds_since_detection(self, now: datetime) -> float:
-        return (now - self.last_seen).total_seconds()
+        """How long this track has gone without support, on one clock throughout.
+
+        Measured from `last_supported` rather than `last_seen` so the answer is a real
+        duration rather than a duration plus the sensor's clock offset.
+        """
+        return (now - self.last_supported).total_seconds()
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,10 +224,7 @@ class TrackManager:
         self._predict_all(now)
         result = self._associator.associate(
             [TrackCandidate(t.track_id, t.filter_state) for t in self._active.values()],
-            [
-                Candidate(d.detection_id, d.position_enu, d.covariance)
-                for d in detections
-            ],
+            [Candidate(d.detection_id, d.position_enu, d.covariance) for d in detections],
         )
 
         # Recorded before the tracks are mutated, so it describes the pairing this cycle
@@ -286,6 +311,7 @@ class TrackManager:
         track.detection_count += 1
         track.consecutive_misses = 0
         track.last_seen = detection.timestamp
+        track.last_supported = now
         track.last_updated = now
         track.contributing_sensors.add(detection.sensor_id)
 
@@ -412,6 +438,7 @@ class TrackManager:
             filter_state=self._kalman.initiate(detection.position_enu, detection.covariance),
             first_seen=detection.timestamp,
             last_seen=detection.timestamp,
+            last_supported=now,
             last_updated=now,
             detection_count=1,
             contributing_sensors={detection.sensor_id},
@@ -440,9 +467,7 @@ class TrackManager:
         for track_id in [t.track_id for t in self._active.values() if t.state is TrackState.LOST]:
             del self._active[track_id]
 
-    def _emit_transition(
-        self, track: _ActiveTrack, previous: TrackState, now: datetime
-    ) -> None:
+    def _emit_transition(self, track: _ActiveTrack, previous: TrackState, now: datetime) -> None:
         event_type = {
             TrackState.CONFIRMED: EventType.TRACK_CONFIRMED,
             TrackState.STALE: EventType.TRACK_STALE,
@@ -467,7 +492,12 @@ class TrackManager:
         return self.to_track(active).model_dump(mode="json")
 
     def to_track(self, active: _ActiveTrack) -> Track:
-        """Project internal state into the immutable published Track."""
+        """Project internal state into the immutable published Track.
+
+        Staleness is computed here, on the pipeline clock, rather than left for a consumer to
+        derive from `last_seen` — which is the sensor's clock and would hand every consumer the
+        skew between the two (FM-012a).
+        """
         position = active.filter_state.position
         velocity = active.filter_state.velocity
 
@@ -502,6 +532,7 @@ class TrackManager:
             tracking=TrackMetadata(
                 first_seen=active.first_seen,
                 last_seen=active.last_seen,
+                seconds_since_detection=round(active.seconds_since_detection(self._clock.now()), 3),
                 detection_count=active.detection_count,
                 missed_updates=active.consecutive_misses,
                 track_confidence=self._confidence(active),
@@ -524,8 +555,3 @@ class TrackManager:
         support = min(1.0, active.detection_count / max(1, self._config.confirm_after_detections))
         penalty = 1.0 / (1.0 + active.consecutive_misses)
         return round(min(1.0, support * penalty), 4)
-
-
-def covariance_from_uncertainty(uncertainty_m: float) -> np.ndarray:
-    """Isotropic fallback for sources reporting only a scalar uncertainty."""
-    return isotropic_covariance(uncertainty_m)

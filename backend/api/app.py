@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -54,6 +54,57 @@ events. Endpoints report the absence of a capability rather than simulating it.
 """
 
 
+SECURITY_HEADERS = {
+    # Nothing loads from anywhere but this origin. The interface bundles its own assets, so
+    # there is no CDN to allow, and `frame-ancestors 'none'` is what stops the console being
+    # framed by a page that tricks an operator into clicking "acknowledge" on an alert they
+    # cannot see. `X-Frame-Options` repeats it for anything too old to read CSP.
+    #
+    # `'unsafe-inline'` is present for styles and not for scripts: the bundler emits inline
+    # style attributes, while every script is a file. Script injection is the one this has to
+    # stop, and it does.
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' ws: wss:; "
+        "worker-src 'self' blob:; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    # A JSON response that a browser is willing to sniff as HTML is an XSS vector. This says
+    # the declared content type is the content type.
+    "X-Content-Type-Options": "nosniff",
+    # Track identifiers and site names live in URLs. Without this they travel in the Referer
+    # header to wherever an operator clicks next.
+    "Referrer-Policy": "no-referrer",
+    # None of these are used, and a compromised page should not be able to start.
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), usb=(), payment=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+"""Sent on every response.
+
+Set here rather than left to the reverse proxy. A proxy is the right place for TLS and rate
+limiting — things this process genuinely cannot do — but headers it *can* set are headers that
+should not depend on someone else's configuration being right. If the proxy sets them too, the
+proxy wins and nothing breaks.
+
+`Strict-Transport-Security` is deliberately absent from this dictionary and added only on
+requests that arrived over TLS: asserting HSTS over plain HTTP is meaningless, and sending it
+from a loopback development run would poison the browser's HSTS cache for `localhost`.
+"""
+
+HSTS_HEADER = "max-age=31536000; includeSubDomains"
+"""One year, once TLS is genuinely in front. Applied only to requests that arrived over
+https — see `SECURITY_HEADERS`."""
+
+
 def create_app(services: ApiServices) -> FastAPI:
     """Build the application over the given services."""
     broadcaster = EventBroadcaster(services.events)
@@ -90,6 +141,57 @@ def create_app(services: ApiServices) -> FastAPI:
     )
     app.state.services = services
     app.state.broadcaster = broadcaster
+
+    @app.middleware("http")
+    async def _reject_cross_origin_writes(request: Request, call_next):
+        """Refuse a state-changing request that a browser says came from somewhere else.
+
+        Defence in depth behind `SameSite=strict`, which is the real protection: a modern
+        browser will not attach the session cookie to a cross-site request at all. This covers
+        what that does not — a browser too old to enforce SameSite, and any future change that
+        loosens the cookie.
+
+        Deliberately permissive in one direction: a request with **no** `Origin` is allowed
+        through. Browsers set it on every cross-origin write, so its absence means the caller is
+        not a browser — curl, a monitoring probe, the deployment checks in `docs/deployment.md`
+        — and those are not the thing CSRF describes. Rejecting them would break legitimate
+        automation to defend against an attack they cannot mount.
+
+        The comparison is against the `Host` the request arrived with, so it keeps working
+        behind the reverse proxy that terminates TLS without needing to know its name.
+        """
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            origin = request.headers.get("origin")
+            if origin is not None:
+                expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
+                # A proxy terminating TLS forwards the original scheme; trust it only when the
+                # deployment asserted a proxy is there, which is what proxy_headers does.
+                allowed = {expected, expected.replace("http://", "https://", 1)}
+                if origin not in allowed:
+                    return JSONResponse(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        content={"detail": "Cross-origin request refused."},
+                    )
+
+        return await call_next(request)
+
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        """Attach the headers above to every response, including errors and static files.
+
+        Middleware rather than a per-route dependency, so a route added later cannot be added
+        without them — the same reasoning as gating the router rather than each handler.
+        """
+        response = await call_next(request)
+        for header, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(header, value)
+
+        # Only over TLS, and only when a proxy has said so. Sending HSTS from a loopback run
+        # would pin `localhost` to https in the developer's browser for a year.
+        if request.url.scheme == "https":
+            response.headers.setdefault("Strict-Transport-Security", HSTS_HEADER)
+
+        return response
 
     # Auth first: its routes must exist before anything could shadow them, and it is the only
     # router without a baseline role gate.

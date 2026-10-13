@@ -191,9 +191,7 @@ class SqliteSensorRepository(SensorRepository):
                 )
 
     def get(self, sensor_id: str) -> SensorRecord | None:
-        row = self._db.query_one(
-            "SELECT document FROM sensors WHERE sensor_id = ?", (sensor_id,)
-        )
+        row = self._db.query_one("SELECT document FROM sensors WHERE sensor_id = ?", (sensor_id,))
         return _validate(SensorRecord, row["document"], f"sensor {sensor_id}") if row else None
 
     def list_all(self, site_id: str | None = None) -> list[SensorRecord]:
@@ -233,8 +231,7 @@ class SqliteScenarioRepository(ScenarioRepository):
             created_by=created_by,
         )
         self._db.execute(
-            "INSERT INTO scenarios (scenario_id, name, created_at, document)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO scenarios (scenario_id, name, created_at, document) VALUES (?, ?, ?, ?)",
             (
                 record.scenario_id,
                 record.name,
@@ -335,14 +332,21 @@ class SqliteTrackHistoryRepository(TrackHistoryRepository):
         )
 
     def for_track(self, track_id: str, limit: int | None = None) -> list[TrackHistoryEntry]:
-        sql = (
-            "SELECT seq, event_type, timestamp, snapshot FROM track_history"
-            " WHERE track_id = ? ORDER BY seq"
-        )
-        params: tuple[Any, ...] = (track_id,)
+        # Newest-first with a LIMIT, then reversed, so a truncated history keeps its most
+        # recent entries rather than its first ones. `ORDER BY seq LIMIT n` returned the oldest
+        # n — the beginning of a route rather than where the object has just been.
         if limit is not None:
-            sql += " LIMIT ?"
-            params += (limit,)
+            sql = (
+                "SELECT seq, event_type, timestamp, snapshot FROM track_history"
+                " WHERE track_id = ? ORDER BY seq DESC LIMIT ?"
+            )
+            params: tuple[Any, ...] = (track_id, limit)
+        else:
+            sql = (
+                "SELECT seq, event_type, timestamp, snapshot FROM track_history"
+                " WHERE track_id = ? ORDER BY seq"
+            )
+            params = (track_id,)
         return [
             TrackHistoryEntry(
                 seq=row["seq"],
@@ -350,8 +354,14 @@ class SqliteTrackHistoryRepository(TrackHistoryRepository):
                 timestamp=row["timestamp"],
                 track=_validate(Track, row["snapshot"], f"track history {track_id}#{row['seq']}"),
             )
-            for row in self._db.query(sql, params)
+            for row in sorted(self._db.query(sql, params), key=lambda row: row["seq"])
         ]
+
+    def count_for_track(self, track_id: str) -> int:
+        row = self._db.query(
+            "SELECT COUNT(*) AS n FROM track_history WHERE track_id = ?", (track_id,)
+        )
+        return int(next(iter(row))["n"])
 
     def discard_all(self) -> None:
         self._db.execute("DELETE FROM track_history")
@@ -531,9 +541,29 @@ class SqliteRepositories:
     composition detail, and is the only place SQLite is named.
     """
 
-    def __init__(self, clock: Clock, path: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        path: Path | str | None = None,
+        identity_path: Path | str | None = None,
+    ) -> None:
         self._db = Database(clock, path)
         self._db.apply_schema(SCHEMA)
+
+        # Accounts belong to the installation, not to one deployment's history.
+        #
+        # Track state is partitioned per site and run mode (ADR 0018, FM-053) because mixing
+        # two deployments' observations is how synthetic tracks reach a live display. Accounts
+        # are the opposite case: the same person signs in to the simulator and to the live
+        # system, and making them create an account per mode would be an obstacle with no
+        # safety behind it — the first thing anyone would do is reuse one password everywhere.
+        #
+        # A second connection rather than a second class, because nothing spans both: auth
+        # writes accounts here and its audit trail to the event log, and no unit of work
+        # touches an account and a track together.
+        self._identity = Database(clock, identity_path) if identity_path is not None else self._db
+        if self._identity is not self._db:
+            self._identity.apply_schema(SCHEMA)
 
         self.is_durable = self._db.is_durable
         self.sites: SiteRepository = SqliteSiteRepository(self._db)
@@ -541,14 +571,14 @@ class SqliteRepositories:
         self.scenarios: ScenarioRepository = SqliteScenarioRepository(self._db)
         self.tracks: TrackRepository = SqliteTrackRepository(self._db)
         self.track_history: TrackHistoryRepository = SqliteTrackHistoryRepository(self._db)
-        self.users: UserRepository = SqliteUserRepository(self._db)
-        self.credentials: CredentialRepository = SqliteCredentialRepository(self._db)
-        self.sessions: SessionRepository = SqliteSessionRepository(self._db)
-        self.projection_state: ProjectionStateRepository = SqliteProjectionStateRepository(
-            self._db
-        )
+        self.users: UserRepository = SqliteUserRepository(self._identity)
+        self.credentials: CredentialRepository = SqliteCredentialRepository(self._identity)
+        self.sessions: SessionRepository = SqliteSessionRepository(self._identity)
+        self.projection_state: ProjectionStateRepository = SqliteProjectionStateRepository(self._db)
 
     def close(self) -> None:
+        if self._identity is not self._db:
+            self._identity.close()
         self._db.close()
 
 

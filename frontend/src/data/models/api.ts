@@ -13,149 +13,167 @@
  * true north, WGS-84, altitude above the WGS-84 ellipsoid, timestamps UTC ISO-8601.
  */
 
-export const API_PREFIX = '/api/v1'
+export const API_PREFIX = "/api/v1";
 
 /** Backend lifecycle states. These five are the only states a track can be in. */
-export type BackendTrackState = 'new' | 'tentative' | 'confirmed' | 'stale' | 'lost'
+export type BackendTrackState =
+  | "new"
+  | "tentative"
+  | "confirmed"
+  | "stale"
+  | "lost";
 
 export type ClassificationLabel =
-  | 'unknown'
-  | 'unknown_uas'
-  | 'small_uas'
-  | 'medium_uas'
-  | 'large_uas'
-  | 'bird'
-  | 'vehicle'
-  | 'other'
+  | "unknown"
+  | "unknown_uas"
+  | "small_uas"
+  | "medium_uas"
+  | "large_uas"
+  | "bird"
+  | "vehicle"
+  | "other";
 
-export type RiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical'
+export type RiskLevel = "none" | "low" | "medium" | "high" | "critical";
 
 export type Recommendation =
-  | 'MONITOR'
-  | 'VERIFY'
-  | 'ALERT'
-  | 'ESCALATE'
-  | 'RESPONSE_RECOMMENDED'
+  | "MONITOR"
+  | "VERIFY"
+  | "ALERT"
+  | "ESCALATE"
+  | "RESPONSE_RECOMMENDED";
 
 export interface PositionView {
-  latitude: number
-  longitude: number
-  altitude_m: number
+  latitude: number;
+  longitude: number;
+  altitude_m: number;
 }
 
 export interface KinematicsView {
-  speed_mps: number
-  heading_deg: number
-  vertical_rate_mps: number
+  speed_mps: number;
+  heading_deg: number;
+  vertical_rate_mps: number;
 }
 
 export interface ClassificationView {
-  label: ClassificationLabel
+  label: ClassificationLabel;
   /** How much this conclusion should be believed — deliberately *not* the top label's
    *  probability. Folds distribution peakedness, evidence weight and track maturity, so a
    *  sharp answer built on one detection reads as uncertain (ADR 0012). */
-  confidence: number
+  confidence: number;
   /** Probability across the label set. Empty means nothing has been assessed, which is
    *  different from having been assessed as `unknown`. */
-  distribution: Partial<Record<ClassificationLabel, number>>
+  distribution: Partial<Record<ClassificationLabel, number>>;
   /** One human-readable justification per contributing evidence source. */
-  reasons: string[]
+  reasons: string[];
   /** Computed server-side so every client does not re-derive the same emptiness check and
    *  eventually derive it differently. */
-  assessed: boolean
+  assessed: boolean;
 }
 
 /** One risk factor's reading. All three numbers, because a client showing only `contribution`
  *  cannot explain why a heavily-weighted factor contributed little. */
 export interface FactorView {
-  code: string
-  weight: number
-  activation: number
-  contribution: number
-  detail: string
+  code: string;
+  weight: number;
+  activation: number;
+  contribution: number;
+  detail: string;
 }
 
 export interface ThreatView {
-  risk_score: number
-  risk_level: RiskLevel
+  risk_score: number;
+  risk_level: RiskLevel;
   /** How much the assessment should be believed. Separate from the score and never folded into
    *  it — a thinly-supported track on alarming geometry is exactly what an operator must see. */
-  confidence: number
+  confidence: number;
   /** Always present alongside the score. A bare number is a black box an operator cannot act on.
    *  Ordered by how much each factor actually moved the score. */
-  reasons: string[]
+  reasons: string[];
   /** Machine-readable equivalent of `reasons`, same order. */
-  codes: string[]
+  codes: string[];
   /** Every factor consulted, including the ones that found nothing. */
-  factors: FactorView[]
-  recommendation: Recommendation
+  factors: FactorView[];
+  recommendation: Recommendation;
   /** Whether risk assessment ran at all. A zero score from a module that ran means "nothing
    *  here is concerning"; from one that did not it means nothing. */
-  assessed: boolean
+  assessed: boolean;
 }
 
 export interface TrackingView {
-  first_seen: string
+  first_seen: string;
   /** When the last *detection* arrived — not the last update. A coasting track is updated by
    *  prediction without being seen, and conflating the two makes a coasted position look
    *  freshly observed. */
-  last_seen: string
-  detection_count: number
-  missed_updates: number
-  coasting: boolean
-  track_confidence: number
-  contributing_sensors: string[]
+  last_seen: string;
+  /** How long the track had gone without a detection when the backend took this snapshot,
+   *  measured on the backend's clock. Null on snapshots predating the field.
+   *
+   *  Reported by the backend rather than derived here. Computing `Date.now() - last_seen`
+   *  subtracts the browser's clock from the *sensor's*, so the answer carries the drift
+   *  between two machines neither of which this interface controls. */
+  seconds_since_detection: number | null;
+  detection_count: number;
+  missed_updates: number;
+  coasting: boolean;
+  track_confidence: number;
+  contributing_sensors: string[];
 }
 
 export interface TrackView {
-  track_id: string
-  state: BackendTrackState
+  track_id: string;
+  state: BackendTrackState;
   /** Whether the backend considers this track fit to show on the operator's map. Computed
    *  server-side deliberately: a client deciding for itself would eventually decide
    *  differently, and a single unconfirmed return is what clutter looks like. */
-  displayable: boolean
-  position: PositionView
-  kinematics: KinematicsView
-  classification: ClassificationView
-  threat: ThreatView
-  tracking: TrackingView
-  updated_at: string
+  displayable: boolean;
+  position: PositionView;
+  kinematics: KinematicsView;
+  classification: ClassificationView;
+  threat: ThreatView;
+  tracking: TrackingView;
+  updated_at: string;
   /** The log position this view was projected from. Lets the client hand off from REST to the
    *  event stream at exactly the right sequence number, with no gap and no duplicate. */
-  last_applied_seq: number
+  last_applied_seq: number;
 }
 
 export interface TrackListResponse {
-  tracks: TrackView[]
-  count: number
+  tracks: TrackView[];
+  count: number;
   /** The log position this whole snapshot is current to. A client that opens the event stream
    *  at `as_of_seq + 1` sees neither a gap nor a duplicate. Note this is the snapshot's
    *  position; each TrackView carries its own `last_applied_seq` for that individual track. */
-  as_of_seq: number
+  as_of_seq: number;
 }
 
 export interface TrackHistoryPointView {
-  seq: number
+  seq: number;
   /** Which event produced this point — TRACK_CREATED, TRACK_UPDATED, TRACK_CONFIRMED,
    *  TRACK_STALE, TRACK_LOST. One point per recorded state change, not a fixed-interval
    *  sample, so the spacing between points reflects how often the track actually changed. */
-  event_type: EventType
-  timestamp: string
-  state: BackendTrackState
-  position: PositionView
+  event_type: EventType;
+  timestamp: string;
+  state: BackendTrackState;
+  position: PositionView;
   /** Flat, not nested under a kinematics object — matches the wire shape exactly. */
-  speed_mps: number
-  heading_deg: number
+  speed_mps: number;
+  heading_deg: number;
 }
 
 export interface TrackHistoryResponse {
-  track_id: string
-  /** Oldest first. */
-  points: TrackHistoryPointView[]
-  count: number
+  track_id: string;
+  /** Oldest first. When truncated these are the most recent points, not the first. */
+  points: TrackHistoryPointView[];
+  count: number;
+  /** How many points the track actually has. */
+  total: number;
+  /** Whether points were left out. A partial route drawn as a complete one is exactly the
+   *  kind of confident, wrong picture this interface must never present, so the operator is
+   *  told rather than left to infer it from a short list. */
+  truncated: boolean;
 }
 
-export type Role = 'viewer' | 'operator' | 'admin'
+export type Role = "viewer" | "operator" | "admin";
 
 /** Who the caller is, from `GET /auth/me`.
  *
@@ -163,138 +181,142 @@ export type Role = 'viewer' | 'operator' | 'admin'
  * *offers*; what it *permits* is decided by the backend on every request, so a viewer who
  * crafts an acknowledge call by hand is refused regardless of what this page rendered. */
 export interface SessionView {
-  operator_id: string
-  display_name: string
-  role: Role
-  authenticated: boolean
+  operator_id: string;
+  display_name: string;
+  role: Role;
+  authenticated: boolean;
 }
 
 export interface AlertView {
-  alert_id: string
-  track_id: string
-  state: 'active' | 'acknowledged' | 'cleared'
-  raised_at: string
-  raised_level: RiskLevel
+  alert_id: string;
+  track_id: string;
+  state: "active" | "acknowledged" | "cleared";
+  raised_at: string;
+  raised_level: RiskLevel;
   /** The worst level reached while open. Never falls, so an alert that has since subsided
    *  still reports what it was at its height. */
-  peak_level: RiskLevel
-  level: RiskLevel
-  score: number
-  confidence: number
-  codes: string[]
-  reasons: string[]
-  updated_at: string
-  escalated_at: string | null
-  acknowledged_at: string | null
-  acknowledged_by: string | null
+  peak_level: RiskLevel;
+  level: RiskLevel;
+  score: number;
+  confidence: number;
+  codes: string[];
+  reasons: string[];
+  updated_at: string;
+  escalated_at: string | null;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
 }
 
 export interface AlertListResponse {
-  alerts: AlertView[]
-  count: number
+  alerts: AlertView[];
+  count: number;
   /** Whether anything was in a position to raise an alert. An empty list with this false is
    *  "nothing is watching"; with it true, "nothing is wrong". Never render one as the
    *  other. */
-  assessing: boolean
+  assessing: boolean;
 }
 
 export interface GeoPointView {
-  latitude: number
-  longitude: number
+  latitude: number;
+  longitude: number;
 }
 
 export interface SensorView {
-  sensor_id: string
-  site_id: string
-  registry_key: string
+  sensor_id: string;
+  site_id: string;
+  /** Null for a real sensor: hardware has no simulation profile. */
+  registry_key: string | null;
+  /** Non-null when physical hardware is fitted at this placement. The distinction that
+   *  matters most about any row in the sensor table — a device, or a scenario. */
+  hardware_driver: string | null;
   /** Null when the backend has not established the sensor's type. The registry entry that
    *  would state it has no loader behind the repository layer, and the backend leaves the
    *  field null rather than inventing one — so the interface must render its absence. */
-  sensor_type: string | null
-  position: GeoPointView
-  height_m: number
-  boresight_deg: number
-  enabled: boolean
+  sensor_type: string | null;
+  position: GeoPointView;
+  height_m: number;
+  boresight_deg: number;
+  enabled: boolean;
 }
 
 export interface SensorListResponse {
-  sensors: SensorView[]
-  count: number
+  sensors: SensorView[];
+  count: number;
 }
 
-export type ZoneKind = 'monitored' | 'restricted' | 'protected'
+export type ZoneKind = "monitored" | "restricted" | "protected";
 
 export interface CircleGeometryView {
-  shape: 'circle'
-  centre: GeoPointView
-  radius_m: number
+  shape: "circle";
+  centre: GeoPointView;
+  radius_m: number;
 }
 
 export interface PolygonGeometryView {
-  shape: 'polygon'
-  vertices: GeoPointView[]
+  shape: "polygon";
+  vertices: GeoPointView[];
 }
 
-export type ZoneGeometryView = CircleGeometryView | PolygonGeometryView
+export type ZoneGeometryView = CircleGeometryView | PolygonGeometryView;
 
 export interface ZoneView {
-  zone_id: string
-  name: string
-  kind: ZoneKind
-  geometry: ZoneGeometryView
-  floor_m: number | null
-  ceiling_m: number | null
+  zone_id: string;
+  name: string;
+  kind: ZoneKind;
+  geometry: ZoneGeometryView;
+  floor_m: number | null;
+  ceiling_m: number | null;
 }
 
 export interface SiteView {
-  site_id: string
-  name: string
-  reference: PositionView
-  protected_radius_m: number
-  zones: ZoneView[]
+  site_id: string;
+  name: string;
+  reference: PositionView;
+  protected_radius_m: number;
+  zones: ZoneView[];
 }
 
 export interface SiteListResponse {
-  sites: SiteView[]
-  count: number
+  sites: SiteView[];
+  count: number;
 }
 
 export interface ScenarioView {
-  scenario_id: string
-  name: string
-  description: string
-  seed: number
-  duration_s: number
+  scenario_id: string;
+  name: string;
+  description: string;
+  seed: number;
+  duration_s: number;
 }
 
 export interface ScenarioListResponse {
-  scenarios: ScenarioView[]
-  count: number
+  scenarios: ScenarioView[];
+  count: number;
 }
 
 export interface DetectionView {
-  seq: number
-  detection_id: string
-  timestamp: string
-  sensor_id: string
-  sensor_type: string
-  position: PositionView
-  position_uncertainty_m: number
-  confidence: number
+  seq: number;
+  detection_id: string;
+  timestamp: string;
+  sensor_id: string;
+  sensor_type: string;
+  position: PositionView;
+  position_uncertainty_m: number;
+  confidence: number;
 }
 
 /* -------------------------------------------------------------------------------------- */
 /* System status                                                                            */
 /* -------------------------------------------------------------------------------------- */
 
-export type RunMode = 'simulation' | 'live' | 'hybrid'
+export type RunMode = "simulation" | "live" | "hybrid";
 
 export interface ModeView {
-  mode: RunMode
-  real_adapters_connected: number
+  mode: RunMode;
+  real_adapters_connected: number;
   /** Computed from whether a real adapter is actually feeding the pipeline, not from the
    *  configured mode string. The two can disagree, and the operator needs to see that. */
-  simulated: boolean
+  simulated: boolean;
 }
 
 /**
@@ -302,25 +324,37 @@ export interface ModeView {
  * exist is not an outage, and showing it green would be a lie.
  */
 export type ComponentState =
-  | 'ok'
-  | 'degraded'
-  | 'unavailable'
-  | 'not_built'
-  | 'not_connected'
+  | "ok"
+  | "degraded"
+  | "unavailable"
+  | "not_built"
+  | "not_connected";
 
 export interface ComponentHealth {
-  component: string
-  state: ComponentState
-  detail: string
+  component: string;
+  state: ComponentState;
+  detail: string;
 }
 
+/**
+ * What the watchdog says the system as a whole can currently claim about the sky.
+ *
+ * `blind` and `stalled` are deliberately separate. Blind means every sensor is out; stalled
+ * means the sensors may be perfectly healthy and nobody is asking them anything — which the
+ * operator cannot infer from a display that has simply stopped changing.
+ */
+export type Posture = "nominal" | "degraded" | "blind" | "stalled";
+
 export interface SystemHealthView {
-  components: ComponentHealth[]
-  latest_event_seq: number
-  projection_seq: number
+  components: ComponentHealth[];
+  latest_event_seq: number;
+  projection_seq: number;
   /** Events committed but not yet projected. Growing without bound means the operator's
    *  picture is falling behind what the system actually knows. */
-  projection_lag: number
+  projection_lag: number;
+  /** Null when no watchdog is attached. Null must render as "not being watched", never as
+   *  healthy — the whole point of the field is that an unwatched system is not a well one. */
+  posture: Posture | null;
 }
 
 /* -------------------------------------------------------------------------------------- */
@@ -328,53 +362,52 @@ export interface SystemHealthView {
 /* -------------------------------------------------------------------------------------- */
 
 export type EventType =
-  | 'DETECTION_RECEIVED'
-  | 'DETECTION_REJECTED'
-  | 'DETECTION_SHED'
-  | 'TRACK_CREATED'
-  | 'TRACK_UPDATED'
-  | 'TRACK_CONFIRMED'
-  | 'TRACK_COASTING'
-  | 'TRACK_STALE'
-  | 'TRACK_LOST'
-  | 'CLASSIFICATION_CHANGED'
-  | 'RISK_CHANGED'
-  | 'ZONE_ENTERED'
-  | 'ZONE_EXITED'
-  | 'ALERT_CREATED'
-  | 'ALERT_CLEARED'
-  | 'RECOMMENDATION_CHANGED'
-  | 'OPERATOR_ACKNOWLEDGED'
-  | 'SCENARIO_STARTED'
-  | 'SCENARIO_STOPPED'
-  | 'SENSOR_STATUS_CHANGED'
-  | 'DEGRADED_MODE_ENTERED'
-  | 'DEGRADED_MODE_EXITED'
-  | 'SYSTEM_STARTED'
-  | 'SUBSCRIBER_FAILED'
+  | "DETECTION_RECEIVED"
+  | "DETECTION_REJECTED"
+  | "DETECTION_SHED"
+  | "TRACK_CREATED"
+  | "TRACK_UPDATED"
+  | "TRACK_CONFIRMED"
+  | "TRACK_COASTING"
+  | "TRACK_STALE"
+  | "TRACK_LOST"
+  | "CLASSIFICATION_CHANGED"
+  | "RISK_CHANGED"
+  | "ZONE_ENTERED"
+  | "ZONE_EXITED"
+  | "ALERT_CREATED"
+  | "ALERT_CLEARED"
+  | "RECOMMENDATION_CHANGED"
+  | "OPERATOR_ACKNOWLEDGED"
+  | "SCENARIO_STARTED"
+  | "SCENARIO_STOPPED"
+  | "SENSOR_STATUS_CHANGED"
+  | "DEGRADED_MODE_ENTERED"
+  | "DEGRADED_MODE_EXITED"
+  | "SYSTEM_STARTED"
+  | "SUBSCRIBER_FAILED";
 
 export interface StreamedEvent {
   /** Position in the total order. The ordering authority — not `timestamp`, which comes from
    *  sensors whose clocks may disagree. */
-  seq: number
-  event_id: string
-  event_type: EventType
-  timestamp: string
-  source: string
-  track_id: string | null
+  seq: number;
+  event_id: string;
+  event_type: EventType;
+  timestamp: string;
+  source: string;
+  track_id: string | null;
   /** Full track state, present on every event that changes a track. This is what lets the
    *  client maintain the picture from the stream alone. */
-  track: TrackView | null
-  detail: Record<string, unknown>
+  track: TrackView | null;
+  detail: Record<string, unknown>;
 }
-
 
 /** One cycle-level finding, with the tracks it is about. */
 export interface SituationFindingView {
-  code: string
-  level: RiskLevel
-  detail: string
-  track_ids: string[]
+  code: string;
+  level: RiskLevel;
+  detail: string;
+  track_ids: string[];
 }
 
 /**
@@ -384,11 +417,11 @@ export interface SituationFindingView {
  * and this assesses all of them.
  */
 export interface SituationView {
-  level: RiskLevel
-  findings: SituationFindingView[]
-  track_count: number
+  level: RiskLevel;
+  findings: SituationFindingView[];
+  track_count: number;
   /** How many distinct objects those tracks are likely to be. The gap between this and
    *  `track_count` is the missing sensor fusion made visible, not a rounding error. */
-  object_count: number
-  assessed: boolean
+  object_count: number;
+  assessed: boolean;
 }

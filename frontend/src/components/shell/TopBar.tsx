@@ -138,7 +138,7 @@ function ModeIndicator({ mode }: { mode: ModeView | null }) {
       title={
         simulated
           ? `Configured mode: ${mode.mode}. No real sensor adapter is feeding the pipeline, so all data on screen is synthetic.`
-          : `${mode.real_adapters_connected} real sensor adapter(s) feeding the pipeline.`
+          : `${mode.real_adapters_connected} real sensor adapter(s) feeding the pipeline. The hardware is unvalidated — treat every track as evidence to be checked. See docs/live_mode.md.`
       }
     >
       MODE: {simulated ? 'SIMULATION' : 'LIVE'}

@@ -23,7 +23,7 @@ nothing the log does not. Every row it writes came from an event, and the whole 
 be discarded and reconstructed by replaying from `seq` 0:
 
 ```python
-projection.rebuild()   # discard everything, replay the log from the beginning
+projection.rebuild()  # discard everything, replay the log from the beginning
 ```
 
 That is what makes a backend restart recoverable rather than lossy (FM-030). It is also why

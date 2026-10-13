@@ -35,7 +35,7 @@ export function SensorsPage() {
               <tr>
                 <th className="label">Sensor</th>
                 <th className="label">Type</th>
-                <th className="label">Registry key</th>
+                <th className="label">Source</th>
                 <th className="label">Position</th>
                 <th className="label">Height</th>
                 <th className="label">Boresight</th>
@@ -47,7 +47,13 @@ export function SensorsPage() {
                 <tr key={sensor.sensor_id}>
                   <td className="numeric">{sensor.sensor_id}</td>
                   <td>{sensor.sensor_type ? sensor.sensor_type.replace(/_/g, ' ') : '—'}</td>
-                  <td className="numeric">{sensor.registry_key}</td>
+                  <td className="numeric">
+                    {sensor.hardware_driver
+                      ? `hardware · ${sensor.hardware_driver}`
+                      : sensor.registry_key
+                        ? `simulated · ${sensor.registry_key}`
+                        : '—'}
+                  </td>
                   <td className="numeric">
                     {sensor.position.latitude.toFixed(5)}, {sensor.position.longitude.toFixed(5)}
                   </td>

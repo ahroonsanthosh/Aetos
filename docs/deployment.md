@@ -147,11 +147,157 @@ can reach this port has full operator access and the complete event log"* when t
 running with `--no-auth`. Worth alerting on: it is the difference between a guarded console and
 an open one, stated by the backend rather than assumed from how it was launched.
 
+## Deploying in live mode
+
+Everything above applies unchanged — the account, loopback binding, the proxy, the guard. Live
+mode adds three things, all of them consequences of the radar being a physical object attached
+to a particular machine.
+
+### The radar must be on the machine running Aetos
+
+There is no network sensor protocol. The USB-to-TTL adapter is plugged into the host that runs
+the process, and that host is what your reverse proxy points at. Aetos can serve operators
+anywhere; it cannot read a serial port on someone else's desk.
+
+### Give the serial port a stable name, and permission to open it
+
+`/dev/ttyUSB0` is assigned in plug order. Two USB serial devices, or a replug after a reboot,
+and yesterday's radar is today's something else — pointing at the wrong device is not a crash,
+it is a byte stream that never frames (FM-050). Use the by-id path instead, which is derived
+from the adapter itself:
+
+```bash
+ls -l /dev/serial/by-id/
+# usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 -> ../../ttyUSB0
+```
+
+Put that whole path in the site's `hardware.port`. It survives replugging and reboots.
+
+The service user needs permission to open it. On Debian and Ubuntu that is the `dialout` group;
+on Fedora and Arch it is `uucp`:
+
+```bash
+sudo usermod -aG dialout aetos     # then the user must log out and back in, or the unit restart
+```
+
+Without it the sensor reports `OFFLINE — Permission denied` at start-up and in
+`GET /system/health`. That is the intended behaviour, not a failure to start: one unreadable
+sensor must not take the site down.
+
+### Run it as a service
+
+```ini
+# /etc/systemd/system/aetos.service
+[Unit]
+Description=Aetos C-UAS
+After=network.target
+
+[Service]
+Type=exec
+User=aetos
+Group=dialout
+WorkingDirectory=/opt/aetos
+ExecStart=/opt/aetos/.venv/bin/python -m backend.main \
+    --mode live --site my_site \
+    --host 127.0.0.1 --port 8000 --behind-proxy
+
+# A crash must not leave the console dark, but a configuration Aetos refuses to start under
+# must not be retried forever either — the refusals are deliberate and a restart loop hides
+# them. RestartSec gives the log a chance to be read.
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now aetos
+journalctl -u aetos -f          # the sensor's state is reported here at every start
+```
+
+`start.sh` is a development convenience — it builds the interface and manages a virtualenv.
+A deployed service runs `backend.main` directly, with the interface built once at install time
+(`cd frontend && npm ci && npm run build`).
+
+### What to watch once it is up
+
+- `GET /system/health`, the `sensors` row. `OK` means frames are decoding. `DEGRADED` naming a
+  baud rate means bytes arrive and nothing frames. `OFFLINE` means the port could not be
+  opened. This is the only thing that distinguishes a working sensor watching an empty sky from
+  a broken one (FM-010).
+- `GET /system/mode`. `real_adapters_connected` counts attached hardware; `simulated: false` is
+  what puts the LIVE badge on the operator's screen.
+- The raw log under `data/<site>/live/`, if you configured `raw_log_path`. It grows for as long
+  as the sensor talks and nothing rotates it — size it, or turn it off once the hardware is
+  characterised.
+
+### Before you rely on it for anything
+
+This is worth repeating in the place someone reads while deploying. The radar this supports is
+an unvalidated testbed unit: its baud rate and frame layout are unconfirmed (FM-050), and
+whether it detects a small airframe at any range has never been measured (FM-052). Deploying it
+gives you a system that runs. It does not give you a system whose detections mean what a
+counter-UAS operator would assume they mean, and no amount of deployment hardening changes
+that — only the test matrix in `sensors/adapters/uart_fmcw_radar/README.md` does.
+
+## What the application defends against itself
+
+Findings from an offensive pass against a running instance, and what closed them. Listed
+because knowing which defences are *in the process* tells you which ones do not depend on your
+proxy configuration being right.
+
+| Defence | Where |
+|---|---|
+| Password hashing off the event loop, bounded concurrency | In-process. A login flood used to freeze the operator's display; it no longer degrades it (FM-060) |
+| CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` | In-process middleware, on every response including errors (FM-061) |
+| `Strict-Transport-Security` | In-process, **only** on requests that arrived over https |
+| Cross-origin writes refused | In-process, behind `SameSite=strict` |
+| Session cookie `HttpOnly` + `SameSite=strict` + `Secure` behind a proxy | In-process |
+| WebSocket upgrades refused without a session (close code 4401) | In-process |
+| Account enumeration resistance, by body and by timing | In-process |
+| **TLS termination** | **Your proxy.** Aetos holds no key |
+| **Rate limiting** | **Your proxy.** Only login concurrency is bounded in-process |
+| **Request size limits** | **Your proxy.** Oversized bodies are rejected quickly, but the bytes still arrive |
+
+Two of those are worth configuring deliberately rather than assuming:
+
+```nginx
+# Rate-limit the one expensive unauthenticated endpoint.
+limit_req_zone $binary_remote_addr zone=aetos_login:10m rate=10r/m;
+location /api/v1/auth/login {
+    limit_req zone=aetos_login burst=5 nodelay;
+    proxy_pass http://127.0.0.1:8000;
+    # ... the same proxy headers as the block above
+}
+
+# Nothing this API accepts is large.
+client_max_body_size 256k;
+```
+
+If your proxy sets security headers of its own, it wins and nothing breaks — the application
+uses `setdefault`.
+
 ## What is still true after all this
 
 - **`data/` holds the event log and the account table.** Back it up, and treat the backup as
   sensitive: it contains password hashes and the complete operational record. It does *not*
   contain usable session tokens — only hashes of them are stored.
+
+  Its layout has two levels, and they are separated deliberately (ADR 0018):
+
+  | Path | What it is |
+  |---|---|
+  | `data/identity.db` | Operator accounts, credentials and sessions. **Installation-wide** — one account signs in whatever site or mode is running |
+  | `data/<site>/<mode>/` | One deployment's event log, track projection and any raw sensor capture |
+
+  A deployment directory carries a `deployment.json` naming its owner, and start-up refuses a
+  directory that belongs to a different site or run mode. That refusal is what stops one
+  deployment's history being served as another's (FM-053) — a live display showing tracks a
+  simulation produced. Restart recovery is unaffected: the same site in the same mode picks its
+  own history back up, alerts included.
+
+  Back up both levels. Backing up only the deployment directories loses every account.
 - **No password reset flow, no multi-factor.** An administrator resets a password with
   `passwd`, then `disable` and `enable` to end that account's existing sessions.
 - **No rate limiting on anything except login.** A reverse proxy is the right place to add it,

@@ -18,8 +18,10 @@ from backend.alerting.policy import load_alert_policy
 from backend.alerting.service import AlertService
 from backend.api.app import API_PREFIX, create_app
 from backend.api.identity import LocalOperatorIdentityProvider
+from backend.api.rest import MAX_HISTORY_POINTS
 from backend.api.services import ApiServices
 from backend.common.clock import SimClock
+from backend.common.config import RunMode
 from backend.common.geodesy import GeodeticPoint, LocalFrame
 from backend.database.projection import TrackProjection
 from backend.database.sqlite import SqliteRepositories
@@ -38,6 +40,8 @@ from backend.tracking.models import (
 )
 from backend.tracking.track_manager.manager import IncomingDetection, TrackManager
 from backend.zones.geometry import load_site_geometry
+from sensors.adapters.interface import SensorHealth, SensorState
+from sensors.schemas.detection import SensorType
 
 EPOCH = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
 R = isotropic_covariance(10.0)
@@ -296,17 +300,24 @@ def test_mode_reports_simulation_as_a_backend_fact(client: TestClient) -> None:
 def test_health_reports_unbuilt_modules_as_unbuilt(client: TestClient) -> None:
     """A green light nothing computes is worse than no light.
 
-    Fusion and the health watchdog do not exist at all. Classification, risk and alerting do,
-    but this fixture builds an API over a bare projection with no pipeline behind it, so from
-    this endpoint's point of view they are equally absent — and it must say so rather than
-    reporting a module it has no handle to as healthy.
+    Fusion does not exist at all. Classification, risk, alerting and the watchdog do, but this
+    fixture builds an API over a bare projection with no pipeline behind it, so from this
+    endpoint's point of view they are equally absent — and it must say so rather than reporting
+    a module it has no handle to as healthy.
+
+    The watchdog reports `not_connected` rather than `not_built`, and the difference matters:
+    "nobody wrote it" and "nobody attached it" send an operator to different places.
     """
     body = client.get(f"{API_PREFIX}/system/health").json()
     components = {c["component"]: c for c in body["components"]}
 
-    for absent in ("fusion", "classification", "risk", "alerts", "system_health"):
+    for absent in ("fusion", "classification", "risk", "alerts"):
         assert components[absent]["state"] == "not_built"
         assert components[absent]["detail"]
+
+    assert components["system_health"]["state"] == "not_connected"
+    assert "FM-010" in components["system_health"]["detail"]
+    assert body["posture"] is None, "no watchdog attached means no posture may be claimed"
 
 
 def test_health_reports_attached_modules_as_running(
@@ -347,7 +358,6 @@ def test_health_reports_attached_modules_as_running(
 
     # Still absent, and must not have been swept along by the same change.
     assert components["fusion"]["state"] == "not_built"
-    assert components["system_health"]["state"] == "not_built"
 
 
 class _SituationStub:
@@ -360,6 +370,112 @@ class _SituationStub:
     @property
     def situation(self) -> SituationAssessment:
         return SituationAssessment()
+
+
+class _SensorHealthStub:
+    """Stands in for `Pipeline` as a sensor health source."""
+
+    def __init__(self, *reports: SensorHealth) -> None:
+        self._reports = list(reports)
+
+    def sensor_health(self) -> list[SensorHealth]:
+        return self._reports
+
+
+def _health_report(sensor_id: str, state: SensorState, reason: str) -> SensorHealth:
+    return SensorHealth(
+        sensor_id=sensor_id,
+        sensor_type=SensorType.RADAR,
+        state=state,
+        reason=reason,
+    )
+
+
+def _services_with_sensors(
+    clock, events, repositories, projection, source, live_adapters: int = 0
+) -> ApiServices:
+    return ApiServices(
+        clock=clock,
+        events=events,
+        sites=repositories.sites,
+        sensors=repositories.sensors,
+        scenarios=repositories.scenarios,
+        tracks=repositories.tracks,
+        track_history=repositories.track_history,
+        projection=projection,
+        identity=LocalOperatorIdentityProvider(clock),
+        sensor_health=source,
+        live_adapter_count=live_adapters,
+        run_mode=RunMode.LIVE if live_adapters else RunMode.SIMULATION,
+    )
+
+
+def test_health_reports_no_sensors_as_not_connected(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    services = _services_with_sensors(clock, events, repositories, projection, None)
+    client = TestClient(create_app(services))
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["sensors"]["state"] == "not_connected"
+
+
+def test_one_failed_sensor_degrades_the_row_and_is_named(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """A site with four sensors and one dead cable must not average out to healthy.
+
+    The operator's question is never "are most of my sensors fine", and an unplugged radar
+    reporting nothing looks exactly like a quiet sky unless something says otherwise (FM-010).
+    """
+    source = _SensorHealthStub(
+        _health_report("radar_01", SensorState.OK, "link open"),
+        _health_report("radar_02", SensorState.OFFLINE, "could not open /dev/ttyUSB1"),
+    )
+    services = _services_with_sensors(
+        clock, events, repositories, projection, source, live_adapters=2
+    )
+    client = TestClient(create_app(services))
+
+    body = client.get(f"{API_PREFIX}/system/health").json()
+    components = {c["component"]: c for c in body["components"]}
+
+    assert components["sensors"]["state"] == "degraded"
+    assert "radar_02" in components["sensors"]["detail"]
+    assert "/dev/ttyUSB1" in components["sensors"]["detail"]
+
+
+def test_mode_reports_live_only_when_real_adapters_are_attached(
+    clock: SimClock,
+    events: SqliteEventStore,
+    repositories: SqliteRepositories,
+    projection: TrackProjection,
+) -> None:
+    """Declaring LIVE does not change the badge. Attaching a sensor does."""
+    declared_only = _services_with_sensors(clock, events, repositories, projection, None)
+    body = TestClient(create_app(declared_only)).get(f"{API_PREFIX}/system/mode").json()
+    assert body["simulated"] is True
+    assert body["real_adapters_connected"] == 0
+
+    attached = _services_with_sensors(
+        clock,
+        events,
+        repositories,
+        projection,
+        _SensorHealthStub(_health_report("radar_01", SensorState.OK, "link open")),
+        live_adapters=1,
+    )
+    body = TestClient(create_app(attached)).get(f"{API_PREFIX}/system/mode").json()
+    assert body["simulated"] is False
+    assert body["real_adapters_connected"] == 1
 
 
 def test_health_reports_working_components_as_ok(client: TestClient) -> None:
@@ -510,3 +626,71 @@ def test_health_warns_when_no_authentication_is_configured(client: TestClient) -
 
     assert posture["state"] == "not_connected"
     assert "NO authentication" in posture["detail"]
+
+
+def test_track_history_is_bounded_by_default(client: TestClient) -> None:
+    """The ceiling used to apply only when a caller volunteered a limit, so the default was
+    the whole of a permanently retained history (FM-022 keeps it forever). A protective bound
+    nobody is obliged to ask for is not a bound."""
+    track_id = client.get(f"{API_PREFIX}/tracks").json()["tracks"][0]["track_id"]
+
+    body = client.get(f"{API_PREFIX}/tracks/{track_id}/history").json()
+
+    assert body["count"] <= MAX_HISTORY_POINTS
+    assert body["total"] >= body["count"]
+    assert body["truncated"] is (body["total"] > body["count"])
+
+
+def test_a_truncated_history_says_so_and_keeps_the_recent_end(client: TestClient) -> None:
+    """Two failures in one: a short list that looked complete, and a route truncated from the
+    wrong end.
+
+    `ORDER BY seq LIMIT n` returned the *oldest* n entries, so an operator asking where a
+    track has been got the beginning of its route with nothing indicating the rest existed.
+    Where it has been lately is the operationally useful half.
+    """
+    track_id = client.get(f"{API_PREFIX}/tracks").json()["tracks"][0]["track_id"]
+    full = client.get(f"{API_PREFIX}/tracks/{track_id}/history").json()
+    assert full["count"] >= 3, "need a track with some history for this to mean anything"
+
+    limited = client.get(f"{API_PREFIX}/tracks/{track_id}/history?limit=2").json()
+
+    assert limited["count"] == 2
+    assert limited["truncated"] is True
+    assert limited["total"] == full["total"]
+    assert [p["seq"] for p in limited["points"]] == [p["seq"] for p in full["points"][-2:]]
+
+
+def test_history_points_stay_oldest_first_when_truncated(client: TestClient) -> None:
+    """Truncating from the recent end must not reverse the order the trail is drawn in."""
+    track_id = client.get(f"{API_PREFIX}/tracks").json()["tracks"][0]["track_id"]
+
+    limited = client.get(f"{API_PREFIX}/tracks/{track_id}/history?limit=3").json()
+
+    seqs = [p["seq"] for p in limited["points"]]
+    assert seqs == sorted(seqs)
+
+
+def test_acknowledgement_survives_a_rebuild_with_the_operator_intact(
+    clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Who acknowledged an alert must survive rebuilding from the log.
+
+    The alert state surviving is not enough: an alert that rebuilds as acknowledged *by nobody*
+    is a worse audit record than one that does not rebuild, because it reads as complete. This
+    is the claim ADR 0016 rests on, and it depends on one payload key written in one place and
+    read in another.
+    """
+    service = AlertService(load_alert_policy(), events)
+    service.review_cycle([_alerting_track()], clock.now())
+    (alert,) = service.active
+
+    service.acknowledge(alert.alert_id, "USR-00007", clock.now())
+    service.rebuild()
+
+    (rebuilt,) = service.active
+    assert str(rebuilt.state) == "acknowledged"
+    assert rebuilt.acknowledged_by == "USR-00007", (
+        "the alert rebuilt as acknowledged by nobody — the operator was lost between the "
+        "payload written and the payload read"
+    )

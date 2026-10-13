@@ -101,9 +101,12 @@ export class EventStream {
       try {
         event = JSON.parse(message.data as string) as StreamedEvent
       } catch {
-        // A frame we cannot parse is a contract violation. Dropping it silently would leave a
-        // hole in the sequence that nothing detects, so it is skipped without advancing
-        // lastSeq — the next reconnect will ask for it again.
+        // A frame we cannot parse is a contract violation and should not happen. It is
+        // skipped, and `lastSeq` is deliberately not advanced past it — but be clear about
+        // what that does and does not buy: the socket stays open, the backend does not resend,
+        // and the next parseable frame carries a higher seq and moves the cursor past the gap
+        // anyway. So one update is lost until the next update for the same track corrects the
+        // picture. Not advancing only helps if the connection happens to drop before then.
         return
       }
 

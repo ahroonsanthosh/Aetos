@@ -79,15 +79,39 @@ the adapter's documented obligation.
 ## Sensor and input failures
 
 ### FM-010 — Sensor goes silent
-**Status:** Open — target of build stage 12
+**Status:** Closed — `backend/system_health`
 
 A sensor stops producing detections. Tracks that depended on it coast, then go STALE, then
 LOST. The hazard is that the system keeps rendering confident-looking tracks on data that no
-longer exists.
+longer exists — and, worse, that an empty map is read as a clear sky.
 
-**Intended handling:** watchdog detects sensor silence past a configured threshold; sensor
-health is marked degraded; if sensor count or aggregate confidence drops below the usable
-threshold, degraded mode activates and is stated visibly in the UI.
+**Handling.** The watchdog runs as a cycle stage, holding the window and the site policy that
+no adapter can hold for itself, and it draws a distinction the rest of the system is not
+permitted to blur:
+
+- **Loss of contact is definite.** A source reporting OFFLINE, or one whose poll raised, is
+  faulted. The posture becomes DEGRADED with any source out and BLIND with all of them out,
+  and both are recorded as `DEGRADED_MODE_ENTERED` and shown as a banner above the component
+  list.
+- **Absence of detections is not.** A source in contact and silent past this site's threshold
+  is reported QUIET, carrying the seconds and the threshold that produced the verdict — never
+  as a fault, because an empty sky produces identical evidence. The system states the fact and
+  leaves the conclusion to the operator.
+
+Thresholds are per sensor type in `config/system_health/policy.json`, because the right window
+differs by an order of magnitude between an imaging sensor and a radio-frequency one.
+
+**The stall.** Every component here reports on itself, and a component that has stopped running
+reports nothing at all — which renders identically to one with nothing to say. The watchdog
+timestamps each pass and `report()` ages it against the clock at the moment somebody asks, so a
+pipeline that has stopped stepping shows as STALLED even though nothing inside it is in any
+position to notice. This is the self-test, and it works only because it is evaluated outside
+the thing it tests.
+
+**What degraded mode deliberately does not do:** change behaviour. No threshold moves and no
+track is treated differently. Silently altering the assessment pipeline when the picture thins
+would mean an operator comparing two incidents was comparing two different systems. The
+declaration is the product.
 
 ### FM-011 — Malformed detection data
 **Status:** Open — target of build stage 12
@@ -105,6 +129,224 @@ timestamps that imply impossible motion, corrupting the filter's velocity estima
 
 **Intended handling:** per-sensor skew estimation, bounds on acceptable skew, and rejection
 with an event beyond those bounds.
+
+### FM-012a — Sensor clock skew silently shortened the coast budget
+**Status:** Closed · **Severity:** was Medium — fragmented tracks, only at sites with
+unsynchronised sensors
+
+**What it was.** Track staleness was measured as `now - last_seen`: a pipeline instant minus a
+*sensor* instant. The difference therefore carried whatever offset existed between the two
+clocks. Ingestion accepts up to 30 s of skew (FM-012 proper), so a sensor lagging 25 s produced
+confirmed tracks that were **retired on their first missed cycle** instead of coasting for the
+configured six seconds. The object reappeared as a new track with a new identity and a split
+history — exactly the fragmentation `coast_seconds` exists to prevent (FM-022).
+
+Nothing reported it. The lifecycle thresholds simply meant a different duration than the one
+they named, and by how much depended on how well someone's sensors happened to be synchronised.
+
+**Fix.** `_ActiveTrack.last_supported` records when a track last received a detection on the
+**pipeline's** clock, and demotion is driven from that. `last_seen` remains the sensor's
+observation time and is still published as-is — the two are different questions and now have
+different fields. `last_updated` could not serve: prediction advances it every cycle, including
+for coasting tracks.
+
+**What makes it stay closed.** `tests/unit/test_track_manager.py` runs the coast test
+parametrised across 0, 3, 10 and 25 seconds of sensor lag and requires identical behaviour,
+alongside a test that real elapsed time still demotes an unsupported track — so the fix cannot
+degrade into "tracks never go stale" — and one asserting observation time is still reported
+from the sensor rather than restamped on receipt.
+
+### FM-027 — Risk policy parameters were the one unvalidated configuration surface
+**Status:** Closed · **Severity:** was Medium — a threat factor silently disabled, or a killed
+pipeline cycle
+
+**What it was.** `FactorPolicy.parameters` is a free-form `dict[str, float]`, read by name with
+a documented default. Nothing validated the values, and both ways they could be wrong were
+silent:
+
+- **Negative.** `fast_mps: -25` does not disable the closing-velocity factor, it inverts it: a
+  target closing at 20 m/s scored an activation of zero. A threat factor switched off by a
+  typo, with nothing anywhere reporting it.
+- **Zero, where the value is a divisor.** `ZeroDivisionError` raised from inside the
+  assessment, killing the risk stage and with it the whole pipeline cycle — the operator's
+  picture stops advancing, and the reason appears only in a log.
+
+The second had a second cause worth naming: three of the five division sites in
+`backend/risk/factors.py` already carried a `max(1e-6, ...)` guard and two did not. The idiom
+existed and had been applied inconsistently, which is how a defended pattern still produces an
+undefended path.
+
+**Fix.** Parameters are validated at load — finite, and not negative — with a message naming
+the parameter, consistent with every other configuration surface in this repository. Zero
+remains legal, because several parameters are floors where zero honestly means "no minimum",
+and the two unguarded divisors were brought into line with the three that were already safe.
+
+**What makes it stay closed.** `tests/unit/test_risk.py` covers the negative and non-finite
+rejections, asserts zero is still accepted so the validator cannot overreach into breaking
+legitimate configurations, and drives both previously unguarded divisors with a zero parameter
+to assert the cycle survives.
+
+### FM-028 — Track history was unbounded, and truncated from the wrong end
+**Status:** Closed · **Severity:** was Medium — a partial route presented as a complete one
+
+**What it was.** `GET /tracks/{id}/history` declared a ceiling of 10 000 points on its `limit`
+parameter, and defaulted that parameter to `None` — meaning no limit at all. Track history is
+retained permanently (FM-022), so the default response was the entire history of a track, for
+as long as a deployment had been running. The operator interface requested it with no limit.
+
+The second half is worse. When a limit *was* supplied, the query was `ORDER BY seq LIMIT n`,
+which returns the **oldest** n entries. An operator asking where a track had been received the
+beginning of its route, with nothing in the response indicating that the rest existed — a trail
+drawn from it looks exactly like a complete one.
+
+**Fix.** The endpoint is bounded by default rather than on request. Truncation keeps the most
+recent points, because where something has been lately is the operationally useful half, and
+the response carries `total` and `truncated` so a partial history is visibly partial. The map
+legend says so in words when a trail is truncated.
+
+**What makes it stay closed.** `tests/integration/test_api.py` asserts the default response is
+bounded, that a truncated one reports `truncated` with the true `total`, that the points
+returned are the most recent ones rather than the first, and that they remain oldest-first so
+the trail is still drawn in the right direction.
+
+### FM-029 — "Last observed" was measured across two unsynchronised clocks
+**Status:** Closed · **Severity:** was Medium — a healthy sensor displayed as long-dead
+
+**What it was.** The track detail panel computed staleness as `Date.now() - last_seen`: the
+**browser's** clock minus the **sensor's** observation timestamp. Neither machine is one this
+system controls, and the drift between them landed directly in the figure an operator reads as
+"Last observed N s ago".
+
+An operator laptop a minute out of sync — routine — displayed every track as a minute stale,
+including ones being updated twice a second. A sensor clock running fast produced a negative
+age. The same mistake as FM-012a, one layer further out and with a third clock involved.
+
+**Fix.** The backend reports the figure. `TrackMetadata.seconds_since_detection` is computed by
+the tracker on the pipeline clock — the same measurement that drives demotion — and served
+through the API, so every consumer displays one number computed once by the component that
+knows. The field is nullable and rendered as "—" when absent, because a missing figure must
+never read as "seen just now", and snapshots written before the field exists genuinely do not
+carry it.
+
+**What makes it stay closed.** `frontend/tests/unit/track.test.ts` asserts the reported value
+is taken as given and that a null stays null rather than collapsing to zero.
+
+### FM-0210 — Risk read an ellipsoidal altitude against site-relative thresholds
+**Status:** Closed · **Severity:** was High at any elevated site — a threat factor silently
+switched off
+
+**What it was.** Two vertical quantities travelled into the risk engine and the factors read
+the wrong one. `TrackRisk.position.up_m` is height above the site reference plane;
+`TrackRisk.altitude_m` was the track's **ellipsoidal** altitude, taken straight from the
+published `Track`. They differ by the site's own elevation.
+
+`low_altitude_near_asset` compares against `low_m: 120` and `very_low_m: 30` — thresholds that
+plainly mean height above the site. At a site 500 m above the ellipsoid, a drone forty metres
+over the fence was assessed as being at 540 m, and the factor reported "not a low-altitude
+approach". It could never fire at all above 120 m of site elevation.
+
+Nothing failed. The shipped fictional site sits at 5 m, so every test and every demonstration
+looked correct, and the defect was a property of *where the system was installed*.
+
+**Fix.** Risk carries one vertical quantity, on one datum: `TrackRisk.altitude_m` is height
+above the site reference and is populated from `track.enu.up_m`. `backend/zones` already worked
+this way — it converts the site document's ellipsoidal floors and ceilings into ENU at the
+boundary rather than carrying both — and risk now matches it. The published `Track` still
+reports ellipsoidal altitude, which is correct for display and for FM-004.
+
+**What makes it stay closed.** `tests/unit/test_risk.py` scores the same low approach at sites
+0, 5, 200, 500 and 1 500 m above the ellipsoid and requires the same answer, plus a test on the
+mapping itself — because the factor is correct in isolation either way, and it was the value
+flowing into it that carried the wrong datum.
+
+### FM-0211 — Classification read an ellipsoidal altitude against site-relative bands
+**Status:** Closed · **Severity:** was High at any elevated site — systematic misclassification
+
+**What it was.** The same mistake as FM-0210, in the other assessment module and found by
+looking for it. `ClassificationService` passed `track.position.altitude_m` — ellipsoidal — into
+`TrackEvidence.altitude_m`, which is matched against the bands in
+`config/classification/profiles.json`.
+
+Those bands are unambiguously site-relative, and the `vehicle` profile says so in the data:
+`absolute_min: -30.0`, `typical_max: 15.0`, `absolute_max: 40.0`. A band straddling zero is only
+meaningful as height above the ground the vehicle is standing on.
+
+So the site's elevation was added to every track before classification. The same drone hovering
+thirty metres up classified as `small_uas` at a sea-level site, leaned `bird` at two hundred
+metres, and became `unknown_uas` with full confidence at a kilometre.
+
+**Why it is worse than a wrong label.** A benign classification *discounts* the risk score
+(`mitigation_for`). At a few hundred metres of site elevation the error pushed real contacts
+toward `bird`, which then made the system more willing to dismiss them. The two defects
+compounded in the dangerous direction.
+
+**Fix.** `TrackEvidence.altitude_m` is height above the site reference, from `track.enu.up_m`,
+documented on the field.
+
+**What makes it stay closed.** `tests/unit/test_vertical_datum.py` covers the whole class rather
+than the two instances: it asserts that the same approach scores identically and produces the
+same reason codes at sites from sea level to 1 500 m, that the same object classifies
+identically at every elevation, and — pinned by name, because a property test needs a site to
+fail at — that neither assessment module reads the ellipsoidal field.
+
+### FM-060 — Password hashing ran on the event loop
+**Status:** Closed · **Severity:** was High — unauthenticated denial of service against the
+operator's picture
+
+**What it was.** `POST /auth/login` is an `async` handler and called `AuthService.authenticate`
+directly. Password verification is scrypt at deliberate cost — around 350 ms — so it executed
+**on the event loop**, and everything the process does shares that loop: other requests, the
+WebSocket push, and the pipeline cycle that advances the operator's display.
+
+Measured, not theorised. Three unauthenticated clients sending login attempts took every other
+request from 0.7 ms to 1.1 seconds — a factor of 1683. No credentials, no exploit, just the
+login form. And it is worse than slow responses: with the loop blocked, the pipeline stops
+stepping and the stream stops pushing, so the display freezes on stale data while showing every
+sign of being live.
+
+**Fix.** Authentication is split into three phases — read, verify, record. Only the verify step
+leaves the loop, in a worker thread, so every database read and write stays on the single writer
+that owns them (ADR 0006). The synchronous `authenticate` remains for the admin CLI and is a
+thin wrapper over the same three phases, so there is one implementation of the decision logic
+rather than two that can drift.
+
+Concurrency is bounded (`MAX_CONCURRENT_HASHES`). Moving the hash off the loop stops a flood
+freezing the display; it does not stop one burning every core, and an unauthenticated caller
+chooses how many to send. A flood now queues instead of saturating.
+
+**What makes it stay closed.** `tests/integration/test_network_exposure.py` reproduces the
+attack and asserts responsiveness holds — verified to fail when the fix is reverted. The
+timing-equalisation that resists account enumeration is re-asserted alongside it, because the
+refactor moved `dummy_verify` and a version that returned early for an unknown user would have
+reintroduced the oracle while every other test passed.
+
+### FM-061 — No security headers
+**Status:** Closed · **Severity:** was Medium — clickjacking and MIME sniffing against a browser
+console
+
+**What it was.** No `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy` or `Permissions-Policy` on any response. The realistic attack on an operator
+console is clickjacking: frame it invisibly and let someone acknowledge an alert they cannot
+see.
+
+**Fix.** Middleware, so a route added later cannot be added without them — the same reasoning
+that gates the router rather than each handler. Set in the application rather than left to the
+reverse proxy: a proxy is the right place for TLS and rate limiting, which this process cannot
+do, but a header it *can* set should not depend on someone else's configuration being right.
+`Strict-Transport-Security` is the deliberate exception, added only to requests that arrived
+over TLS so a loopback run cannot pin `localhost` to https in a developer's browser.
+
+### FM-062 — Scenario control was gated at viewer
+**Status:** Closed · **Severity:** was Low today, High on the day the engine is written
+
+**What it was.** `POST /scenarios/{id}/start` and `/stop` carried only the router's baseline
+`viewer` gate, while `POST /scenarios` required `admin`. Both are unimplemented, so nothing was
+exposed — but the missing role was deferred to whoever implemented the engine, in a docstring
+saying it "becomes an operator action" one day. The route existed with viewer access, and the
+gate depended on a future author reading a comment.
+
+**Fix.** Gated at `admin` now, while it does nothing. A viewer is not authorised to drive the
+simulation whether or not the engine that would do it exists.
 
 ### FM-013 — Duplicate detections
 **Status:** Open — target of build stage 12
@@ -348,18 +590,128 @@ the display is exactly as it would otherwise be.
 
 ---
 
-### FM-040 — Docker image is unverified
-**Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
+### FM-040 — There is no container path
+**Status:** Closed by correction · **Severity:** Low — affects setup only, not runtime behaviour
 
-`Dockerfile` and `docker-compose.yml` were written but **never built or run**: the environment
-they were authored in had no Docker daemon. `start.sh` and the single-process serving it
-relies on are verified end to end in a browser; the container path is not.
+This entry used to say a `Dockerfile` and `docker-compose.yml` had been written but never built
+or run, and the README told people to run `docker compose up`. Neither file has ever existed in
+this repository — `git log --all` finds no commit that added or removed them.
 
-One issue was caught by inspection rather than by testing and is already fixed: a regular
-`pip install .` places `backend/` in site-packages, and `ConfigPaths.default()` derives the
-repository root from its own `__file__` — so configuration loading would have looked beside
-site-packages and failed. The image installs editable for that reason. Other issues of the
-same kind may remain.
+So two documents asserted a capability the software does not have, and the instruction in the
+README could not work for anybody who followed it: `docker compose up` fails with *no
+configuration file provided*. That is the failure this project is written against, in
+documentation rather than in code — a green light nothing computes.
 
-**Mitigation:** `./start.sh` is the verified path. Anyone using the container should expect to
-debug the first build.
+**Resolution:** the README's Docker section is removed and this entry now says what is true.
+`./start.sh` is the only supported way to run Aetos, and it is verified end to end.
+
+**If a container path is wanted**, it is a piece of work, not a missing file: an image that
+installs editable (a plain `pip install .` puts `backend/` in site-packages, and
+`ConfigPaths.default()` derives the repository root from its own `__file__`, so configuration
+loading would look beside site-packages and fail), builds the interface, and carries `config/`
+and `scenarios/`. It must be built and run before it is documented, not after.
+
+---
+
+## Testbed radar hardware
+
+The three entries below concern the serial-attached FMCW radar in
+`sensors/adapters/uart_fmcw_radar/` (ADR 0017). All three are properties of the *hardware*,
+not defects in the driver, and none of them is fixable in software. They are recorded because
+the alternative — a driver that quietly papers over them — produces an operator display that
+looks the same whether it is right or wrong.
+
+The adapter is constructed only in LIVE or HYBRID mode, against a site that declares hardware
+(ADR 0018). A default `./start.sh` run is unaffected by all three. A `./start.sh --live` run is
+affected by all three, which is why that mode warns about them at start-up rather than relying
+on this document being read.
+
+### FM-053 — A live run inherited a simulation run's tracks
+**Status:** Closed · **Severity:** was Critical — synthetic tracks on a live display
+
+**What it was.** The event log and its projection lived in one `data/` directory, shared by
+every run. The projection survives restarts by design (ADR 0006, FM-030), so starting
+`--mode live` after a scenario **inherited that scenario's tracks and served them under a LIVE
+badge**: `simulated: false`, four synthetic tracks, and nothing in the data that could have
+told the operator.
+
+Every component was reporting truthfully. Real adapters *were* attached, so the badge was
+right. The tracks were real records of things that had really been tracked — in a different
+run, of a different kind. The falsehood was in the assembly, which is what made it invisible
+from inside any one module.
+
+**How it was found.** By running the system the way a user does — a scenario, then `--live`,
+then reading `GET /tracks` — rather than by testing the parts. Nothing in the unit or
+integration suites could have caught it: every test built its own pipeline in its own
+temporary directory, which is precisely the isolation the product did not have.
+
+**Fix.** Persistent state is partitioned per deployment: `data/<site>/<mode>/`. A different
+site, or a different run mode, is a different history. A `deployment.json` marker in the
+directory records which deployment owns it, and start-up refuses rather than proceeding when
+it disagrees — which also covers an explicitly chosen `--data-dir`.
+
+**What makes it stay closed.** `tests/integration/test_deployment_isolation.py` pins both
+halves: a different deployment never inherits state, and the **same** deployment always does,
+because restart recovery is a requirement rather than an accident. Testing only the first
+would leave the obvious over-correction — wiping state on start — passing.
+
+**What it cost, deliberately kept.** A pre-existing `data/events.db` from before this change
+is no longer read. It is not deleted, and start-up says so once rather than leaving an empty
+alert feed unexplained.
+
+### FM-050 — The testbed radar's link parameters and frame layout are unverified
+**Status:** Open · **Severity:** High for anyone trusting its output · Blocks run mode LIVE
+
+Published sources disagree about the unit's baud rate (115200 versus 256000) and about whether
+the report payload opens with a target count or with an alarm byte followed by a count. The
+vendor's protocol PDF has not been obtained. A wrong baud rate does not fail loudly: it
+delivers a byte stream that never frames, which without care looks exactly like a working
+sensor watching an empty sky (FM-010 one layer lower down).
+
+Separately, the report frame carries no timestamp, so detections are stamped at read time. That
+is receipt time, later than observation by the link and buffering latency — bounded by one
+report period, but not zero (FM-012).
+
+**Mitigation.** The parser accepts both payload layouts while the question is open, and counts
+what it discards. `health()` reports DEGRADED and names the configured baud rate when the
+stream is all discards, so the most likely bring-up mistake is visible rather than silent. The
+bring-up sequence in the package README ends the ambiguity: confirm the rate, obtain the PDF,
+delete the layout branch that is wrong.
+
+**Until then:** raw logging is the deliverable, not detections.
+
+### FM-051 — The testbed radar cannot measure elevation
+**Status:** Accepted · **Severity:** Inherent to the hardware
+
+There is no elevation channel and no configuration that produces one. Elevation exists only as
+the mechanical tilt of the mount, which rotates the whole ±20° cone — trading ground coverage
+for elevated coverage. The canonical `Detection` requires an altitude, so one must be produced.
+
+**Mitigation.** The adapter emits the beam-centre altitude implied by `tilt_deg`, and a
+`position_covariance_enu` whose vertical variance is the beam's full elevation ambiguity
+treated as a uniform spread. At every range that variance is several times the horizontal, so
+the filter discounts altitude rather than believing it. Asserted by
+`test_altitude_uncertainty_says_the_sensor_cannot_measure_it`.
+
+Collapsing this into the isotropic scalar would make the tracker confidently wrong about
+height, which is FM-004 arriving through the adapter instead of through a datum mismatch.
+
+**What remains open:** altitude from this sensor is a configured assumption, not a measurement,
+and no amount of tracking makes it one. Anything downstream that reasons about height — zone
+crossing in the vertical, climb rate — is reasoning about the mount angle.
+
+### FM-052 — The testbed radar's sensitivity is tuned for vehicles
+**Status:** Open · **Severity:** Unknown, and that is the point
+
+The firmware is vehicle-detection firmware and its 100 m rating is against vehicle-scale radar
+cross-section. Whether it detects a 135 g, 25 cm airframe at any range is **unverified**. It
+may not. The honest answer today is that nobody has measured it.
+
+**Mitigation.** The adapter emits no classification hint at all, so nothing downstream receives
+a label this hardware has no basis for, and confidence derived from the signal-quality byte is
+capped well below 1.0. Both are asserted by test.
+
+**What closes this:** the raw-logging test matrix in the package README — bare versus
+RCS-boosted airframe, four ranges, three angles, three motion types, three mount tilts — held
+next to a record of what was actually flying. Detection and alerting behaviour written before
+that dataset exists is guesswork dressed as engineering.

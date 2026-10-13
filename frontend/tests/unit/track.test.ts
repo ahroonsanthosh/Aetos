@@ -37,6 +37,7 @@ function view(overrides: Partial<TrackView> = {}): TrackView {
     tracking: {
       first_seen: '2026-08-08T12:00:00Z',
       last_seen: '2026-08-08T12:01:00Z',
+      seconds_since_detection: 3,
       detection_count: 12,
       missed_updates: 0,
       coasting: false,
@@ -256,5 +257,33 @@ describe('history point conversion', () => {
 
     expect(point.timestamp).toBeInstanceOf(Date)
     expect(point.timestamp.toISOString()).toBe('2026-08-08T12:00:30.000Z')
+  })
+})
+
+describe('staleness', () => {
+  const tracking = (secondsSinceDetection: number | null) => ({
+    first_seen: '2026-08-08T12:00:00Z',
+    last_seen: '2026-08-08T12:01:00Z',
+    seconds_since_detection: secondsSinceDetection,
+    detection_count: 12,
+    missed_updates: 0,
+    coasting: false,
+    track_confidence: 0.9,
+    contributing_sensors: ['radar_north'],
+  })
+
+  it("takes the backend's figure rather than deriving one from this browser's clock", () => {
+    // `Date.now() - last_seen` subtracts this browser's clock from the *sensor's* — two
+    // machines the interface does not control — so the drift between them landed in the
+    // number an operator reads as "last observed".
+    const track = toDisplayTrack(view({ tracking: tracking(42) }), frame)
+
+    expect(track.secondsSinceDetection).toBe(42)
+  })
+
+  it('keeps a missing figure missing, so it can never read as "seen just now"', () => {
+    const track = toDisplayTrack(view({ tracking: tracking(null) }), frame)
+
+    expect(track.secondsSinceDetection).toBeNull()
   })
 })

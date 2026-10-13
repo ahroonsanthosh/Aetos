@@ -9,7 +9,6 @@ by replacing the combiner — without the module boundary moving (ADR 0012).
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from backend.classification.evidence import (
     EvidenceSource,
@@ -171,9 +170,3 @@ def build_default_classifier(paths: ConfigPaths | None = None) -> Classifier:
             KinematicEvidence(load_kinematic_profiles(paths)),
         )
     )
-
-
-def profiles_path(paths: ConfigPaths | None = None) -> Path:
-    """Where profiles are read from. Exposed for diagnostics and tests."""
-    resolved = paths or ConfigPaths.default()
-    return resolved.config_root / "classification" / DEFAULT_PROFILES_FILE

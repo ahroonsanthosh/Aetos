@@ -82,27 +82,21 @@ def test_a_single_detection_creates_a_track_but_does_not_display_it(
     assert manager.active_tracks()[0].state is TrackState.NEW
 
 
-def test_a_second_detection_promotes_to_tentative(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_a_second_detection_promotes_to_tentative(manager: TrackManager, clock: SimClock) -> None:
     tracks = feed(manager, clock, cycles=2)
 
     assert len(tracks) == 1
     assert tracks[0].state is TrackState.TENTATIVE
 
 
-def test_sustained_detections_confirm_the_track(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_sustained_detections_confirm_the_track(manager: TrackManager, clock: SimClock) -> None:
     tracks = feed(manager, clock, cycles=6)
 
     assert tracks[0].state is TrackState.CONFIRMED
     assert tracks[0].tracking.detection_count == 6
 
 
-def test_one_object_produces_exactly_one_track(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_one_object_produces_exactly_one_track(manager: TrackManager, clock: SimClock) -> None:
     """Track fragmentation would show the operator several objects where there is one."""
     feed(manager, clock, cycles=15)
 
@@ -266,18 +260,14 @@ def test_reacquisition_recovers_the_same_track(manager: TrackManager, clock: Sim
     assert manager.active_tracks()[0].state is TrackState.STALE
 
     # The object reappears where its motion says it should be.
-    reacquired = manager.process(
-        [detection(clock, [10 * 20.0 + 7 * 20.0, 0.0, 100.0], "det-back")]
-    )
+    reacquired = manager.process([detection(clock, [10 * 20.0 + 7 * 20.0, 0.0, 100.0], "det-back")])
 
     assert len(reacquired) == 1
     assert reacquired[0].track_id == original_id
     assert reacquired[0].state is TrackState.CONFIRMED
 
 
-def test_last_seen_does_not_advance_while_coasting(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_last_seen_does_not_advance_while_coasting(manager: TrackManager, clock: SimClock) -> None:
     """A coasted position must never look freshly observed. This is why TrackMetadata keeps
     last_seen separate from updated_at."""
     feed(manager, clock, cycles=8)
@@ -335,13 +325,9 @@ def test_saturation_is_refused_loudly_not_silently(
 ) -> None:
     """Scenario I / ADR 0008. Past the ceiling, new track initiation stops and says so,
     rather than growing without bound until the process dies."""
-    manager = TrackManager(
-        clock, events, LocalFrame(SITE), TrackManagerConfig(max_active_tracks=5)
-    )
+    manager = TrackManager(clock, events, LocalFrame(SITE), TrackManagerConfig(max_active_tracks=5))
 
-    manager.process(
-        [detection(clock, [i * 5_000.0, 0.0, 100.0], f"d-{i}") for i in range(12)]
-    )
+    manager.process([detection(clock, [i * 5_000.0, 0.0, 100.0], f"d-{i}") for i in range(12)])
 
     assert len(manager.active_tracks()) == 5
     shed = [e for e in events.read_from(1) if e.event_type is EventType.DETECTION_SHED]
@@ -402,9 +388,7 @@ def test_events_carry_the_track_id(
 # --------------------------------------------------------------------------------------
 
 
-def test_track_position_is_projected_back_to_wgs84(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_track_position_is_projected_back_to_wgs84(manager: TrackManager, clock: SimClock) -> None:
     """ENU is authoritative; the geodetic fields are a projection kept in step with it."""
     manager.process([detection(clock, [0.0, 0.0, 150.0])])
 
@@ -431,9 +415,80 @@ def test_contributing_sensors_are_recorded(manager: TrackManager, clock: SimCloc
     ]
 
 
-def test_timestamps_come_from_the_injected_clock(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_timestamps_come_from_the_injected_clock(manager: TrackManager, clock: SimClock) -> None:
     feed(manager, clock, cycles=3, dt=2.0)
 
     assert manager.active_tracks()[0].updated_at == START + timedelta(seconds=4)
+
+
+# --------------------------------------------------------------------------------------
+# Staleness is a duration, not a duration plus the sensor's clock offset
+# --------------------------------------------------------------------------------------
+
+
+def lagging_detection(
+    clock: SimClock, position: list[float], detection_id: str, lag_s: float
+) -> IncomingDetection:
+    """A detection from a sensor whose clock reads `lag_s` behind the pipeline's."""
+    return IncomingDetection(
+        detection_id=detection_id,
+        sensor_id="SIM-RADAR-01",
+        timestamp=clock.now() - timedelta(seconds=lag_s),
+        position_enu=np.array(position),
+        covariance=np.eye(3) * 25.0,
+    )
+
+
+@pytest.mark.parametrize("sensor_lag_s", [0.0, 3.0, 10.0, 25.0])
+def test_a_lagging_sensor_clock_does_not_shorten_the_coast(
+    sensor_lag_s: float, manager: TrackManager, clock: SimClock
+) -> None:
+    """A confirmed track must coast for `coast_seconds` whatever its sensor's clock reads.
+
+    Staleness used to be measured as `now - last_seen`: a pipeline instant minus a *sensor*
+    instant, so the difference carried the skew between them. Ingestion accepts up to 30 s of
+    skew (FM-012), so a sensor lagging 25 s produced confirmed tracks that were retired on
+    their first missed cycle instead of coasting — the object reappeared as a new track with a
+    new identity and a split history, which is the fragmentation `coast_seconds` exists to
+    prevent (FM-022).
+
+    The failure was silent and depended only on how well someone's sensors were synchronised.
+    """
+    for i in range(5):
+        manager.process(
+            [lagging_detection(clock, [i * 20.0, 0.0, 100.0], f"det-{i}", sensor_lag_s)]
+        )
+        clock.advance(1.0)
+
+    assert manager.active_tracks()[0].state is TrackState.CONFIRMED
+
+    manager.process([])  # one missed cycle, well inside the six-second coast budget
+
+    surviving = manager.active_tracks()
+    assert surviving, f"a track from a sensor lagging {sensor_lag_s}s was retired immediately"
+    assert surviving[0].state is TrackState.CONFIRMED
+
+
+def test_the_coast_budget_still_expires_on_its_own_terms(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """The converse, so the fix cannot become "tracks never go stale": real elapsed time must
+    still demote a track that has stopped being supported."""
+    feed(manager, clock, cycles=5)
+
+    clock.advance(manager.config.coast_seconds + 1.0)
+    manager.process([])
+
+    assert manager.active_tracks()[0].state is TrackState.STALE
+
+
+def test_observation_time_is_still_reported_from_the_sensor(
+    manager: TrackManager, clock: SimClock
+) -> None:
+    """The fix must not quietly restamp detections with receipt time: when the object was
+    observed remains the sensor's answer, and only staleness moved to the pipeline clock."""
+    observed_at = clock.now() - timedelta(seconds=8.0)
+
+    manager.process([lagging_detection(clock, [0.0, 0.0, 100.0], "det-0", 8.0)])
+
+    assert manager.active_tracks()[0].tracking.last_seen == observed_at

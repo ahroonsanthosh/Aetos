@@ -164,6 +164,14 @@ class TrackingView(BaseModel):
 
     first_seen: datetime
     last_seen: datetime
+    """When the most recent detection was *observed*, on the sensor's clock."""
+
+    seconds_since_detection: float | None
+    """How long the track had gone without a detection when this snapshot was taken, measured
+    on the pipeline's clock. Null on snapshots predating the field.
+
+    Reported rather than left to the client, which would otherwise subtract `last_seen` from
+    its own clock and get the drift between the two along with the answer."""
     detection_count: int
     missed_updates: int
     coasting: bool
@@ -247,6 +255,7 @@ class TrackView(BaseModel):
             tracking=TrackingView(
                 first_seen=track.tracking.first_seen,
                 last_seen=track.tracking.last_seen,
+                seconds_since_detection=track.tracking.seconds_since_detection,
                 detection_count=track.tracking.detection_count,
                 missed_updates=track.tracking.missed_updates,
                 coasting=track.tracking.is_coasting,
@@ -291,6 +300,14 @@ class TrackHistoryResponse(BaseModel):
     track_id: str
     points: list[TrackHistoryPointView]
     count: int
+    """How many points this response carries."""
+
+    total: int
+    """How many the track actually has. Equal to `count` unless the response was truncated."""
+
+    truncated: bool
+    """Whether points were left out. A partial route that looks complete is exactly the kind
+    of confident, wrong picture this system exists to avoid — the operator is told."""
 
 
 class DetectionView(BaseModel):
@@ -430,7 +447,13 @@ class SensorView(BaseModel):
 
     sensor_id: str
     site_id: str
-    registry_key: str
+    registry_key: str | None
+    """Null for a real sensor, which has no simulation profile."""
+
+    hardware_driver: str | None
+    """Non-null when physical hardware is fitted at this placement. The distinction the
+    operator most needs from this table: whether the row describes a device or a scenario."""
+
     sensor_type: str | None
     position: GeoPointView
     height_m: float
@@ -443,6 +466,7 @@ class SensorView(BaseModel):
             sensor_id=record.sensor_id,
             site_id=record.site_id,
             registry_key=record.registry_key,
+            hardware_driver=record.hardware_driver,
             sensor_type=str(record.sensor_type) if record.sensor_type else None,
             position=GeoPointView(latitude=record.latitude, longitude=record.longitude),
             height_m=record.height_m,
