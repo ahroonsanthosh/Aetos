@@ -590,26 +590,37 @@ the display is exactly as it would otherwise be.
 
 ---
 
-### FM-040 — There is no container path
-**Status:** Closed by correction · **Severity:** Low — affects setup only, not runtime behaviour
+### FM-040 — The container files exist, are broken, and the README used to claim otherwise
+**Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
 
-This entry used to say a `Dockerfile` and `docker-compose.yml` had been written but never built
-or run, and the README told people to run `docker compose up`. Neither file has ever existed in
-this repository — `git log --all` finds no commit that added or removed them.
+This entry previously said no `Dockerfile` or `docker-compose.yml` had ever existed in this
+repository, and removed a README section telling people to run `docker compose up` from the
+repository root. That correction was itself wrong: it checked only the repository root.
+`frontend/Dockerfile` and `frontend/docker-compose.yml` do exist, at that location, and are
+broken in a way that made the removed README instruction fail regardless —
 
-So two documents asserted a capability the software does not have, and the instruction in the
-README could not work for anybody who followed it: `docker compose up` fails with *no
-configuration file provided*. That is the failure this project is written against, in
-documentation rather than in code — a green light nothing computes.
+1. **Wrong location.** The Dockerfile `COPY`s `pyproject.toml`, `backend/`, `sensors/`,
+   `scenarios/` and `config/`, none of which exist under `frontend/`. Compose sets `build: .`
+   from that directory, so the build context cannot resolve the Dockerfile's own paths.
+2. **Stale security claims.** Both files assert Aetos "has no authentication of any kind
+   (FM-001)". FM-001 has been closed since ADR 0016; the port should stay loopback-only
+   because an operator console carrying the whole live picture has no business being reached
+   from off the machine, not because there is no login.
+3. **The container would not start even relocated.** It must bind `0.0.0.0` to be reachable
+   from outside itself, and `guard_bind` refuses that without `--behind-proxy`, which asserts
+   TLS is terminated in front of the process — an assertion a bind-to-loopback compose file
+   cannot make truthfully. This needs a decision, not a flag.
 
-**Resolution:** the README's Docker section is removed and this entry now says what is true.
-`./start.sh` is the only supported way to run Aetos, and it is verified end to end.
+A sibling exploration branch (`claude/examine-codebase-sck2hv`, commit `9335457`) relocated
+the files to the repository root and corrected the authentication claim, confirming the third
+point by running `guard_bind('0.0.0.0', authenticated=True, behind_proxy=False, user_count=0)`
+and observing `StartupRefused`. That work was never merged and predates live mode, the
+watchdog, and the network-hardening pass on this branch — it should be re-verified against
+the current CLI and startup sequence before being pulled in, not merged blind.
 
-**If a container path is wanted**, it is a piece of work, not a missing file: an image that
-installs editable (a plain `pip install .` puts `backend/` in site-packages, and
-`ConfigPaths.default()` derives the repository root from its own `__file__`, so configuration
-loading would look beside site-packages and fail), builds the interface, and carries `config/`
-and `scenarios/`. It must be built and run before it is documented, not after.
+**Until resolved:** `./start.sh` is the only container-free, verified, supported way to run
+Aetos, and the README says so without mentioning Docker at all — removing the instruction was
+correct; the diagnosis of why it had to be removed was not.
 
 ---
 

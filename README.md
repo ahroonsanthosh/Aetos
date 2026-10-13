@@ -92,7 +92,7 @@ browser itself.
 
 There is no native PowerShell equivalent yet. If you'd rather not install or use Git Bash, say
 so and one can be added — but treat that as untested until it has actually been run on
-Windows, the same way the Docker path below is flagged.
+Windows (FM-040 has the same caveat for the container files).
 
 ### Tests
 
