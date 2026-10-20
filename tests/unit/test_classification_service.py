@@ -71,15 +71,11 @@ def service(events: SqliteEventStore, manager: TrackManager) -> ClassificationSe
 
 def changes_in(events: SqliteEventStore) -> list:
     """Every classification change in the log, oldest first."""
-    return [
-        e for e in events.read_from(0) if e.event_type == EventType.CLASSIFICATION_CHANGED
-    ]
+    return [e for e in events.read_from(0) if e.event_type == EventType.CLASSIFICATION_CHANGED]
 
 
 def hint(label: ClassificationLabel = SMALL, confidence: float = 0.85) -> ClassificationHint:
-    return ClassificationHint(
-        label=label, confidence=confidence, provenance=Provenance.MEASURED
-    )
+    return ClassificationHint(label=label, confidence=confidence, provenance=Provenance.MEASURED)
 
 
 def run_cycle(

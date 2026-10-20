@@ -15,11 +15,24 @@ The failure this shape exists to prevent is not a wrong role on an existing endp
 new endpoint shipping with no gate at all because whoever added it did not know to add one.
 `tests/integration/test_auth_api.py` walks the application's own route table and asserts that
 every route is either gated or on a short, named list of public ones.
+
+## Every dependency here is `async def`, and must stay that way
+
+FastAPI runs a plain `def` dependency in a worker thread. The persistence layer is one SQLite
+connection with no lock (`backend/database/connection.py`), sound only while every use happens
+on the event-loop thread — and resolving a session *writes* to it, sliding the expiry. When
+`current_operator` was a plain `def`, the console's opening burst of requests reached that
+connection from several threads at once; the second `BEGIN IMMEDIATE` landed inside the first
+transaction and the request failed with a 500.
+
+`get_services` and the role gate touch no database and are `async def` anyway, so the rule is
+one rule. `tests/integration/test_concurrent_requests.py` walks every route and fails on any
+handler or dependency that would run in a thread pool.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -30,7 +43,7 @@ from backend.auth.models import Role
 from backend.auth.policy import SESSION_COOKIE_NAME
 
 
-def get_services(request: Request) -> ApiServices:
+async def get_services(request: Request) -> ApiServices:
     return request.app.state.services
 
 
@@ -47,7 +60,7 @@ def session_token(request: Request) -> str | None:
     return request.cookies.get(SESSION_COOKIE_NAME)
 
 
-def current_operator(request: Request, services: ServicesDep) -> OperatorContext | None:
+async def current_operator(request: Request, services: ServicesDep) -> OperatorContext | None:
     """Resolve the operator, or None when no valid session was presented.
 
     Returns None rather than raising, so the small number of deliberately public routes can
@@ -59,7 +72,7 @@ def current_operator(request: Request, services: ServicesDep) -> OperatorContext
 OptionalOperatorDep = Annotated[OperatorContext | None, Depends(current_operator)]
 
 
-def require_role(minimum: Role) -> Callable[..., OperatorContext]:
+def require_role(minimum: Role) -> Callable[..., Awaitable[OperatorContext]]:
     """Build a dependency admitting only operators at or above `minimum`.
 
     Two distinct refusals, and the difference matters to the client:
@@ -70,7 +83,7 @@ def require_role(minimum: Role) -> Callable[..., OperatorContext]:
       look like a broken session.
     """
 
-    def dependency(operator: OptionalOperatorDep) -> OperatorContext:
+    async def dependency(operator: OptionalOperatorDep) -> OperatorContext:
         if operator is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -209,9 +209,7 @@ def test_round_trips_through_json() -> None:
     serialisation fidelity is part of the contract."""
     detection = make_detection(
         kinematics=Kinematics(speed_mps=32.0, heading_deg=185.0),
-        classification=ClassificationHint(
-            label=ClassificationLabel.UNKNOWN_UAS, confidence=0.61
-        ),
+        classification=ClassificationHint(label=ClassificationLabel.UNKNOWN_UAS, confidence=0.61),
     )
 
     assert Detection.model_validate_json(detection.model_dump_json()) == detection

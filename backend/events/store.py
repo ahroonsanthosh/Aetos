@@ -143,10 +143,9 @@ class SqliteEventStore(EventStore):
             self._conn = sqlite3.connect(
                 str(self._path) if self._path else ":memory:",
                 isolation_level=None,  # explicit transaction control
-                # The API reads the log from threadpool threads — /detections, /alerts and the
-                # event stream all do — and those are never the thread that opened it. Python's
-                # same-thread check would reject every one of those reads, in production as
-                # much as in tests.
+                # Every reader and the writer run on the event-loop thread, but that is not
+                # always the thread that opened the store — a test client runs the application
+                # on a thread of its own, and Python's same-thread check would reject it.
                 #
                 # This relaxes the ownership check only. The single-writer guarantee (ADR 0006)
                 # is an architectural discipline about who appends, not a property of Python's
@@ -233,9 +232,7 @@ class SqliteEventStore(EventStore):
 
     def read_for_track(self, track_id: str) -> Iterator[Event]:
         """Every event concerning one track, in order. The track's full history."""
-        yield from self._query(
-            "SELECT * FROM events WHERE track_id = ? ORDER BY seq", (track_id,)
-        )
+        yield from self._query("SELECT * FROM events WHERE track_id = ? ORDER BY seq", (track_id,))
 
     def latest_seq(self) -> int:
         row = self._conn.execute("SELECT MAX(seq) AS max_seq FROM events").fetchone()

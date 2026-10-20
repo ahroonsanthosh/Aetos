@@ -82,27 +82,21 @@ def test_a_single_detection_creates_a_track_but_does_not_display_it(
     assert manager.active_tracks()[0].state is TrackState.NEW
 
 
-def test_a_second_detection_promotes_to_tentative(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_a_second_detection_promotes_to_tentative(manager: TrackManager, clock: SimClock) -> None:
     tracks = feed(manager, clock, cycles=2)
 
     assert len(tracks) == 1
     assert tracks[0].state is TrackState.TENTATIVE
 
 
-def test_sustained_detections_confirm_the_track(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_sustained_detections_confirm_the_track(manager: TrackManager, clock: SimClock) -> None:
     tracks = feed(manager, clock, cycles=6)
 
     assert tracks[0].state is TrackState.CONFIRMED
     assert tracks[0].tracking.detection_count == 6
 
 
-def test_one_object_produces_exactly_one_track(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_one_object_produces_exactly_one_track(manager: TrackManager, clock: SimClock) -> None:
     """Track fragmentation would show the operator several objects where there is one."""
     feed(manager, clock, cycles=15)
 
@@ -266,18 +260,14 @@ def test_reacquisition_recovers_the_same_track(manager: TrackManager, clock: Sim
     assert manager.active_tracks()[0].state is TrackState.STALE
 
     # The object reappears where its motion says it should be.
-    reacquired = manager.process(
-        [detection(clock, [10 * 20.0 + 7 * 20.0, 0.0, 100.0], "det-back")]
-    )
+    reacquired = manager.process([detection(clock, [10 * 20.0 + 7 * 20.0, 0.0, 100.0], "det-back")])
 
     assert len(reacquired) == 1
     assert reacquired[0].track_id == original_id
     assert reacquired[0].state is TrackState.CONFIRMED
 
 
-def test_last_seen_does_not_advance_while_coasting(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_last_seen_does_not_advance_while_coasting(manager: TrackManager, clock: SimClock) -> None:
     """A coasted position must never look freshly observed. This is why TrackMetadata keeps
     last_seen separate from updated_at."""
     feed(manager, clock, cycles=8)
@@ -335,13 +325,9 @@ def test_saturation_is_refused_loudly_not_silently(
 ) -> None:
     """Scenario I / ADR 0008. Past the ceiling, new track initiation stops and says so,
     rather than growing without bound until the process dies."""
-    manager = TrackManager(
-        clock, events, LocalFrame(SITE), TrackManagerConfig(max_active_tracks=5)
-    )
+    manager = TrackManager(clock, events, LocalFrame(SITE), TrackManagerConfig(max_active_tracks=5))
 
-    manager.process(
-        [detection(clock, [i * 5_000.0, 0.0, 100.0], f"d-{i}") for i in range(12)]
-    )
+    manager.process([detection(clock, [i * 5_000.0, 0.0, 100.0], f"d-{i}") for i in range(12)])
 
     assert len(manager.active_tracks()) == 5
     shed = [e for e in events.read_from(1) if e.event_type is EventType.DETECTION_SHED]
@@ -402,9 +388,7 @@ def test_events_carry_the_track_id(
 # --------------------------------------------------------------------------------------
 
 
-def test_track_position_is_projected_back_to_wgs84(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_track_position_is_projected_back_to_wgs84(manager: TrackManager, clock: SimClock) -> None:
     """ENU is authoritative; the geodetic fields are a projection kept in step with it."""
     manager.process([detection(clock, [0.0, 0.0, 150.0])])
 
@@ -431,9 +415,7 @@ def test_contributing_sensors_are_recorded(manager: TrackManager, clock: SimCloc
     ]
 
 
-def test_timestamps_come_from_the_injected_clock(
-    manager: TrackManager, clock: SimClock
-) -> None:
+def test_timestamps_come_from_the_injected_clock(manager: TrackManager, clock: SimClock) -> None:
     feed(manager, clock, cycles=3, dt=2.0)
 
     assert manager.active_tracks()[0].updated_at == START + timedelta(seconds=4)

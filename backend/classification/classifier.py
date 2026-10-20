@@ -170,4 +170,3 @@ def build_default_classifier(paths: ConfigPaths | None = None) -> Classifier:
             KinematicEvidence(load_kinematic_profiles(paths)),
         )
     )
-

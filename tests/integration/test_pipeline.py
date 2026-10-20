@@ -92,7 +92,7 @@ def to_incoming(detection: Detection, geometry: SiteGeometry) -> IncomingDetecti
     if detection.measurement.position_covariance_enu is not None:
         covariance = np.array(detection.measurement.position_covariance_enu)
     else:
-        covariance = np.eye(3) * (detection.measurement.position_uncertainty_m ** 2)
+        covariance = np.eye(3) * (detection.measurement.position_uncertainty_m**2)
 
     return IncomingDetection(
         detection_id=detection.detection_id,
@@ -227,9 +227,7 @@ def test_the_simulator_does_emit_the_fields_being_stripped(
 # --------------------------------------------------------------------------------------
 
 
-def test_a_scenario_produces_detections_and_forms_tracks(
-    geometry: SiteGeometry, registry
-) -> None:
+def test_a_scenario_produces_detections_and_forms_tracks(geometry: SiteGeometry, registry) -> None:
     """The vertical slice: synthetic detection → ingestion → association → track."""
     outcome = run_scenario("a_benign_transit", geometry, registry, duration_s=120.0)
 
@@ -237,30 +235,22 @@ def test_a_scenario_produces_detections_and_forms_tracks(
     assert outcome["manager"].active_tracks(), "no track was formed from a clean transit"
 
 
-def test_a_single_object_produces_a_confirmed_track(
-    geometry: SiteGeometry, registry
-) -> None:
+def test_a_single_object_produces_a_confirmed_track(geometry: SiteGeometry, registry) -> None:
     """Scenario A carries one object across the monitored area on a clean trajectory. If the
     pipeline cannot confirm that, nothing downstream of it is worth testing."""
     outcome = run_scenario("a_benign_transit", geometry, registry, duration_s=120.0)
 
-    confirmed = [
-        t for t in outcome["manager"].active_tracks() if t.state is TrackState.CONFIRMED
-    ]
+    confirmed = [t for t in outcome["manager"].active_tracks() if t.state is TrackState.CONFIRMED]
 
     assert confirmed, "a clean single-object transit did not reach CONFIRMED"
 
 
-def test_velocity_is_recovered_without_ever_being_told(
-    geometry: SiteGeometry, registry
-) -> None:
+def test_velocity_is_recovered_without_ever_being_told(geometry: SiteGeometry, registry) -> None:
     """The filter derives speed from the position sequence alone. The scenario declares the
     object's speed, so this compares an estimate against the truth that produced it."""
     outcome = run_scenario("a_benign_transit", geometry, registry, duration_s=120.0)
 
-    confirmed = [
-        t for t in outcome["manager"].active_tracks() if t.state is TrackState.CONFIRMED
-    ]
+    confirmed = [t for t in outcome["manager"].active_tracks() if t.state is TrackState.CONFIRMED]
     assert confirmed
 
     declared = outcome["scenario"].objects[0].motion.speed_mps
@@ -287,9 +277,7 @@ def test_every_track_is_reconstructible_from_the_event_log(
         assert [e.seq for e in history] == sorted(e.seq for e in history)
 
 
-def test_detections_carry_the_canonical_schema_version(
-    geometry: SiteGeometry, registry
-) -> None:
+def test_detections_carry_the_canonical_schema_version(geometry: SiteGeometry, registry) -> None:
     scenario = load_all()["a_benign_transit"]
     clock = SimClock(EPOCH)
     world = ScenarioWorld(scenario, EPOCH)
@@ -311,9 +299,7 @@ def test_detections_carry_the_canonical_schema_version(
 # --------------------------------------------------------------------------------------
 
 
-def test_a_scenario_run_is_reproducible_from_its_seed(
-    geometry: SiteGeometry, registry
-) -> None:
+def test_a_scenario_run_is_reproducible_from_its_seed(geometry: SiteGeometry, registry) -> None:
     """Without this, a failing scenario cannot be reproduced and replay cannot reproduce the
     run it claims to replay."""
     first = run_scenario("a_benign_transit", geometry, registry, duration_s=60.0)

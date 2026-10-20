@@ -89,8 +89,7 @@ class IdentityProvider(ABC):
     """
 
     @abstractmethod
-    def resolve(self, token: str | None = None) -> OperatorContext | None:
-        ...
+    def resolve(self, token: str | None = None) -> OperatorContext | None: ...
 
     @property
     @abstractmethod
@@ -160,9 +159,7 @@ class LocalOperatorIdentityProvider(IdentityProvider):
         role: str = "admin",
     ) -> None:
         self._clock = clock
-        self._identity = Identity(
-            operator_id=operator_id, display_name=display_name, role=role
-        )
+        self._identity = Identity(operator_id=operator_id, display_name=display_name, role=role)
 
     @property
     def requires_credential(self) -> bool:

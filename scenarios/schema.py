@@ -142,9 +142,7 @@ class SimulatedObject(BaseModel):
     @model_validator(mode="after")
     def _schedule_is_ordered(self) -> SimulatedObject:
         if self.disappears_at_s is not None and self.disappears_at_s <= self.appears_at_s:
-            raise ValueError(
-                f"object {self.object_id}: disappears_at_s must be after appears_at_s"
-            )
+            raise ValueError(f"object {self.object_id}: disappears_at_s must be after appears_at_s")
         return self
 
 

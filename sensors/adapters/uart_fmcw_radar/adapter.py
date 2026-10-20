@@ -235,9 +235,7 @@ class UartFmcwRadarAdapter(SensorAdapter):
             classification=None,
         )
 
-    def _project(
-        self, range_m: float, bearing_deg: float
-    ) -> tuple[GeoPosition, list[list[float]]]:
+    def _project(self, range_m: float, bearing_deg: float) -> tuple[GeoPosition, list[list[float]]]:
         """Range and bearing to a WGS-84 position, with the ENU covariance that goes with it.
 
         Elevation is the mount tilt, because that is where the beam centre points and the
@@ -264,9 +262,7 @@ class UartFmcwRadarAdapter(SensorAdapter):
         )
         return position, self._covariance(range_m, bearing_rad, tilt_rad)
 
-    def _covariance(
-        self, range_m: float, bearing_rad: float, tilt_rad: float
-    ) -> list[list[float]]:
+    def _covariance(self, range_m: float, bearing_rad: float, tilt_rad: float) -> list[list[float]]:
         """3x3 ENU covariance for one report.
 
         Radar error is strongly anisotropic — precise along the line of sight, imprecise

@@ -100,9 +100,7 @@ def test_identities_survive_a_track_crossing(kalman: ConstantVelocityFilter) -> 
     assert identities_held, "identities were exchanged during the crossing"
 
 
-def _distance(
-    kalman: ConstantVelocityFilter, track: TrackCandidate, detection: Candidate
-) -> float:
+def _distance(kalman: ConstantVelocityFilter, track: TrackCandidate, detection: Candidate) -> float:
     return kalman.mahalanobis_squared(track.state, detection.position_enu, detection.covariance)
 
 
