@@ -72,6 +72,7 @@ a single combined pipeline function.
 | `sensors/` | `SensorAdapter` contract, simulated adapter, testbed radar driver |
 | `scenarios/` | Named, reusable scenario definitions |
 | `frontend/` | Aetos operator interface — see its own README |
+| `twin/` | 3-D digital-twin command interface. **Standalone prototype**, not yet wired to the backend |
 | `response/` | **Empty placeholder.** Future response integration; see its README |
 | `config/` | Sites, sensor registry, environment configuration |
 | `tests/` | Unit, integration, scenario replay, chaos |
@@ -152,3 +153,16 @@ laptop.
 
 Under active construction. See `docs/architecture.md` for the current state of each module
 and `docs/adr/` for why things are built the way they are.
+
+## Where this is going
+
+`docs/vision.md` records the long-term product vision — hardware-agnostic sensor integration,
+multi-sensor fusion, a site digital twin, asset-aware protection, distributed nodes, fleet
+and cross-site coordination, and the rest. It is **aspirational**, marks the build status of
+every capability, and does not relax the scope boundary above: the response capabilities it
+describes are decision support, and `RECOMMENDED`, `AUTHORISED` and `EXECUTED` remain three
+distinct states with three distinct authors.
+
+The digital twin is the furthest along of those: `twin/` is a standalone 3-D command interface
+prototype with its own simulator, developed on its own until it is ready to be wired to the
+backend. See `twin/README.md`.

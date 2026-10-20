@@ -1,0 +1,56 @@
+/* Asset and sensor labels rendered into the scene. */
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 9px 6px;
+  border: 0;
+  border-left: 2px solid;
+  background: rgba(4, 9, 14, 0.78);
+  backdrop-filter: blur(4px);
+  color: var(--text);
+  font-family: var(--font-mono);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    /* Driven imperatively by the declutter pass. A label winking out instantly as the
+       camera turns reads as a glitch; a short fade reads as decluttering. */
+    opacity 180ms ease;
+}
+
+.label:hover {
+  background: rgba(10, 20, 27, 0.92);
+  transform: translateY(-1px);
+}
+
+.selected {
+  background: rgba(12, 24, 32, 0.96);
+  box-shadow: 0 0 0 1px var(--holo);
+}
+
+.name {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+}
+
+.meta {
+  display: flex;
+  gap: 10px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.protection {
+  font-weight: 600;
+}
+
+.sensor .name {
+  font-size: 10px;
+}
