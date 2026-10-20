@@ -1,4 +1,19 @@
+<p align="center">
+  <img src="docs/assets/aetos-logo.png" alt="Aetos" width="260">
+</p>
+
 # Aetos — Counter-UAS Command & Control Platform
+
+**Aetos turns raw drone-sensor detections into tracked, classified, risk-scored threats and
+gives a human operator a recommendation they can audit.** Every judgement carries its
+reasons, and every event lands on an append-only log.
+
+![The Aetos operator console tracking a simulated approach](docs/assets/console.png)
+
+<sub>The operator console during a simulated approach, with a track selected. The amber
+badge says SIMULATION because this is synthetic data; the badge is set by the backend from
+the sensors actually attached, not by the interface. System health:
+[screenshot](docs/assets/system-health.png).</sub>
 
 Aetos is a modular Counter-UAS (C-UAS) command-and-control platform. It ingests detections
 from sensors, forms and maintains tracks, classifies them, assesses risk against a
