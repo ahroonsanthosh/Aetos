@@ -36,7 +36,7 @@ const SECTIONS: Section[] = [
     title: 'Intelligence',
     items: [
       { label: 'Track History', path: '/history' },
-      { label: 'Sensor Fusion', path: '/fusion', unavailable: 'Fusion module not implemented' },
+      { label: 'Sensor Fusion', path: '/fusion', unavailable: 'Fusion runs in the pipeline; no dedicated page yet' },
       // Both modules are built and running; what these two lack is a dedicated page. Say
       // that, rather than "not implemented" — the module claim was true when written and
       // silently became false, leaving the sidebar denying the existence of scores the

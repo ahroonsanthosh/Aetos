@@ -1,0 +1,145 @@
+.bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 32px;
+  padding: 11px 18px;
+  pointer-events: auto;
+}
+
+/* The top bar's accent runs along its bottom edge rather than its left. */
+.bar::before {
+  inset: auto 0 0 auto;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--panel-edge-strong) 15%,
+    var(--panel-edge-strong) 85%,
+    transparent
+  );
+}
+
+.identity {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+}
+
+.wordmark {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  color: var(--holo);
+}
+
+.wordmarkThin {
+  font-weight: 300;
+  letter-spacing: 0.28em;
+  color: var(--text-dim);
+}
+
+.site {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 20px;
+  border-left: 1px solid var(--panel-edge);
+}
+
+.siteId {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+}
+
+.siteName {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--text);
+}
+
+.metrics {
+  display: flex;
+  gap: 28px;
+  justify-content: center;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metricValue {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.metricUnit {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+}
+
+.readiness {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-left: 22px;
+  border-left: 1px solid var(--panel-edge);
+}
+
+.readinessFigure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: right;
+}
+
+.readinessValue {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.diagnosis {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 340px;
+}
+
+.weakness {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--caution);
+}
+
+.action {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.nominal {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+@media (max-width: 1380px) {
+  .metrics {
+    gap: 18px;
+  }
+
+  .diagnosis {
+    max-width: 240px;
+  }
+}

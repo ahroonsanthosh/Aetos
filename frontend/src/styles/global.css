@@ -2,6 +2,49 @@
 
 @import './tokens.css';
 
+/*
+ * Typefaces, vendored under public/fonts rather than linked from a font CDN. A console for a
+ * defence site should not make a third-party request on load, and it has to render correctly
+ * with no outbound network at all. Both are SIL Open Font License 1.1 — see
+ * public/fonts/LICENSE.md. Latin subsets only, ~66 KB for all four faces.
+ *
+ * `font-display: swap` on purpose: the interface renders immediately in the fallback and
+ * re-flows when the face arrives. An operational display that withholds text while a font
+ * loads is worse than one that changes typeface a beat later.
+ */
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;      /* variable: one file covers the whole range */
+  font-display: swap;
+  src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-300.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+}
+
 *,
 *::before,
 *::after {
@@ -16,7 +59,13 @@ body,
 }
 
 body {
-  background: var(--surface-base);
+  /* A single wide radial of the brand's deep purple, sitting behind everything at low
+     opacity. It gives the shell a centre of gravity and keeps the ground from reading as flat
+     black. Kept far below the threshold where it could be mistaken for a status wash — this is
+     structure, and structure is never allowed to look like judgement. */
+  background:
+    radial-gradient(120% 90% at 50% -10%, var(--brand-wash) 0%, transparent 62%),
+    var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-base);

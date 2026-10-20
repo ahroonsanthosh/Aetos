@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+.DS_Store
+.env*.local
+
+# Agent instruction files Next.js regenerates on `next dev`; kept local, not part of the twin.
+AGENTS.md
+CLAUDE.md

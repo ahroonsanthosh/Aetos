@@ -1,0 +1,172 @@
+.bar {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: start;
+  gap: 30px;
+  padding: 11px 18px 12px;
+  pointer-events: auto;
+}
+
+.bar::before {
+  inset: 0 0 auto auto;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--panel-edge-strong) 15%,
+    var(--panel-edge-strong) 85%,
+    transparent
+  );
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.buttons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* --- Buttons -------------------------------------------------------------- */
+
+.button {
+  padding: 5px 12px;
+  border: 1px solid var(--panel-edge);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.button:hover {
+  border-color: var(--panel-edge-strong);
+  color: var(--text);
+}
+
+.buttonActive {
+  border-color: var(--holo);
+  background: rgba(88, 216, 230, 0.12);
+  color: var(--holo);
+}
+
+/* --- Layer toggles -------------------------------------------------------- */
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.toggle:hover {
+  color: var(--text-dim);
+}
+
+.toggleOn {
+  color: var(--text);
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--holo-dim);
+  transition: background 140ms ease;
+}
+
+/* --- Simulation ----------------------------------------------------------- */
+
+.simulation {
+  justify-self: end;
+  align-items: flex-end;
+  max-width: 560px;
+}
+
+.simTag {
+  margin-left: 9px;
+  padding: 1px 6px 2px;
+  border: 1px solid rgba(233, 178, 76, 0.35);
+  color: var(--caution);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+}
+
+.simRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.select {
+  padding: 5px 10px;
+  border: 1px solid var(--panel-edge);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+}
+
+.select:focus-visible {
+  outline: 1px solid var(--holo);
+}
+
+.rates {
+  display: flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+
+.rate {
+  padding: 5px 8px;
+  border: 1px solid var(--panel-edge);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.rate:hover {
+  color: var(--text);
+}
+
+.scenarioNote {
+  margin: 0;
+  max-width: 520px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  text-align: right;
+  color: var(--text-faint);
+}
+
+@media (max-width: 1380px) {
+  .bar {
+    gap: 20px;
+  }
+
+  .scenarioNote {
+    max-width: 340px;
+  }
+}

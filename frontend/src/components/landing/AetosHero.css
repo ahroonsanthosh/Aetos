@@ -1,0 +1,337 @@
+/*
+ * Landing page.
+ *
+ * The one place in this system that is allowed to perform. Everything else is an instrument
+ * and is restrained on purpose; this screen has about four seconds to establish that the
+ * product is serious, so it uses depth, grain and motion the console never would.
+ *
+ * The register still has a floor: no rounded cards, no gradients on text, no glow for its own
+ * sake. It should read as an instrument photographed well, not as a marketing site.
+ */
+
+.hero {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+/* A wide, very soft brand wash so the composition has a centre of gravity and the corners
+   fall away. Sits under the 3D stack. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(78% 62% at 50% 44%, #3d1f3d59 0%, transparent 68%),
+    radial-gradient(120% 100% at 50% 120%, #6b4a6b1f 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.hero__filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* Film grain across the whole viewport, above the imagery and below the type. Lower opacity
+   than the source component's 0.15: this ground is much darker, and grain reads far more
+   strongly on it. */
+.hero__grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0.085;
+}
+
+/* ---- The 3D stack ---------------------------------------------------------------------- */
+
+.hero__viewport {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Real perspective. The tilt below is a rotation in 3D space, not a 2D skew that
+     approximates one — which is why the layers separate correctly as the pointer moves. */
+  perspective: 2000px;
+  overflow: hidden;
+}
+
+.hero__canvas {
+  position: relative;
+  width: min(1180px, 88vw);
+  height: min(720px, 62vh);
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero__layer {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #b892c426;
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.5s ease;
+}
+
+/*
+ * The lit surface of the plane.
+ *
+ * On the canvas, not on a layer. It lived on the terrain layer's `::before` first and silently
+ * hid it: `isolation: isolate` makes that layer a stacking context, and inside one a
+ * `z-index: -1` child paints *after* the element's own background — so a 95%-opaque wash sat
+ * directly on top of the contour artwork it was supposed to sit behind. The terrain layer
+ * rendered nothing at all and looked merely faint.
+ *
+ * Structurally this is also the right home for it: the canvas *is* the surface, and the three
+ * layers are what is drawn on it. They stay fully transparent, which is what lets
+ * `mix-blend-mode: screen` do anything at all.
+ *
+ * Broad and shallow rather than a hotspot — an intense centre reads as a lens flare lying on
+ * the artwork; a wide fall-off reads as a surface that happens to be lit.
+ */
+.hero__canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 130% at 46% 40%, #3d1f3d8a 0%, #24122733 52%, transparent 84%),
+    linear-gradient(126deg, #1d1220f7 0%, #100a13f7 55%, #191220f7 100%);
+  transform: translateZ(0);
+}
+
+/* Three layers of one scene: the ground it watches, the thing it is watching, and what the
+   sensors actually return. Authored as SVG and served from this origin — a console for a
+   defence site should not fetch imagery from a third party, and it has to render with no
+   outbound network at all. */
+.hero__layer--terrain {
+  background-image: url('/landing/layer-terrain.svg');
+  filter: brightness(1.15);
+}
+
+.hero__layer--airframe {
+  background-image: url('/landing/layer-airframe.svg');
+  opacity: 0.8;
+  filter: contrast(1.15) brightness(1.75);
+  mix-blend-mode: screen;
+}
+
+.hero__layer--returns {
+  background-image: url('/landing/layer-returns.svg');
+  opacity: 0.72;
+  filter: contrast(1.3) brightness(1.8);
+  mix-blend-mode: screen;
+}
+
+/* The topographic plane, floating above the stack. Kept from the source component — it is
+   what makes the tilt legible, because concentric rings under perspective are the clearest
+   possible cue that a surface is receding. */
+.hero__contours {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  background-image: repeating-radial-gradient(
+    circle at 50% 50%,
+    transparent 0,
+    transparent 40px,
+    #b892c41f 41px,
+    transparent 42px
+  );
+  transform: translateZ(120px);
+  pointer-events: none;
+}
+
+/* ---- The interface grid over it -------------------------------------------------------- */
+
+.hero__grid {
+  position: absolute;
+  inset: 0;
+  padding: clamp(1.5rem, 4vw, 4rem);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-4);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hero__sys {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wider);
+  color: var(--text-primary);
+  align-self: start;
+}
+
+.hero__readouts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+}
+
+.hero__readout {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.hero__readout dt {
+  color: var(--text-muted);
+  min-width: 62px;
+  text-align: right;
+}
+
+.hero__readout dd {
+  margin: 0;
+  min-width: 96px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A value read from a live system, and a value that is not. The interface must never render
+   those the same way, and that rule does not stop applying because this page is public. */
+.hero__readout.is-live dd { color: var(--brand-accent); }
+.hero__readout.is-dark dd { color: var(--text-disabled); }
+
+/* ---- The centrepiece ------------------------------------------------------------------- */
+
+.hero__centre {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: center;
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Negative, deliberately. The mark's artwork carries a deep well of empty space under the
+     perch where the branch and laurel sit; leaving positive space there as well opens a gap
+     between mark and wordmark that belongs to neither. Pulling the title up closes it
+     optically, which is how the supplied lockup is spaced. */
+  gap: clamp(-0.9rem, -0.7vw, -0.2rem);
+}
+
+.hero__mark {
+  color: var(--brand-mid);
+  /* Enough lift to separate the mark from the contour plane behind it without turning into
+     a glow effect. */
+  filter: drop-shadow(0 0 42px #3d1f3d99);
+}
+
+.hero__title {
+  margin: 0;
+  font-size: clamp(3.4rem, 13vw, 13rem);
+  font-weight: 500;
+  line-height: 0.85;
+  letter-spacing: 0.06em;
+  text-indent: 0.06em;      /* letterspacing leaves a trailing gap; pull it back to centre */
+  /* Kept from the source, and load-bearing: difference blending is what keeps type this large
+     legible over imagery that is moving underneath it. */
+  mix-blend-mode: difference;
+  color: var(--text-primary);
+}
+
+/* ---- Foot ------------------------------------------------------------------------------ */
+
+.hero__foot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-5);
+}
+
+.hero__strap {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-secondary);
+}
+
+.hero__strap p { margin: 0 0 var(--space-2); }
+
+.hero__strap-line {
+  color: var(--text-primary);
+  letter-spacing: 0.24em;
+  font-size: var(--text-sm);
+}
+
+.hero__cta {
+  pointer-events: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wider);
+  padding: var(--space-4) var(--space-6);
+  color: var(--surface-base);
+  background: var(--text-primary);
+  border: none;
+  /* The angled corner is the source component's, and it is the single detail that stops this
+     reading as a generic rectangular button. */
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 85% 100%, 0 100%);
+  transition: background var(--transition), transform var(--transition);
+}
+
+.hero__cta:hover,
+.hero__cta:focus-visible {
+  background: var(--brand-accent);
+  transform: translateY(-4px);
+}
+
+.hero__cta:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 4px;
+}
+
+.hero__hint {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  height: 58px;
+  background: linear-gradient(to bottom, var(--brand-accent), transparent);
+  opacity: 0.5;
+  animation: hero-flow 2.6s infinite ease-in-out;
+  z-index: 4;
+}
+
+@keyframes hero-flow {
+  0%, 100% { transform: scaleY(0); transform-origin: top; }
+  50%      { transform: scaleY(1); transform-origin: top; }
+  51%      { transform: scaleY(1); transform-origin: bottom; }
+}
+
+/* ---- Narrow viewports ------------------------------------------------------------------ */
+
+@media (max-width: 720px) {
+  .hero__grid { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }
+  .hero__readouts { align-items: flex-start; }
+  .hero__readout dt { text-align: left; min-width: 58px; }
+  .hero__readout dd { text-align: left; min-width: 0; }
+  .hero__foot { flex-direction: column; align-items: stretch; gap: var(--space-4); }
+  .hero__cta { width: 100%; text-align: center; }
+  .hero__canvas { height: 48vh; }
+}
+
+/* Someone who has asked for less motion gets the composition at rest: no entrance rotation,
+   no pointer tilt, no flowing hint. Nothing is hidden — no information on this page is
+   carried by movement. */
+@media (prefers-reduced-motion: reduce) {
+  .hero__canvas { transition: none; animation: none; }
+  .hero__layer { transition: none; }
+  .hero__hint { animation: none; opacity: 0.28; transform: scaleY(1); transform-origin: top; }
+  .hero__cta:hover { transform: none; }
+}

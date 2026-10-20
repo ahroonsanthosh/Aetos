@@ -12,7 +12,9 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
+import { AetosMark } from '../brand/AetosMark'
 import { api } from '../../data/client/api'
 import { useAuth } from '../../data/client/auth'
 import type { ModeView, SystemHealthView } from '../../data/models/api'
@@ -68,10 +70,15 @@ export function TopBar({ streamStatus, trackCount }: Props) {
 
   return (
     <header className="topbar">
-      <div className="topbar__identity">
+      {/* The mark links to the front page rather than to the console root. An operator who
+          clicks a logo expects to go somewhere; sending them to the page they are already on
+          is the more surprising of the two options, and `/landing` is the only route the logo
+          uniquely identifies. */}
+      <Link to="/landing" className="topbar__identity" title="Aetos — front page">
+        <AetosMark size={26} className="topbar__mark" />
         <span className="topbar__wordmark">AETOS</span>
         <span className="topbar__subtitle">Counter-UAS / Sensor Fusion</span>
-      </div>
+      </Link>
 
       <div className="topbar__status">
         <Chip
@@ -85,12 +92,7 @@ export function TopBar({ streamStatus, trackCount }: Props) {
           tone={streamStatus === 'live' ? 'nominal' : streamStatus === 'closed' ? 'critical' : 'warning'}
         />
         <Chip label="Tracks" value={String(trackCount)} tone="info" />
-        <Chip
-          label="Fusion"
-          value="NOT BUILT"
-          tone="inert"
-          title="Multi-sensor fusion is not implemented in this build."
-        />
+        <FusionChip health={health} />
       </div>
 
       <div className="topbar__right">
@@ -117,6 +119,27 @@ export function TopBar({ streamStatus, trackCount }: Props) {
         </button>
       </div>
     </header>
+  )
+}
+
+/**
+ * Fusion's state, read from the health endpoint's `fusion` row — never a constant. It used to
+ * say NOT BUILT as a literal, and the obvious fix, a literal ON, would be the same mistake the
+ * other way round: a site that switches fusion off in its policy would still be told it was on.
+ */
+function FusionChip({ health }: { health: SystemHealthView | null }) {
+  const fusion = health?.components.find((c) => c.component === 'fusion')
+  if (!fusion) {
+    return <Chip label="Fusion" value="—" tone="unknown" title="Not yet reported by the backend" />
+  }
+  const running = fusion.state === 'ok'
+  return (
+    <Chip
+      label="Fusion"
+      value={running ? 'ON' : 'OFF'}
+      tone={running ? 'nominal' : 'inert'}
+      title={fusion.detail}
+    />
   )
 }
 

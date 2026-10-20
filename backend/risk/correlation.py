@@ -12,24 +12,28 @@ any track's score. That separation is the whole design: counting nearby tracks i
 per-track factor would make each track's score depend on how many other tracks exist, which is
 exactly the coupling the narrow input exists to prevent.
 
-## The duplicate-track problem, and why this can run before fusion exists
+## The duplicate-track problem, and why this survives fusion
 
-`backend/fusion` is not built, so one physical object observed by four sensors becomes up to
-four tracks (FM-023). Counting tracks naively would report a single drone as a coordinated
-four-axis approach — confident nonsense, and worse than saying nothing.
+One physical object observed by several sensors can become several tracks (FM-023). Counting
+tracks naively would report a single drone as a coordinated multi-axis approach — confident
+nonsense, and worse than saying nothing.
 
-Fragments of one object and genuinely distinct contacts are separable, though, without doing
-fusion's job. Fragments are **co-located and co-moving**: within sensor error of each other,
-with near-identical velocity, because they are observations of the same thing. Distinct
-contacts converging on an asset are the opposite — hundreds of metres apart, approaching along
+`backend/fusion` now prevents most of that by reconciling detections before tracking (ADR
+0020). It does not prevent all of it, by design: a detection that could belong to either of two
+objects, or is too uncertain to place, is left unfused, because merging two real contacts hides
+one and an over-count does not. So duplicates still occur, less often, and this stays as the
+backstop that tells the operator when they do.
+
+Fragments of one object and genuinely distinct contacts are separable without doing fusion's
+job. Fragments are **co-located and co-moving**: within sensor error of each other, with
+near-identical velocity, because they are observations of the same thing. Distinct contacts
+converging on an asset are the opposite — hundreds of metres apart, approaching along
 different bearings. So tracks are clustered on that test, and the situation is assessed over
 clusters rather than tracks.
 
-This is **not fusion** and does not pretend to be. It merges nothing, changes no track state,
-re-runs no association, and its output is scoped entirely to risk. It answers one question —
-*how many distinct objects are these tracks likely to be* — because the situation assessment
-cannot ask anything sensible without an answer to it. When `backend/fusion` exists it supplies
-that answer properly and this clustering is deleted.
+This merges nothing, changes no track state and re-runs no association; its output is scoped
+entirely to risk. It answers one question — *how many distinct objects are these tracks likely
+to be* — because the situation assessment cannot ask anything sensible without an answer.
 """
 
 from __future__ import annotations
@@ -256,8 +260,8 @@ def assess_situation(
                 level=RiskLevel.NONE,
                 detail=(
                     f"{len(tracks)} tracks appear to be {len(clusters)} objects — "
-                    f"{len(fragmented)} set(s) are co-located and co-moving. Sensor fusion is "
-                    "not built (FM-023)."
+                    f"{len(fragmented)} set(s) are co-located and co-moving but were not "
+                    "reconciled into one (FM-023)."
                 ),
                 track_ids=[track_id for cluster in fragmented for track_id in cluster.track_ids],
             )

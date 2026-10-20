@@ -23,6 +23,7 @@ import pytest
 from backend.classification.classifier import build_default_classifier
 from backend.classification.evidence import TrackEvidence
 from backend.common.config import ConfigPaths
+from backend.common.geodesy import GeodeticPoint, LocalFrame
 from backend.risk.engine import build_risk_engine
 from backend.risk.factors import TrackRisk
 from backend.zones.geometry import EnuPoint, EnuVelocity, SiteGeometry
@@ -156,8 +157,10 @@ def test_the_same_scenario_behaves_identically_anywhere_on_earth(tmp_path) -> No
     scenario at five, and requires the same answer from each: the same peak risk, the same
     number of tracks, the same labels.
 
-    It is the widest net available for this class of bug — anything that quietly depends on
-    *where* the system is installed fails here, whether or not anyone thought to look for it.
+    It is the widest net available for this class of bug, and a net rather than a proof: a
+    location dependence that does not change the peak risk, the track count or the labels on
+    this scenario passes it. The ellipsoidal-altitude defect itself is one such case, which is
+    why the field-level test above exists — it fails on that defect, and this one does not.
     """
     import json
     from datetime import UTC, datetime
@@ -171,23 +174,39 @@ def test_the_same_scenario_behaves_identically_anywhere_on_earth(tmp_path) -> No
     )
 
     def relocated(latitude: float, longitude: float, elevation_m: float) -> SiteGeometry:
-        """The shipped site, moved bodily — every zone and sensor keeps its relative geometry."""
+        """The shipped site, moved bodily — every zone and sensor at the same distance in metres.
+
+        Through the local frame, not by adding a degree offset. Adding the same degrees to every
+        point keeps the latitudes' spacing but not the longitudes': a degree of longitude spans
+        far fewer metres near the pole, so the first version of this helper put the east and
+        west sensors 508 m from the centre in the Arctic, 900 m at the shipped site and 1,455 m
+        at the equator. Five different sites, compared as though they were one — which passed
+        until fusion, whose decisions depend on sensor geometry, was sensitive enough to notice.
+        """
         document = json.loads(json.dumps(shipped))
-        d_lat = latitude - document["reference"]["latitude"]
-        d_lon = longitude - document["reference"]["longitude"]
-        document["reference"].update(latitude=latitude, longitude=longitude, altitude_m=elevation_m)
+        reference = document["reference"]
+        old_frame = LocalFrame(
+            GeodeticPoint(reference["latitude"], reference["longitude"], reference["altitude_m"])
+        )
+        new_frame = LocalFrame(GeodeticPoint(latitude, longitude, elevation_m))
+
+        def move(point: dict) -> None:
+            enu = old_frame.to_enu(
+                GeodeticPoint(point["latitude"], point["longitude"], reference["altitude_m"])
+            )
+            moved = new_frame.to_geodetic(enu)
+            point["latitude"], point["longitude"] = moved.latitude_deg, moved.longitude_deg
+
         for zone in document["zones"]:
             geometry = zone["geometry"]
             if geometry["shape"] == "circle":
-                geometry["centre"]["latitude"] += d_lat
-                geometry["centre"]["longitude"] += d_lon
+                move(geometry["centre"])
             else:
                 for vertex in geometry["vertices"]:
-                    vertex["latitude"] += d_lat
-                    vertex["longitude"] += d_lon
+                    move(vertex)
         for sensor in document["sensors"]:
-            sensor["position"]["latitude"] += d_lat
-            sensor["position"]["longitude"] += d_lon
+            move(sensor["position"])
+        reference.update(latitude=latitude, longitude=longitude, altitude_m=elevation_m)
         return SiteGeometry(Site.model_validate(document))
 
     places = {

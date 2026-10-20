@@ -62,6 +62,7 @@ from backend.database.projection import TrackProjection
 from backend.database.records import SensorRecord
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
+from backend.fusion import DetectionReconciler, load_fusion_policy, to_incoming
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.risk.engine import build_risk_engine, load_risk_policy
 from backend.risk.service import RiskService
@@ -128,6 +129,14 @@ class Pipeline:
         )
         self.tracker = TrackManager(clock, self.events, geometry.frame)
         self.ingestion = IngestionPipeline(clock, self.events, geometry)
+        # Handed the tracker's own gate, so "same object" here and "same track" there are one
+        # judgement rather than two numbers that can drift apart; and told which sensors are
+        # simulated, so HYBRID mode can never average a radar return with a synthetic one.
+        self.fusion = DetectionReconciler(
+            load_fusion_policy(),
+            gate_threshold=self.tracker.association_gate_threshold,
+            provenance=self._sensor_provenance,
+        )
         self.classification = ClassificationService(
             build_default_classifier(), self.events, sink=self.tracker
         )
@@ -208,6 +217,18 @@ class Pipeline:
     @property
     def adapters(self) -> list[SensorAdapter]:
         return list(self._adapters)
+
+    def _sensor_provenance(self, sensor_id: str) -> str | None:
+        """Whether a sensor is simulated or real, for fusion; None if nothing attached has that id.
+
+        Read from the adapters actually attached, at the moment fusion asks, so a sensor attached
+        after construction is classified correctly — and from the adapter's own type, the same
+        fact the SIMULATION/LIVE badge is computed from, rather than from configuration.
+        """
+        for adapter in self._adapters:
+            if adapter.sensor_id == sensor_id:
+                return "simulated" if adapter.sensor_type.is_simulated else "real"
+        return None
 
     @property
     def live_adapter_count(self) -> int:
@@ -338,12 +359,21 @@ class Pipeline:
         # a track is, and must not reach the filter deciding where it is (ADR 0002).
         ingested = self.ingestion.ingest(detections)
 
-        tracks = self.tracker.process(ingested.for_tracking)
+        # Several sensors watching one object each produce a detection of it, and the tracker
+        # would start a track per detection (FM-023). Reconciling here — before tracking, on
+        # detections rather than on tracks — is what makes one object one track (ADR 0020).
+        reconciled = self.fusion.reconcile(ingested.for_tracking)
+        tracks = self.tracker.process([to_incoming(f) for f in reconciled.detections])
 
         classified = self.classification.classify_cycle(
             tracks,
-            CycleEvidence.from_assignments(
-                self.tracker.last_assignments, ingested.hints, ingested.quality
+            # A fused measurement carries its parts, so a track seen by three sensors is
+            # classified on all three hints rather than on whichever id survived fusion (FM-024).
+            CycleEvidence.from_fused_assignments(
+                self.tracker.last_assignments,
+                {f.detection_id: f.contributing_detection_ids for f in reconciled.detections},
+                ingested.hints,
+                ingested.quality,
             ),
         )
 
@@ -906,6 +936,7 @@ def build_application(
         auth=pipeline.auth if authenticated else None,
         alerts=pipeline.alerting,
         classification_running=True,
+        fusion_running=pipeline.fusion.policy.enabled,
         situation=pipeline.risk,
         run_mode=mode,
         live_adapter_count=pipeline.live_adapter_count,

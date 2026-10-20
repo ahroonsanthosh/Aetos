@@ -25,3 +25,77 @@
     display: none;
   }
 }
+
+/*
+ * Narrow widths.
+ *
+ * The sidebar used to be hidden outright below 1100px, which took the navigation with it — a
+ * tablet had no way to reach any page but the one it loaded on. Hiding a panel is reasonable;
+ * hiding the only means of moving around the application is not.
+ *
+ * So it becomes a horizontal strip under the top bar instead, scrollable, with the section
+ * headings dropped because they cost a line of height and the item labels already say enough.
+ * Every entry stays reachable, including the unavailable ones — the navigation is the clearest
+ * statement of the system's intended shape (ADR 0011) and that does not stop being true on a
+ * smaller screen.
+ */
+@media (max-width: 1100px) {
+  .shell__body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    display: flex;
+    width: auto;
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* Momentum scrolling without a visible bar: the strip is short and a scrollbar under it
+       would eat more height than the items do. */
+    scrollbar-width: none;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar__section {
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .sidebar__section + .sidebar__section {
+    margin-top: 0;
+    /* A hairline where a heading used to be, so the grouping survives the collapse. */
+    border-left: 1px solid var(--line-subtle);
+    padding-left: var(--space-2);
+    margin-left: var(--space-1);
+  }
+
+  .sidebar__section-title {
+    display: none;
+  }
+
+  .sidebar__item {
+    white-space: nowrap;
+    padding: var(--space-3) var(--space-3);
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+
+  .sidebar__item.is-active {
+    background: linear-gradient(180deg, transparent 0%, var(--brand-accent-veil) 100%), var(--surface-raised);
+    border-left-color: transparent;
+    border-bottom-color: var(--brand-accent);
+  }
+
+  .sidebar__badge {
+    display: none;
+  }
+}

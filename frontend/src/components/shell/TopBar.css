@@ -12,12 +12,34 @@
 
 .topbar__identity {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-3);
   flex-shrink: 0;
+  padding: var(--space-1) var(--space-2);
+  margin-left: calc(var(--space-2) * -1);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
 }
 
+.topbar__identity:hover { background: var(--surface-raised); }
+
+.topbar__identity:focus-visible {
+  outline: 1px solid var(--brand-accent);
+  outline-offset: 0;
+}
+
+/* Mid purple at rest, not the highlight. The mark is identity, and identity that glows reads
+   as a status indicator — which is the one thing it must never be mistaken for. */
+.topbar__mark {
+  color: var(--brand-mid);
+  flex-shrink: 0;
+  transition: color var(--transition-fast);
+}
+
+.topbar__identity:hover .topbar__mark { color: var(--brand-accent); }
+
 .topbar__wordmark {
+  font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: 600;
   letter-spacing: var(--tracking-wider);
@@ -146,4 +168,73 @@
 .topbar__signout:hover {
   color: var(--text-secondary);
   border-color: var(--line);
+}
+
+/*
+ * Narrow widths.
+ *
+ * The bar is a single non-shrinking row of identity, chips, mode, clock, operator and sign-out.
+ * At 390px that measured 849px wide and dragged the whole document sideways with it — every
+ * page scrolled horizontally, taking the navigation and page header off screen.
+ *
+ * It becomes two rows rather than losing anything, because almost none of it is discardable:
+ *
+ *   - The mode badge stays, always. Whether the data is simulated must be visible at all times
+ *     (ADR 0011), and "all times" includes on a phone.
+ *   - Sign-out stays; it is a control, and the inventory it is checked against lists it.
+ *   - The status chips stay, in their own scrolling strip. They report what the backend says
+ *     about itself, and dropping them would leave no way to see a degraded subsystem.
+ *
+ * Only the wall clock and the subtitle go. The clock is the one element here whose information
+ * an operator's own device already carries, and the subtitle is decoration.
+ */
+@media (max-width: 900px) {
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .topbar__subtitle,
+  .topbar__utc {
+    display: none;
+  }
+
+  .topbar__identity {
+    order: 1;
+  }
+
+  .topbar__right {
+    order: 2;
+    margin-left: auto;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .topbar__operator {
+    /* Truncated rather than hidden: which account is signed in is worth knowing, and the role
+       chip beside it is short enough to survive on its own. */
+    max-width: 12ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar__status {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: var(--space-1);
+  }
+
+  .topbar__status::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chip {
+    flex-shrink: 0;
+  }
 }
