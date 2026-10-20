@@ -1,5 +1,6 @@
 .sidebar {
   width: var(--sidebar-width);
+  font-family: var(--font-display);
   flex-shrink: 0;
   background: var(--surface-panel);
   border-right: 1px solid var(--line-subtle);
@@ -31,10 +32,13 @@
   background: var(--surface-raised);
 }
 
+/* The active marker is the one place in the navigation that uses the accent, and it is
+   structure rather than judgement: it says where you are, never how bad anything is. */
 .sidebar__item.is-active {
   color: var(--text-primary);
-  background: var(--surface-raised);
-  border-left-color: var(--status-info);
+  background: linear-gradient(90deg, var(--brand-accent-veil) 0%, transparent 78%), var(--surface-raised);
+  border-left-color: var(--brand-accent);
+  font-weight: 500;
 }
 
 .sidebar__item--unavailable {

@@ -67,18 +67,67 @@ class CycleEvidence:
         quality_by_detection: dict[str, float],
     ) -> CycleEvidence:
         """Route per-detection hints to the tracks the association gave them to."""
+        return cls._route(
+            {track_id: (detection_id,) for track_id, detection_id in assignments.items()},
+            hints_by_detection,
+            quality_by_detection,
+        )
+
+    @classmethod
+    def from_fused_assignments(
+        cls,
+        assignments: dict[str, str],
+        contributions: dict[str, tuple[str, ...]],
+        hints_by_detection: dict[str, ClassificationHint],
+        quality_by_detection: dict[str, float],
+    ) -> CycleEvidence:
+        """Route hints when the tracker was fed fused measurements (FM-024).
+
+        A fused detection stands for several real ones, so the track it was assigned to is
+        entitled to *every* contributing sensor's opinion — not just whichever detection's
+        identifier survived the fusion.
+
+        Without this, being better observed would make a track *less* confidently classified:
+        three sensors would contribute one hint between them, and the evidence pool would grow
+        no faster than on a single-sensor site while the operator reasonably expected the
+        opposite. `contributions` maps a fused identifier back to its parts; an identifier
+        absent from it was never fused and stands for itself.
+        """
+        return cls._route(
+            {
+                track_id: contributions.get(detection_id, (detection_id,))
+                for track_id, detection_id in assignments.items()
+            },
+            hints_by_detection,
+            quality_by_detection,
+        )
+
+    @classmethod
+    def _route(
+        cls,
+        detections_by_track: dict[str, tuple[str, ...]],
+        hints_by_detection: dict[str, ClassificationHint],
+        quality_by_detection: dict[str, float],
+    ) -> CycleEvidence:
+        """The one routing implementation, shared by both entry points above.
+
+        Detections carrying no hint are skipped rather than contributing a neutral one: a sensor
+        that reported no opinion has not reported an uncertain opinion, and padding the pool
+        with the difference would dilute the sensors that did.
+        """
         hints: dict[str, tuple[ClassificationHint, ...]] = {}
         quality: dict[str, tuple[float, ...]] = {}
 
-        for track_id, detection_id in assignments.items():
-            hint = hints_by_detection.get(detection_id)
-            if hint is None:
-                continue
-            hints[track_id] = (*hints.get(track_id, ()), hint)
-            quality[track_id] = (
-                *quality.get(track_id, ()),
-                quality_by_detection.get(detection_id, 1.0),
-            )
+        for track_id, detection_ids in detections_by_track.items():
+            for detection_id in detection_ids:
+                hint = hints_by_detection.get(detection_id)
+                if hint is None:
+                    continue
+                hints[track_id] = (*hints.get(track_id, ()), hint)
+                quality[track_id] = (
+                    *quality.get(track_id, ()),
+                    quality_by_detection.get(detection_id, 1.0),
+                )
 
         return cls(hints=hints, quality=quality)
 

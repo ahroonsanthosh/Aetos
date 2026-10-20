@@ -59,6 +59,17 @@ def test_a_driven_deployment_reports_its_sensors(tmp_path: Path) -> None:
     assert "4 source(s)" in watchdog["detail"]
 
 
+def test_fusion_is_reported_from_the_wiring(tmp_path: Path) -> None:
+    """The fusion row was a NOT_BUILT constant for as long as fusion did not exist. Now that it
+    does, the row must come from the pipeline that runs it, not from a newer constant."""
+    with TestClient(app_for(SCENARIO, tmp_path)) as client:
+        body = client.get("/api/v1/system/health").json()
+
+    fusion = {c["component"]: c for c in body["components"]}["fusion"]
+    assert fusion["state"] == "ok"
+    assert "reconciled" in fusion["detail"]
+
+
 def test_the_first_request_is_answered_from_a_real_assessment(tmp_path: Path) -> None:
     """No request may be served before the watchdog has judged something.
 

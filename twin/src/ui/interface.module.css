@@ -1,0 +1,62 @@
+/*
+ * Interface frame.
+ *
+ * A grid that reserves the edges and leaves the centre entirely to the hologram. The
+ * overlay is pointer-transparent by default and only its panels take input, so the
+ * operator can orbit the scene by dragging anywhere that is not a control.
+ */
+
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 42%, #0a1219 0%, var(--void) 58%, var(--abyss) 100%);
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: var(--edge);
+  gap: var(--edge);
+  pointer-events: none;
+}
+
+.middle {
+  display: grid;
+  /* The centre column is empty on purpose: it is the hologram, and the panels are placed
+     into columns 1 and 3 explicitly so neither can spill across it. */
+  grid-template-columns: 260px 1fr 330px;
+  align-items: start;
+  gap: var(--edge);
+  min-height: 0;
+}
+
+.middle > :first-child {
+  grid-column: 1;
+}
+
+.middle > :last-child {
+  grid-column: 3;
+}
+
+/* On narrower displays the context panel keeps priority; the threat rail collapses to a
+   compact strip rather than stacking, which would eat the hologram. */
+@media (max-width: 1380px) {
+  .middle {
+    grid-template-columns: 216px 1fr 296px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .middle {
+    grid-template-columns: 190px 1fr 260px;
+  }
+}

@@ -1,0 +1,141 @@
+/*
+ * Aetos Command — global styling.
+ *
+ * The interface is chrome around a 3D scene, so it is built to take up as little of the
+ * screen as it can while still answering the operator's questions. Panels are dark,
+ * translucent and edge-anchored; the hologram is what the eye should land on.
+ *
+ * Type is monospace throughout for data and near-monospace for headings. That is not a
+ * stylistic tic: figures that change ten times a second must not reflow, and a
+ * proportional font makes a live readout jitter horizontally on every update.
+ */
+
+:root {
+  --void: #04070b;
+  --abyss: #020407;
+  --panel: rgba(6, 12, 17, 0.82);
+  --panel-solid: #070d13;
+  --panel-edge: rgba(88, 216, 230, 0.14);
+  --panel-edge-strong: rgba(88, 216, 230, 0.3);
+
+  --holo: #58d8e6;
+  --holo-dim: #2b6b78;
+  --holo-deep: #123138;
+
+  --text: #d8e9f2;
+  --text-dim: #8ba4b4;
+  --text-faint: #54697a;
+
+  --nominal: #3fd39b;
+  --caution: #e9b24c;
+  --warning: #ff7a45;
+  --danger: #ff4d5e;
+  --offline: #5d4550;
+
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Roboto Mono', Menlo, Consolas,
+    monospace;
+
+  --edge: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#__next,
+main {
+  height: 100%;
+}
+
+canvas {
+  display: block;
+  outline: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* --- Shared panel language ------------------------------------------------ */
+
+.panel {
+  background: var(--panel);
+  backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid var(--panel-edge);
+  /* Square corners. Rounded panels read as consumer software. */
+  border-radius: 0;
+}
+
+/* A single hairline accent along the panel's anchored edge, so panels read as attached to
+   the frame rather than floating over the scene. */
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--panel-edge-strong) 20%,
+    var(--panel-edge-strong) 80%,
+    transparent
+  );
+}
+
+.heading {
+  margin: 0;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* --- Scrollbars ----------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(88, 216, 230, 0.18);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 216, 230, 0.32);
+}
+
+/* --- Motion --------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

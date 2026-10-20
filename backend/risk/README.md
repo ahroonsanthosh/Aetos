@@ -113,9 +113,10 @@ score, which raises the count of alarming tracks. That is a feedback loop with n
 it, and there is a test that drives the real service with one track and then with a full
 coordinated approach and asserts the subject's score does not move.
 
-Because sensor fusion is not built, tracks are first clustered on a co-located **and**
-co-moving test, so one drone seen by four sensors is one object rather than a four-axis
-approach (FM-023). That is not fusion — nothing is merged, no track state changes — and the
+Fusion (ADR 0020) reconciles most multi-sensor duplicates before tracking, but deliberately
+leaves ambiguous or imprecise detections apart. So tracks are still clustered on a co-located
+**and** co-moving test, so one drone seen by four sensors is one object rather than a
+four-axis approach (FM-023). That is not fusion — nothing is merged, no track state changes — and the
 over-count is reported to the operator rather than quietly absorbed: *"8 tracks · likely 5
 objects"*.
 

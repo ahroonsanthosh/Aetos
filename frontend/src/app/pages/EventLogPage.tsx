@@ -79,28 +79,32 @@ export function EventLogPage() {
         />
 
         <div className="panel">
-          <table className="event-table">
-            <thead>
-              <tr>
-                <th className="label">Seq</th>
-                <th className="label">Time</th>
-                <th className="label">Event</th>
-                <th className="label">Source</th>
-                <th className="label">Track</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((event) => (
-                <tr key={event.seq}>
-                  <td className="numeric">{event.seq}</td>
-                  <td className="numeric">{event.timestamp.slice(11, 23)}</td>
-                  <td className="numeric event-table__type">{event.event_type}</td>
-                  <td>{event.source}</td>
-                  <td className="numeric">{event.track_id ?? '—'}</td>
+          {/* The scroll wrapper holds the table only. The empty state below is a paragraph and
+              must not be dragged sideways by a table that is not there. */}
+          <div className="table-scroll">
+            <table className="event-table">
+              <thead>
+                <tr>
+                  <th className="label">Seq</th>
+                  <th className="label">Time</th>
+                  <th className="label">Event</th>
+                  <th className="label">Source</th>
+                  <th className="label">Track</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visible.map((event) => (
+                  <tr key={event.seq}>
+                    <td className="numeric">{event.seq}</td>
+                    <td className="numeric">{event.timestamp.slice(11, 23)}</td>
+                    <td className="numeric event-table__type">{event.event_type}</td>
+                    <td>{event.source}</td>
+                    <td className="numeric">{event.track_id ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {!visible.length && (
             <div className="empty-state">
               <div className="empty-state__title">No events</div>

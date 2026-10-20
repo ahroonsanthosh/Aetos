@@ -133,7 +133,7 @@ async def get_situation(services: ServicesDep) -> SituationView:
 
     Findings no single track can produce: several contacts converging from separate bearings,
     more objects engaged at once than an operator can reasonably attend to, and — honestly
-    reported — the display over-counting one object as several while sensor fusion is not built.
+    reported — the display over-counting one object as several where fusion left them apart.
 
     This never modifies any track's risk score. Per-track scoring is a pure function of one
     track, and letting a cycle-level view adjust it would make every score depend on how many

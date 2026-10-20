@@ -1,0 +1,27 @@
+/* The lockup: mark plus wordmark, spaced as the supplied artwork spaces them.
+   Tracking is wide because the source wordmark is wide — it is the single most recognisable
+   thing about the lockup after the eagle itself. */
+
+.aetos-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: inherit;
+}
+
+.aetos-lockup--vertical {
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.aetos-lockup__word {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.42em;
+  /* Letterspacing adds a trailing gap after the final letter; pulling it back re-centres the
+     word under a stacked mark, which is otherwise visibly off to the left. */
+  text-indent: 0.42em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-primary);
+}

@@ -1,0 +1,86 @@
+/* The launch transition. Covers everything while it runs. */
+
+.launch {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  pointer-events: all;
+}
+
+/* The wipe. Starts as the CTA's angled polygon at the bottom right — where the button is —
+   and grows to cover the viewport, so it reads as that button expanding rather than as an
+   unrelated shape arriving. */
+.launch__wipe {
+  position: fixed;
+  inset: 0;
+  background: var(--brand-deep);
+  /* Starts as the CTA's own angled polygon, in the corner the CTA occupies. */
+  clip-path: polygon(74% 88%, 92% 88%, 92% 95%, 89% 98%, 74% 98%);
+  transition: clip-path 700ms cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+.launch__wipe.is-open {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 100% 100%, 0 100%);
+}
+
+.launch__boot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  animation: launch-in 340ms ease-out both;
+}
+
+@keyframes launch-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.launch__mark { color: var(--brand-accent); }
+
+.launch__lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  /* Reserve the width of the longest line so the block does not jitter as lines arrive. */
+  min-width: 27ch;
+}
+
+.launch__line {
+  color: var(--text-primary);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+
+.launch__line::before {
+  content: '> ';
+  color: var(--brand-accent);
+}
+
+.launch__line.is-shown {
+  opacity: 0.82;
+  transform: none;
+}
+
+.launch__line--final.is-shown {
+  opacity: 1;
+  color: var(--brand-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launch__wipe { transition: none; }
+  .launch__boot { animation: none; }
+  .launch__line { transition: none; }
+}

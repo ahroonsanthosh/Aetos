@@ -2,9 +2,10 @@
 
 Two properties matter more than the rest, and most of this file is about them.
 
-**It must not cry wolf on duplicate tracks.** Sensor fusion is not built, so one object seen by
-four sensors becomes up to four tracks (FM-023). Counting tracks naively would report a single
-drone as a four-axis coordinated approach — confident nonsense, and worse than saying nothing.
+**It must not cry wolf on duplicate tracks.** Fusion leaves some duplicates by design, so one
+object seen by four sensors can still become several tracks (FM-023). Counting tracks naively
+would report a single drone as a four-axis coordinated approach — confident nonsense, and worse
+than saying nothing.
 
 **It must not touch per-track scores.** Letting a cycle-level view adjust individual scores
 would make every score depend on how many other tracks happen to exist, which is the

@@ -154,3 +154,22 @@
   color: var(--status-warning);
   border-left: 3px solid var(--status-warning);
 }
+
+/*
+ * Wide tables on narrow screens.
+ *
+ * There is no width at which these fit on a phone. Dropping columns was the alternative and was
+ * rejected: every column is a value an operator may be looking for, and a table that quietly
+ * omits some is worse than one that scrolls. So the table scrolls inside its own panel and the
+ * page itself never does — a page that scrolls sideways loses the navigation and the header
+ * along with it.
+ */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sensor-table,
+.event-table {
+  min-width: 720px;
+}

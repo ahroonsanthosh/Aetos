@@ -46,14 +46,11 @@ The third is the one that actually holds the line. The first two are conventions
                        │  everything downstream reads by seq
         ┌──────────────┼──────────────┬──────────────┐
         ▼              ▼              ▼              ▼
-   TRACKING       WEBSOCKET       REPLAY         (future)
-   association    broadcast       engine          audit export
-   filtering
-   lifecycle
-   prediction
+   FUSION         WEBSOCKET       REPLAY         (future)
+   one per object broadcast       engine          audit export
         │
         ▼
-   FUSION  ── multi-sensor reconciliation
+   TRACKING  ── association, filtering, lifecycle, prediction
         │
         ▼
    CLASSIFICATION  ── what it is, and how confident (separate from where it is)
@@ -153,17 +150,18 @@ Per spec §20. Status updated as stages complete.
 | 7 | Risk scoring with reason codes | **done** — nine factors, grouped combination, hysteresis, reason codes (ADR 0013) |
 | 8 | Alerts | **done** — promotion, acknowledgement, escalation, rebuild from the log (ADR 0015) |
 | 9 | Scenario library and replay | partial — all nine scenarios exist; replay engine not built |
-| 10 | Multi-sensor simulation and fusion | partial — multi-sensor simulation works; fusion module not built |
+| 10 | Multi-sensor simulation and fusion | **done** — detection-level fusion before tracking (ADR 0020) |
 | 11 | Sensor adapter framework finalised, real stubs in place | **done** — interface, one real driver (ADR 0017), and mode-selected wiring with per-sensor health (ADR 0018). The hardware itself remains unvalidated |
 | 12 | Chaos hardening, degraded-mode UI states | partial — the watchdog, the posture banner and the stall self-test are done (ADR 0019, FM-010); fault injection is not |
 
 The backend pipeline runs end to end today: a scenario drives the simulator, detections flow
-through ingestion into tracking, classification assesses each track from pooled evidence, risk
-scores it from nine factors and hysteresis turns that into a level, decision turns the level
-into a recommendation for a human, alerting promotes the levels that warrant interrupting
-someone into alerts an operator can acknowledge, everything is recorded in the event log and
-projected into the database, and the API serves it to an interface that draws it. What is
-missing between here and a usable operator system is fusion.
+through ingestion and fusion into tracking, classification assesses each track from pooled
+evidence, risk scores it from nine factors and hysteresis turns that into a level, decision
+turns the level into a recommendation for a human, alerting promotes the levels that warrant
+interrupting someone into alerts an operator can acknowledge, everything is recorded in the
+event log and projected into the database, and the API serves it to an interface that draws it.
+Fusion reconciles several sensors' detections of one object before tracking, so one drone is one
+track.
 
 Two of those stages produce values they do not own. Classification and risk each write their
 result back through the tracker, which holds it and carries it in the snapshot on every track
