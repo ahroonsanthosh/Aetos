@@ -185,9 +185,7 @@ def test_confidence_rises_monotonically_with_the_quality_byte() -> None:
 def test_geometry_places_the_target_along_the_boresight_bearing() -> None:
     """Due east at 100 m, on a boresight of 90°, with the beam level."""
     config = make_config(
-        mount=MountConfig(
-            latitude=SITE_LAT, longitude=SITE_LON, altitude_m=5.0, boresight_deg=90.0
-        )
+        mount=MountConfig(latitude=SITE_LAT, longitude=SITE_LON, altitude_m=5.0, boresight_deg=90.0)
     )
     adapter, link, _ = make_adapter(config)
     adapter.start()

@@ -75,12 +75,10 @@ class SiteRepository(ABC):
         """Store a site definition, replacing any existing one with the same `site_id`."""
 
     @abstractmethod
-    def get(self, site_id: str) -> Site | None:
-        ...
+    def get(self, site_id: str) -> Site | None: ...
 
     @abstractmethod
-    def list_all(self) -> list[Site]:
-        ...
+    def list_all(self) -> list[Site]: ...
 
 
 class SensorRepository(ABC):
@@ -96,12 +94,10 @@ class SensorRepository(ABC):
         """
 
     @abstractmethod
-    def get(self, sensor_id: str) -> SensorRecord | None:
-        ...
+    def get(self, sensor_id: str) -> SensorRecord | None: ...
 
     @abstractmethod
-    def list_all(self, site_id: str | None = None) -> list[SensorRecord]:
-        ...
+    def list_all(self, site_id: str | None = None) -> list[SensorRecord]: ...
 
 
 class ScenarioRepository(ABC):
@@ -119,12 +115,10 @@ class ScenarioRepository(ABC):
         """
 
     @abstractmethod
-    def get(self, scenario_id: str) -> ScenarioRecord | None:
-        ...
+    def get(self, scenario_id: str) -> ScenarioRecord | None: ...
 
     @abstractmethod
-    def list_all(self) -> list[ScenarioRecord]:
-        ...
+    def list_all(self) -> list[ScenarioRecord]: ...
 
 
 class TrackRepository(ABC):
@@ -141,8 +135,7 @@ class TrackRepository(ABC):
         """Insert or replace the row for this track."""
 
     @abstractmethod
-    def get(self, track_id: str) -> ProjectedTrack | None:
-        ...
+    def get(self, track_id: str) -> ProjectedTrack | None: ...
 
     @abstractmethod
     def list_all(
@@ -211,8 +204,7 @@ class ProjectionStateRepository(ABC):
         """Highest sequence number applied, or 0 if the projection has read nothing."""
 
     @abstractmethod
-    def record_applied(self, projection: str, seq: int) -> None:
-        ...
+    def record_applied(self, projection: str, seq: int) -> None: ...
 
     @abstractmethod
     def reset(self, projection: str) -> None:
@@ -238,16 +230,14 @@ class UserRepository(ABC):
         """Store an account, replacing any existing one with the same `user_id`."""
 
     @abstractmethod
-    def get(self, user_id: str) -> User | None:
-        ...
+    def get(self, user_id: str) -> User | None: ...
 
     @abstractmethod
     def by_username(self, username: str) -> User | None:
         """Look an account up by the name someone types at a login prompt."""
 
     @abstractmethod
-    def list_all(self) -> list[User]:
-        ...
+    def list_all(self) -> list[User]: ...
 
     @abstractmethod
     def count(self) -> int:
@@ -272,8 +262,7 @@ class CredentialRepository(ABC):
         """Store or replace an account's verifier."""
 
     @abstractmethod
-    def get(self, user_id: str) -> Credential | None:
-        ...
+    def get(self, user_id: str) -> Credential | None: ...
 
 
 class SessionRepository(ABC):
@@ -289,20 +278,17 @@ class SessionRepository(ABC):
     """
 
     @abstractmethod
-    def create(self, session: Session) -> None:
-        ...
+    def create(self, session: Session) -> None: ...
 
     @abstractmethod
-    def by_token_hash(self, token_hash: str) -> Session | None:
-        ...
+    def by_token_hash(self, token_hash: str) -> Session | None: ...
 
     @abstractmethod
     def touch(self, session_id: str, last_seen_at: datetime) -> None:
         """Record activity, sliding the idle expiry out."""
 
     @abstractmethod
-    def revoke(self, session_id: str) -> None:
-        ...
+    def revoke(self, session_id: str) -> None: ...
 
     @abstractmethod
     def revoke_all_for_user(self, user_id: str) -> int:

@@ -175,9 +175,7 @@ def test_the_same_scenario_behaves_identically_anywhere_on_earth(tmp_path) -> No
         document = json.loads(json.dumps(shipped))
         d_lat = latitude - document["reference"]["latitude"]
         d_lon = longitude - document["reference"]["longitude"]
-        document["reference"].update(
-            latitude=latitude, longitude=longitude, altitude_m=elevation_m
-        )
+        document["reference"].update(latitude=latitude, longitude=longitude, altitude_m=elevation_m)
         for zone in document["zones"]:
             geometry = zone["geometry"]
             if geometry["shape"] == "circle":

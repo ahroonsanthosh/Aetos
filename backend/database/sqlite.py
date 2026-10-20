@@ -191,9 +191,7 @@ class SqliteSensorRepository(SensorRepository):
                 )
 
     def get(self, sensor_id: str) -> SensorRecord | None:
-        row = self._db.query_one(
-            "SELECT document FROM sensors WHERE sensor_id = ?", (sensor_id,)
-        )
+        row = self._db.query_one("SELECT document FROM sensors WHERE sensor_id = ?", (sensor_id,))
         return _validate(SensorRecord, row["document"], f"sensor {sensor_id}") if row else None
 
     def list_all(self, site_id: str | None = None) -> list[SensorRecord]:
@@ -233,8 +231,7 @@ class SqliteScenarioRepository(ScenarioRepository):
             created_by=created_by,
         )
         self._db.execute(
-            "INSERT INTO scenarios (scenario_id, name, created_at, document)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO scenarios (scenario_id, name, created_at, document) VALUES (?, ?, ?, ?)",
             (
                 record.scenario_id,
                 record.name,
@@ -577,9 +574,7 @@ class SqliteRepositories:
         self.users: UserRepository = SqliteUserRepository(self._identity)
         self.credentials: CredentialRepository = SqliteCredentialRepository(self._identity)
         self.sessions: SessionRepository = SqliteSessionRepository(self._identity)
-        self.projection_state: ProjectionStateRepository = SqliteProjectionStateRepository(
-            self._db
-        )
+        self.projection_state: ProjectionStateRepository = SqliteProjectionStateRepository(self._db)
 
     def close(self) -> None:
         if self._identity is not self._db:

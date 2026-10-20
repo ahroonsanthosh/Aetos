@@ -314,8 +314,7 @@ async def acknowledge_alert(
         raise HTTPException(
             status_code=_NOT_IMPLEMENTED,
             detail=(
-                "Alerting is not running in this deployment, so there is no alert to "
-                "acknowledge."
+                "Alerting is not running in this deployment, so there is no alert to acknowledge."
             ),
         )
 

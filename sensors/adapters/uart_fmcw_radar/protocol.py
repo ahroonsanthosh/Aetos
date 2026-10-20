@@ -141,9 +141,7 @@ def parse_report_payload(payload: bytes) -> RadarReport:
         if len(payload) == 2 + count * _TARGET_RECORD_BYTES:
             return RadarReport(targets=_parse_targets(payload[2:], count), alarm=payload[0])
 
-    raise FrameError(
-        f"report payload length {len(payload)} matches no known target-record layout"
-    )
+    raise FrameError(f"report payload length {len(payload)} matches no known target-record layout")
 
 
 def _parse_targets(body: bytes, count: int) -> tuple[RadarTarget, ...]:

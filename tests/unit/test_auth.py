@@ -142,9 +142,7 @@ def test_an_unknown_user_costs_the_same_as_a_known_one() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_a_session_survives_activity_but_not_idleness(
-    auth: AuthService, clock: SimClock
-) -> None:
+def test_a_session_survives_activity_but_not_idleness(auth: AuthService, clock: SimClock) -> None:
     """The safety property: an operator working an incursion is never logged out mid-incident."""
     auth.create_user("alice", PASSWORD, Role.OPERATOR)
     token = auth.authenticate("alice", PASSWORD).token

@@ -68,8 +68,7 @@ class Circle:
 
     def signed_distance_m(self, east_m: float, north_m: float) -> float:
         return (
-            math.hypot(east_m - self.centre_east_m, north_m - self.centre_north_m)
-            - self.radius_m
+            math.hypot(east_m - self.centre_east_m, north_m - self.centre_north_m) - self.radius_m
         )
 
 
@@ -80,9 +79,7 @@ class Polygon:
     vertices: tuple[tuple[float, float], ...]
 
     def signed_distance_m(self, east_m: float, north_m: float) -> float:
-        nearest = min(
-            _distance_to_segment_m(east_m, north_m, a, b) for a, b in self.edges()
-        )
+        nearest = min(_distance_to_segment_m(east_m, north_m, a, b) for a, b in self.edges())
         return -nearest if self.encloses(east_m, north_m) else nearest
 
     def encloses(self, east_m: float, north_m: float) -> bool:
@@ -239,14 +236,10 @@ class SiteGeometry:
         """Signed horizontal distance to the site's protected area: negative inside."""
         return self._protected_area.signed_distance_m(point.east_m, point.north_m)
 
-    def time_to_zone_s(
-        self, zone_id: str, point: EnuPoint, velocity: EnuVelocity
-    ) -> float | None:
+    def time_to_zone_s(self, zone_id: str, point: EnuPoint, velocity: EnuVelocity) -> float | None:
         return self.zone(zone_id).time_to_enter_s(point, velocity)
 
-    def time_to_protected_area_s(
-        self, point: EnuPoint, velocity: EnuVelocity
-    ) -> float | None:
+    def time_to_protected_area_s(self, point: EnuPoint, velocity: EnuVelocity) -> float | None:
         """Time-to-boundary for the protected area, which risk assessment takes as an input
         whether or not a protected zone is separately configured."""
         return _time_to_enter_s(self._protected_area, None, None, point, velocity)
@@ -364,9 +357,7 @@ def _polygon_windows(
     return windows
 
 
-def _edge_crossing_times(
-    polygon: Polygon, point: EnuPoint, velocity: EnuVelocity
-) -> list[float]:
+def _edge_crossing_times(polygon: Polygon, point: EnuPoint, velocity: EnuVelocity) -> list[float]:
     """Times at which the course crosses an edge segment.
 
     A course parallel to an edge has no crossing with it, including the collinear case where
@@ -486,9 +477,7 @@ def _project_ground_point(
 ) -> EnuPoint:
     """Zone geometry has no altitude of its own — it is a footprint — so it is projected at the
     reference altitude and only its east and north components are used."""
-    return frame.to_enu(
-        GeodeticPoint(vertex.latitude, vertex.longitude, reference_altitude_m)
-    )
+    return frame.to_enu(GeodeticPoint(vertex.latitude, vertex.longitude, reference_altitude_m))
 
 
 def load_site(name: str, paths: ConfigPaths | None = None) -> Site:

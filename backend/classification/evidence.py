@@ -116,11 +116,7 @@ class SensorHintEvidence(EvidenceSource):
 
         for index, hint in enumerate(evidence.hints):
             quality = evidence.hint_quality[index] if index < len(evidence.hint_quality) else 1.0
-            weight = (
-                hint.confidence
-                * quality
-                * self._PROVENANCE_WEIGHT.get(hint.provenance, 0.5)
-            )
+            weight = hint.confidence * quality * self._PROVENANCE_WEIGHT.get(hint.provenance, 0.5)
             if weight <= 0.0:
                 continue
             pooled[hint.label] = pooled.get(hint.label, 0.0) + weight

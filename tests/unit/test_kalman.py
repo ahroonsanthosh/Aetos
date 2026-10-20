@@ -88,9 +88,7 @@ def _run_constant_velocity(
     for _ in range(steps):
         position = position + truth_velocity * dt
         measured = position + rng.normal(0.0, sigma_m, 3)
-        state = kalman.update(
-            kalman.predict(state, dt), measured, isotropic_covariance(sigma_m)
-        )
+        state = kalman.update(kalman.predict(state, dt), measured, isotropic_covariance(sigma_m))
 
     return state
 

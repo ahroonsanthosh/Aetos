@@ -49,10 +49,12 @@ produced — see `backend/classification/service.py`.
 
 ```python
 IngestionResult(
-    for_tracking=[...],   # reduced detections, the tracker's only input
-    hints={...},          # detection_id -> ClassificationHint
-    quality={...},        # detection_id -> quality confidence
-    accepted=int, rejected=int, duplicates=int,
+    for_tracking=[...],  # reduced detections, the tracker's only input
+    hints={...},  # detection_id -> ClassificationHint
+    quality={...},  # detection_id -> quality confidence
+    accepted=int,
+    rejected=int,
+    duplicates=int,
 )
 ```
 

@@ -72,6 +72,5 @@ def test_the_application_imports_from_a_foreign_working_directory() -> None:
         )
 
     assert result.returncode == 0, (
-        "the application could not be imported from outside the repository root:\n"
-        + result.stderr
+        "the application could not be imported from outside the repository root:\n" + result.stderr
     )

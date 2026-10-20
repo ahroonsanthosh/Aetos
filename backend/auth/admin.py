@@ -99,9 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
 
     arguments.identity_path = identity_path
-    repositories = SqliteRepositories(
-        clock, data_dir / "admin.db", identity_path=identity_path
-    )
+    repositories = SqliteRepositories(clock, data_dir / "admin.db", identity_path=identity_path)
     events = SqliteEventStore(clock, data_dir / "events.db")
 
     auth = AuthService(
@@ -190,9 +188,11 @@ def _dispatch(arguments: argparse.Namespace, auth: AuthService, repos: SqliteRep
 def _list(repos: SqliteRepositories, identity_path: Path) -> int:
     users = repos.users.list_all()
     if not users:
-        print(f"No accounts in {identity_path}. Create one with:\n  "
-              f"{sys.executable} -m backend.auth.admin add "
-              "--username <name> --role admin")
+        print(
+            f"No accounts in {identity_path}. Create one with:\n  "
+            f"{sys.executable} -m backend.auth.admin add "
+            "--username <name> --role admin"
+        )
         return 0
 
     print(f"{'USERNAME':<24} {'ROLE':<10} {'STATE':<10} CREATED")

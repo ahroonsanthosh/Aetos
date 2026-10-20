@@ -512,9 +512,7 @@ class SimulatedSensorAdapter(SensorAdapter):
         if not self._model.radial_velocity.reported:
             return None
         return Kinematics(
-            radial_velocity_mps=float(
-                self._rng.normal(0.0, FALSE_ALARM_RADIAL_VELOCITY_SIGMA_MPS)
-            ),
+            radial_velocity_mps=float(self._rng.normal(0.0, FALSE_ALARM_RADIAL_VELOCITY_SIGMA_MPS)),
             provenance=Provenance.MEASURED,
         )
 

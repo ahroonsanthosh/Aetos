@@ -66,9 +66,7 @@ class ScenarioWorld:
             objects.append(
                 TruthObject(
                     object_id=trajectory.object_id,
-                    position=EnuPoint(
-                        east_m=state.east_m, north_m=state.north_m, up_m=state.up_m
-                    ),
+                    position=EnuPoint(east_m=state.east_m, north_m=state.north_m, up_m=state.up_m),
                     velocity_east_mps=state.velocity_east_mps,
                     velocity_north_mps=state.velocity_north_mps,
                     velocity_up_mps=state.velocity_up_mps,

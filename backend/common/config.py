@@ -140,8 +140,7 @@ def load_config(model: type[ModelT], path: Path) -> ModelT:
     document = _read_json(path)
     if not isinstance(document, dict):
         raise ConfigError(
-            f"{path}: expected a JSON object at the top level, found "
-            f"{type(document).__name__}"
+            f"{path}: expected a JSON object at the top level, found {type(document).__name__}"
         )
 
     try:
@@ -166,9 +165,7 @@ def _read_json(path: Path) -> object:
         ) from exc
 
 
-def _describe_validation_failure(
-    path: Path, model: type[BaseModel], exc: ValidationError
-) -> str:
+def _describe_validation_failure(path: Path, model: type[BaseModel], exc: ValidationError) -> str:
     """Turn a Pydantic error into something an operator can act on without reading a stack
     trace: the file, the model it failed against, and every offending field by name."""
     problems = exc.errors()
