@@ -120,3 +120,14 @@ under a new id) is a different failure this module does not address.
 Two tracks that were wrongly separated stay separate until the detections themselves fall inside
 the gate. A stateful version could carry an object hypothesis forward, at the cost of being able
 to carry a *wrong* one forward too.
+
+## Known residual: a duplicate that sustains itself
+
+Measured after this module was ported onto live mode, and recorded in FM-023. When two radars'
+detections of one object land just outside the gate and a broad sensor gates with both, the
+ambiguity rule fuses nothing and the surplus detection starts a second track. The two tracks
+then alternate in winning the single fused measurement each cycle, so neither goes stale. On
+`b_approaching_threat` at live cadence that is one extra track for most of the run — against
+three without fusion. Fixing it belongs in the tracker (merging tracks that prove to be one
+object), which is also the operation that would hide a real second contact, so it is left as a
+design decision rather than patched here.

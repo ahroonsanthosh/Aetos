@@ -421,6 +421,23 @@ multi-sensor groups on `h_track_crossing`, bounded by a test); that is an inform
 not tuning. The situation assessment's `duplicate_tracks_suspected` finding (FM-026) stays as
 the operator's signal when duplicates do occur.
 
+**Residual, measured: one drone can still become two tracks, and stay two.** Observed on the
+live server and reproduced under a simulated clock with a 0.55 s cycle. Two radars' detections
+of one drone occasionally fall just outside the 99% gate (104 m apart, squared distance 13.3
+against 11.34), while a broad sensor (RF, σ ≈ 300 m) gates with both. The ambiguity rule then
+fuses nothing, and the surplus detection starts a track. Once two tracks sit on one object,
+they take turns winning the single fused measurement, so neither goes stale and both persist.
+On `b_approaching_threat` live, the second track appeared about 54 s in and lasted the run (two
+tracks in ~63% of samples thereafter). Without fusion the same scenario shows three tracks 87%
+of the time, so this is a large improvement, not a regression — but it is not "one object, one
+track". The `duplicate_tracks_suspected` advisory does not fire until the newer track's velocity
+converges, so for a while nothing tells the operator.
+
+**Not fixed here, deliberately.** The cure is in the tracker — recognising two confirmed tracks
+as one object over several cycles and retiring one — and it is the same operation that would
+hide a contact if two real drones were flying in formation or crossing. That is a design
+decision for association (ADR 0005), not a tuning change to slip into fusion.
+
 ### FM-026 — Risk could not see relationships between tracks
 **Status:** Closed, with an interim mechanism · **Severity:** was Medium
 
