@@ -85,12 +85,7 @@ export function TopBar({ streamStatus, trackCount }: Props) {
           tone={streamStatus === 'live' ? 'nominal' : streamStatus === 'closed' ? 'critical' : 'warning'}
         />
         <Chip label="Tracks" value={String(trackCount)} tone="info" />
-        <Chip
-          label="Fusion"
-          value="NOT BUILT"
-          tone="inert"
-          title="Multi-sensor fusion is not implemented in this build."
-        />
+        <FusionChip health={health} />
       </div>
 
       <div className="topbar__right">
@@ -117,6 +112,27 @@ export function TopBar({ streamStatus, trackCount }: Props) {
         </button>
       </div>
     </header>
+  )
+}
+
+/**
+ * Fusion's state, read from the health endpoint's `fusion` row — never a constant. It used to
+ * say NOT BUILT as a literal, and the obvious fix, a literal ON, would be the same mistake the
+ * other way round: a site that switches fusion off in its policy would still be told it was on.
+ */
+function FusionChip({ health }: { health: SystemHealthView | null }) {
+  const fusion = health?.components.find((c) => c.component === 'fusion')
+  if (!fusion) {
+    return <Chip label="Fusion" value="—" tone="unknown" title="Not yet reported by the backend" />
+  }
+  const running = fusion.state === 'ok'
+  return (
+    <Chip
+      label="Fusion"
+      value={running ? 'ON' : 'OFF'}
+      tone={running ? 'nominal' : 'inert'}
+      title={fusion.detail}
+    />
   )
 }
 

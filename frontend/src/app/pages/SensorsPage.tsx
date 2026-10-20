@@ -1,11 +1,11 @@
 /**
  * Sensor management.
  *
- * Shows configured placement, which is what the backend can currently report. Runtime status —
- * connected or silent, update rate, last packet age, tracks contributed — requires the
- * system_health watchdog, which is not built. Those columns are absent rather than filled with
- * a plausible green light: the backend's own sensors endpoint takes the same position, on the
- * grounds that a green light nothing computes is worse than no light.
+ * Shows configured placement. Runtime status — in contact, quiet, offline — is judged by the
+ * watchdog (`backend/system_health`) and summarised on the System Health page; it is not yet
+ * broken out per sensor here. Those columns are absent rather than filled with a plausible green
+ * light: the backend's own sensors endpoint takes the same position, on the grounds that a green
+ * light nothing computes is worse than no light.
  *
  * Nothing here is specific to any sensor type or manufacturer. The page renders whatever the
  * site configuration defines.

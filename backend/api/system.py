@@ -275,13 +275,18 @@ async def get_health(services: ServicesDep, operator: OptionalOperatorDep) -> Sy
 
     components.append(_watchdog_health(services))
 
-    # Genuinely absent. Listed explicitly so the dashboard shows the shape of the finished
-    # system and where the gaps still are.
     components.append(
-        ComponentHealth(
-            component="fusion",
-            state=ComponentState.NOT_BUILT,
-            detail="Multi-sensor reconciliation is not implemented.",
+        _module_health(
+            "fusion",
+            services.fusion_running,
+            running=(
+                "Detections from several sensors are reconciled into one measurement per object "
+                "before tracking."
+            ),
+            absent=(
+                "Multi-sensor reconciliation is not running; one object seen by several sensors "
+                "will appear as several tracks (FM-023)."
+            ),
         )
     )
 

@@ -390,7 +390,7 @@ consuming information the simulator has and real sensors do not.
 stripped must produce identical track states.
 
 ### FM-023 — One object becomes several tracks under multi-sensor observation
-**Status:** Open — target of build stage 10 (fusion) · **Severity:** High for operator trust
+**Status:** Closed — `backend/fusion` (ADR 0020), with a stated limit · **Severity:** was High for operator trust
 
 **Observed**, not theorised: running `b_approaching_threat` against the shipped test site,
 one drone produced three concurrent CONFIRMED tracks (TRK-00002, TRK-00009, TRK-00018), all
@@ -406,14 +406,20 @@ object across sensors.
 **Consequence.** An operator sees three contacts where there is one. Under a swarm scenario
 the multiplier is the sensor count, which also brings the saturation ceiling forward.
 
-**Intended handling:** `backend/fusion`, which is not built. Note that the fix belongs there
-and not in association — loosening the association gate to absorb the extra detections would
-merge genuinely distinct objects, which is a far worse failure and is precisely what scenario
-H tests against.
+**Fix.** `backend/fusion` reconciles a cycle's detections into one measurement per object
+*before* tracking, by inverse-covariance weighting, on the tracker's own statistical gate (ADR
+0020). It does not live in association: loosening the association gate to absorb the extra
+detections would merge genuinely distinct objects, a far worse failure and precisely what
+scenario H tests against. Measured: `b_approaching_threat` goes from three CONFIRMED tracks to
+one; `h_track_crossing` from six to four. Real and simulated detections are never fused, and a
+fused track lists the sensors that actually saw it.
 
-**Interim mitigation:** none. A single-sensor site does not exhibit it. The operator interface
-does not hide or de-duplicate the tracks, because suppressing them in the display would
-conceal a real limitation of the current build.
+**Residual, by design.** A detection that could belong to either of two objects, or is too
+uncertain to place, is left unfused — an over-count the operator can see rather than a merge
+they cannot. Two objects closer than the sensor noise may transiently merge (~1.6% of
+multi-sensor groups on `h_track_crossing`, bounded by a test); that is an information limit,
+not tuning. The situation assessment's `duplicate_tracks_suspected` finding (FM-026) stays as
+the operator's signal when duplicates do occur.
 
 ### FM-026 — Risk could not see relationships between tracks
 **Status:** Closed, with an interim mechanism · **Severity:** was Medium
@@ -487,7 +493,7 @@ future module that produces a value belonging to a track. Risk scoring must use 
 write-back path, not a copy.
 
 ### FM-024 — Classification sees only one sensor's hint per track
-**Status:** Open — resolved by fusion (build stage 10) · **Severity:** Medium
+**Status:** Closed — `backend/fusion` (ADR 0020) · **Severity:** was Medium
 
 **Observed** while verifying classification against `d_multiple_simultaneous`: of 189
 classification assessments, only 34 had any sensor-reported evidence at all. The rest were
@@ -506,10 +512,12 @@ hint for the same physical object.
 kinematic envelopes, which overlap heavily between classes and discriminate poorly on their
 own. Confidence is correspondingly low, which is at least honest.
 
-**Intended handling:** `backend/fusion`. Once observations of one object are reconciled across
-sensors, every hint for that object reaches the classifier together, which is also when
-`SensorHintEvidence`'s agreement/disagreement handling starts doing real work — it is
-implemented and tested, but currently sees one report at a time in most cycles.
+**Fix.** With observations reconciled across sensors, a fused measurement carries the ids of
+every detection it was built from, and `CycleEvidence.from_fused_assignments` routes *every*
+contributing sensor's hint to the track — so `SensorHintEvidence`'s agreement and disagreement
+handling now sees several reports at once. Without that mapping, fusion would have made things
+worse: the fused id is not a key in ingestion's hint map, so a multi-sensor object would have
+received no hint at all. A test pins it.
 
 **Not a workaround candidate:** routing *unassigned* detections' hints to nearby tracks would
 be association by another name, done worse and outside the module that owns it.

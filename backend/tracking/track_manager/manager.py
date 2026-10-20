@@ -185,6 +185,23 @@ class IncomingDetection:
     position_enu: np.ndarray
     covariance: np.ndarray
 
+    contributing_sensor_ids: tuple[str, ...] = ()
+    """Every sensor behind this measurement, when fusion combined several into it.
+
+    Empty for an ordinary single-sensor detection, which `sensors` then reports as
+    `(sensor_id,)`. Present because a fused measurement's `sensor_id` cannot name a set, and
+    recording the marker in its place would have the operator's track panel list a sensor
+    called "fused" instead of the radars that actually saw the object.
+
+    Provenance only. It carries no kinematics and no classification, so it does not touch the
+    guarantee above — the tracker still cannot read anything ADR 0002 forbids it from using.
+    """
+
+    @property
+    def sensors(self) -> tuple[str, ...]:
+        """The sensors this measurement came from, whether fused or not."""
+        return self.contributing_sensor_ids or (self.sensor_id,)
+
 
 class TrackManager:
     """Maintains the set of active tracks across cycles."""
@@ -211,6 +228,15 @@ class TrackManager:
     @property
     def config(self) -> TrackManagerConfig:
         return self._config
+
+    @property
+    def association_gate_threshold(self) -> float:
+        """The squared Mahalanobis distance this tracker's association gate admits.
+
+        Exposed so fusion decides "same object" on exactly the criterion used here to decide
+        "same track", from this one value rather than a copy configured beside it.
+        """
+        return self._associator.config.gate_threshold
 
     def process(self, detections: list[IncomingDetection]) -> list[Track]:
         """Run one tracking cycle and return the resulting displayable tracks.
@@ -313,7 +339,7 @@ class TrackManager:
         track.last_seen = detection.timestamp
         track.last_supported = now
         track.last_updated = now
-        track.contributing_sensors.add(detection.sensor_id)
+        track.contributing_sensors.update(detection.sensors)
 
         self._transition_after_detection(track, now)
 
@@ -441,7 +467,7 @@ class TrackManager:
             last_supported=now,
             last_updated=now,
             detection_count=1,
-            contributing_sensors={detection.sensor_id},
+            contributing_sensors=set(detection.sensors),
         )
         self._active[track.track_id] = track
 
