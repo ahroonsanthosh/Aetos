@@ -12,7 +12,9 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
+import { AetosMark } from '../brand/AetosMark'
 import { api } from '../../data/client/api'
 import { useAuth } from '../../data/client/auth'
 import type { ModeView, SystemHealthView } from '../../data/models/api'
@@ -68,10 +70,15 @@ export function TopBar({ streamStatus, trackCount }: Props) {
 
   return (
     <header className="topbar">
-      <div className="topbar__identity">
+      {/* The mark links to the front page rather than to the console root. An operator who
+          clicks a logo expects to go somewhere; sending them to the page they are already on
+          is the more surprising of the two options, and `/landing` is the only route the logo
+          uniquely identifies. */}
+      <Link to="/landing" className="topbar__identity" title="Aetos — front page">
+        <AetosMark size={26} className="topbar__mark" />
         <span className="topbar__wordmark">AETOS</span>
         <span className="topbar__subtitle">Counter-UAS / Sensor Fusion</span>
-      </div>
+      </Link>
 
       <div className="topbar__status">
         <Chip

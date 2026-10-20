@@ -80,7 +80,7 @@ client and drifting from it.
 | `src/components/shell/` | Top bar, sidebar |
 | `src/data/models/` | Wire types (`api.ts`), presentation types (`track.ts`), geodesy |
 | `src/data/client/` | REST client, event stream, live picture hook |
-| `src/styles/` | Design tokens — see [design_tokens.md](docs/design_tokens.md) |
+| `src/styles/` | Design tokens — see [design_tokens.md](../docs/design_tokens.md) |
 
 The operational map is a site-centred plan position indicator rather than a geographic
 basemap ([ADR 0010](../docs/adr/0010-radar-ppi-display.md)). It has no external tile
@@ -88,15 +88,13 @@ dependency and renders identically offline.
 
 ## Known limitations
 
-- **Classification, risk and alerts are not implemented in the backend**, so those panels show
-  their not-implemented state. The components are written against the finished contract and
-  will populate without redesign.
-- **One object can appear as several tracks** when multiple sensors observe it, because the
-  fusion module is not built. See `docs/failure_modes.md` FM-023. The interface deliberately
-  does not hide this.
-- **Sensor runtime status is not shown** — connected/silent, update rate, last packet age all
-  need the system health watchdog, which is not built. Placement is shown; status is not
-  invented.
+- **One object can still occasionally appear as several tracks.** Fusion reconciles most
+  multi-sensor duplicates before tracking, but deliberately leaves a detection apart when it
+  could belong to either of two objects or is too uncertain to place (`docs/failure_modes.md`
+  FM-023). The interface does not hide the remainder; the situation advisory reports it.
+- **Sensor runtime status is not broken out per sensor.** The watchdog judges every source and
+  the System Health page shows the result and the overall posture, but the Sensors page shows
+  placement only. Per-sensor status there is not invented.
 - **The predicted path is a straight line**, current speed and heading held constant, nothing
   more. The backend has real positional uncertainty internally but does not expose it over
   the API, so no confidence cone is drawn — an invented one would claim a calibration that
