@@ -18,6 +18,7 @@ touching the log it is derived from.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -39,10 +40,17 @@ class DatabaseError(RuntimeError):
 class Database:
     """One SQLite connection, shared by every repository built over it.
 
-    Not thread-safe, and opened with SQLite's default thread affinity. That is a real
-    constraint on callers rather than an oversight: repository reads must happen on the
-    thread that opened the connection, which is why the API's route handlers are `async def`
-    and read inline instead of being dispatched to a worker thread.
+    **Used from one thread at a time, and in practice from the event-loop thread only.** The
+    pipeline steps on the loop, and every API handler and dependency is `async def`, so they run
+    on it too. That is the whole concurrency model, and it is why there is no lock here: a lock
+    would advertise concurrent use the architecture does not have (ADR 0006).
+
+    Break it and the failure is worse than an error. A second thread issuing statements while
+    another holds a transaction does not wait — it joins that transaction, and its writes commit
+    or roll back with someone else's work. This happened: the session dependency was a plain
+    `def`, FastAPI ran it in a worker thread, and the console's opening burst of requests
+    collided here. The guard in `execute` now refuses that loudly instead, and
+    `tests/integration/test_concurrent_requests.py` keeps every dependency off the thread pool.
     """
 
     def __init__(self, clock: Clock, path: Path | str | None = None) -> None:
@@ -55,6 +63,8 @@ class Database:
         self._clock = clock
         self._path = Path(path) if path is not None else None
         self._depth = 0
+        self._transaction_thread: int | None = None
+        """The thread holding the open transaction, if any. See `_refuse_other_threads`."""
         self.is_durable = self._path is not None
 
         try:
@@ -64,15 +74,10 @@ class Database:
             self._conn = sqlite3.connect(
                 str(self._path) if self._path else ":memory:",
                 isolation_level=None,  # explicit transaction control
-                # The API serves synchronous endpoints from a threadpool, so the thread that
-                # reads a repository is not the thread that opened it. Python's default
-                # same-thread check would reject those reads — in production as well as in
-                # tests, since that is simply how the server runs.
-                #
-                # This relaxes the *ownership* check, not the concurrency discipline. SQLite
-                # itself serialises access internally, and writes still go through the
-                # single-writer path the architecture requires (ADR 0006); nothing here
-                # licenses concurrent writers.
+                # The thread that uses the connection is not always the thread that opened it:
+                # a test client runs the application on a thread of its own. This relaxes
+                # Python's *ownership* check and nothing else — it is not a licence for two
+                # threads at once, which is what the guard in `execute` enforces.
                 check_same_thread=False,
             )
             self._conn.row_factory = sqlite3.Row
@@ -97,7 +102,23 @@ class Database:
         except sqlite3.Error as exc:
             raise DatabaseError(f"could not apply schema: {exc}") from exc
 
+    def _refuse_other_threads(self) -> None:
+        """Fail loudly if another thread's transaction is open on this connection.
+
+        Without this, a statement from a second thread does not wait or fail — it silently
+        joins the first thread's transaction, committing or rolling back with work it knows
+        nothing about. SQLite's own complaint, when it complains at all, is "cannot start a
+        transaction within a transaction", which names the symptom and hides the cause.
+        """
+        if self._depth and self._transaction_thread != threading.get_ident():
+            raise DatabaseError(
+                "the database was used from a second thread while another thread's transaction "
+                "was open. This connection is single-threaded by design: run the caller on the "
+                "event loop (an `async def` handler or dependency), not in a worker thread."
+            )
+
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
+        self._refuse_other_threads()
         try:
             return self._conn.execute(sql, params)
         except sqlite3.Error as exc:
@@ -117,8 +138,10 @@ class Database:
         repository operations should not have to know whether either of them already opened a
         transaction. Only the outermost block commits.
         """
+        self._refuse_other_threads()
         if self._depth == 0:
             self.execute("BEGIN IMMEDIATE")
+            self._transaction_thread = threading.get_ident()
         self._depth += 1
         try:
             yield
@@ -126,11 +149,13 @@ class Database:
             self._depth -= 1
             if self._depth == 0:
                 self.execute("ROLLBACK")
+                self._transaction_thread = None
             raise
         else:
             self._depth -= 1
             if self._depth == 0:
                 self.execute("COMMIT")
+                self._transaction_thread = None
 
     def close(self) -> None:
         self._conn.close()

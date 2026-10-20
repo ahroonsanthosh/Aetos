@@ -27,6 +27,7 @@ from backend.database.projection import TrackProjection
 from backend.database.sqlite import SqliteRepositories
 from backend.events.store import SqliteEventStore
 from backend.events.types import EventType
+from tests.routes import effective_routes
 
 EPOCH = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
 
@@ -130,11 +131,14 @@ def test_every_route_is_gated_or_deliberately_public(client: TestClient) -> None
     when adding the route.
     """
     ungated: list[str] = []
+    checked = 0
 
-    for route in client.app.routes:
-        path = getattr(route, "path", None)
-        methods = getattr(route, "methods", None)
-        if path is None or methods is None:
+    # The effective table, not `client.app.routes`: newer FastAPI keeps each included router as
+    # one opaque entry, and walking `app.routes` directly left this audit checking 3 of 22
+    # routes — none of them a data endpoint — while passing. See `tests/routes.py`.
+    for route in effective_routes(client.app):
+        path, methods = route.path, route.methods
+        if not path or not methods:
             continue  # the WebSocket route and mounts; covered separately below
 
         # Fill path parameters with something syntactically valid. The value never matters:
@@ -148,10 +152,16 @@ def test_every_route_is_gated_or_deliberately_public(client: TestClient) -> None
             if (method, path) in PUBLIC_ROUTES:
                 continue
 
+            checked += 1
             response = client.request(method, concrete, json={})
             if response.status_code != 401:
                 ungated.append(f"{method} {path} -> {response.status_code}")
 
+    # A floor, so the audit cannot go vacuous again without failing: an audit that finds nothing
+    # to check reports nothing wrong.
+    assert checked >= 10, (
+        f"the audit reached only {checked} gated routes — it is not seeing the app"
+    )
     assert not ungated, (
         "these routes answered without a session and are not on the public list:\n  "
         + "\n  ".join(ungated)
