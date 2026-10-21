@@ -80,7 +80,7 @@ mechanism exactly when it matters. MEDIUM is already visible on the track list a
 ### 5. Alerts are rebuilt from the log at startup
 
 `AlertService.rebuild()` replays `ALERT_CREATED` / `ALERT_ESCALATED` /
-`OPERATOR_ACKNOWLEDGED` / `ALERT_CLEARED` and reconstructs the open set. The log remains the
+`OPERATOR_ACKNOWLEDGED` / `ALERT_TRANSFERRED` (ADR 0021) / `ALERT_CLEARED` and reconstructs the open set. The log remains the
 authority (ADR 0006); the in-memory set is a projection.
 
 The identifier generator resumes above the highest ID in the log. A second `ALT-00007` would

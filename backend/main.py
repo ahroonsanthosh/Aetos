@@ -378,13 +378,13 @@ class Pipeline:
         )
 
         now = self.clock.now()
-        assessed = self.risk.assess_cycle(classified, now)
+        assessed = self.risk.assess_cycle(classified, now, self.tracker.last_retired_duplicates)
 
         # Last, and reading the assessed tracks rather than the risk engine. Alerting decides
         # only whether a level warrants interrupting a human; it has no opinion on how that
         # level was reached, and taking its input from `track.threat` is what keeps it that
         # way (ADR 0015).
-        self.alerting.review_cycle(assessed, now)
+        self.alerting.review_cycle(assessed, now, self.tracker.last_retired_duplicates)
 
         # After everything that could report a fault, and before the projection catches up, so
         # any status event this pass appends is visible to the API in the same cycle it was

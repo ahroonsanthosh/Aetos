@@ -58,6 +58,12 @@ class EventType(StrEnum):
     rather than a second `ALERT_CREATED`, because it is the same incident getting worse — two
     creations would tell an operator reviewing the log that two aircraft came at them."""
 
+    ALERT_TRANSFERRED = "ALERT_TRANSFERRED"
+    """An open alert moved to the track that carries on its object, because the tracker retired
+    the track it was raised on as a duplicate (ADR 0021). The same incident and the same
+    acknowledgement, on the identifier the operator will go on seeing — closing it would tell
+    the operator the threat had gone when only a second label for it had."""
+
     ALERT_CLEARED = "ALERT_CLEARED"
     RECOMMENDATION_CHANGED = "RECOMMENDATION_CHANGED"
     OPERATOR_ACKNOWLEDGED = "OPERATOR_ACKNOWLEDGED"

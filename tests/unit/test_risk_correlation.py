@@ -412,3 +412,33 @@ class _Holder:
         updated = track.model_copy(update={"threat": threat})
         self._tracks[track_id] = updated
         return updated
+
+
+def test_a_retired_duplicate_hands_its_level_to_the_survivor(geometry: SiteGeometry) -> None:
+    """ADR 0021 with ADR 0007. Two tracks on one object are assessed separately, so hysteresis
+    can hold them at different levels. When the tracker retires the one at the higher level,
+    the object must not drop to the survivor's level in the same instant — that would be a
+    de-escalation skipping the dwell every other one is held to. The survivor inherits the
+    level and comes down from it on the ordinary schedule."""
+    clock = SimClock(datetime(2026, 8, 9, 12, 0, 0, tzinfo=UTC))
+    store = SqliteEventStore(clock)
+    try:
+        near, far = _track("TRK-NEAR", 0.0, range_m=300.0), _track("TRK-FAR", 0.0, 6_000.0)
+        policy = load_risk_policy()
+        service = RiskService(
+            build_risk_engine(), policy, geometry, store, sink=_Holder([near, far])
+        )
+        levels = {
+            t.track_id: t.threat.risk_level for t in service.assess_cycle([near, far], clock.now())
+        }
+        assert levels["TRK-NEAR"].severity > levels["TRK-FAR"].severity
+
+        clock.advance(0.5)
+        (survivor,) = service.assess_cycle([far], clock.now(), {"TRK-NEAR": "TRK-FAR"})
+        assert survivor.threat.risk_level == levels["TRK-NEAR"]
+
+        clock.advance(policy.hysteresis.deescalate_dwell_s + 1.0)
+        (survivor,) = service.assess_cycle([far], clock.now())
+        assert survivor.threat.risk_level == levels["TRK-FAR"]
+    finally:
+        store.close()

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { SiteView, StreamedEvent, TrackView } from '../models/api'
 import { LocalFrame } from '../models/geo'
+import { rememberRetirement, survivorNamedBy } from '../models/succession'
 import { toDisplayTrack, type DisplayTrack } from '../models/track'
 import { api, ApiError } from './api'
 import { useAuth } from './auth'
@@ -26,6 +27,9 @@ export interface TrackPicture {
   readonly status: StreamStatus
   readonly error: string | null
   readonly latestSeq: number
+  /** Tracks the backend retired as duplicates, mapped to the track that carries on each
+   *  object (ADR 0021). See `succession.ts`. */
+  readonly mergedInto: ReadonlyMap<string, string>
   readonly reload: () => void
 }
 
@@ -41,6 +45,7 @@ export function useTrackPicture(): TrackPicture {
   const [status, setStatus] = useState<StreamStatus>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [latestSeq, setLatestSeq] = useState(0)
+  const [mergedInto, setMergedInto] = useState<ReadonlyMap<string, string>>(new Map())
   const [reloadToken, setReloadToken] = useState(0)
 
   const streamRef = useRef<EventStream | null>(null)
@@ -107,6 +112,8 @@ export function useTrackPicture(): TrackPicture {
       // whole history remains in the event log and is readable through the history endpoint.
       if (event.event_type === 'TRACK_LOST') {
         const id = event.track_id
+        const survivor = survivorNamedBy(event.detail ?? {})
+        if (survivor) setMergedInto((current) => rememberRetirement(current, id, survivor))
         setTracksById((current) => {
           const next = new Map(current)
           next.delete(id)
@@ -145,5 +152,5 @@ export function useTrackPicture(): TrackPicture {
       .sort((a, b) => a.id.localeCompare(b.id))
   }, [tracksById, frame])
 
-  return { tracks, site, frame, status, error, latestSeq, reload }
+  return { tracks, site, frame, status, error, latestSeq, mergedInto, reload }
 }
