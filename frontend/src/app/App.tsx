@@ -30,7 +30,7 @@
  * "what is out there" across every view — two streams would drift and two pages would disagree.
  */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import { AetosHero } from '../components/landing/AetosHero'
@@ -38,6 +38,7 @@ import { LaunchSequence } from '../components/landing/LaunchSequence'
 import { AppShell } from '../components/shell/AppShell'
 import { useAuth } from '../data/client/auth'
 import { useTrackPicture } from '../data/client/useTrackPicture'
+import { currentIdentity } from '../data/models/succession'
 import { AlertsPage } from './pages/AlertsPage'
 import { LoginPage } from './pages/LoginPage'
 import { EventLogPage } from './pages/EventLogPage'
@@ -132,6 +133,15 @@ function AuthenticatedConsole() {
 function Console() {
   const picture = useTrackPicture()
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null)
+
+  // When the backend retires the selected track as a duplicate, the selection follows the
+  // aircraft to the track that carries on — rather than the details panel going blank while
+  // the object is still in the air under another identifier (ADR 0021).
+  useEffect(() => {
+    if (selectedTrackId === null) return
+    const current = currentIdentity(selectedTrackId, picture.mergedInto)
+    if (current !== selectedTrackId) setSelectedTrackId(current)
+  }, [selectedTrackId, picture.mergedInto])
 
   return (
     <AppShell streamStatus={picture.status} trackCount={picture.tracks.length}>
