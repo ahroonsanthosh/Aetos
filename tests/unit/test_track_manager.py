@@ -492,3 +492,244 @@ def test_observation_time_is_still_reported_from_the_sensor(
     manager.process([lagging_detection(clock, [0.0, 0.0, 100.0], "det-0", 8.0)])
 
     assert manager.active_tracks()[0].tracking.last_seen == observed_at
+
+
+# --------------------------------------------------------------------------------------
+# Duplicate tracks (ADR 0021)
+# --------------------------------------------------------------------------------------
+
+
+def lost_events(events: SqliteEventStore, reason: str | None = None):
+    return [
+        e
+        for e in events.read_from(1)
+        if e.event_type is EventType.TRACK_LOST
+        and (reason is None or e.payload.get("reason") == reason)
+    ]
+
+
+def alternating_measurement(manager: TrackManager, clock: SimClock, turn: int, tag: str):
+    """One measurement, placed on whichever of two tracks is due — the turn-taking observed live.
+
+    Live, the two tracks of one object traded the single fused measurement because noise put it
+    nearer one, then the other. Placing it on each track's own prediction in turn reproduces
+    that exactly, without depending on a noise seed.
+    """
+    tracks = sorted(manager.active_tracks(), key=lambda t: t.track_id)
+    target = tracks[turn % len(tracks)]
+    position = [
+        target.enu.east_m + target.enu.velocity_east_mps * 0.5,
+        target.enu.north_m + target.enu.velocity_north_mps * 0.5,
+        target.enu.up_m,
+    ]
+    return manager.process([detection(clock, position, f"{tag}-{turn}")])
+
+
+def test_one_object_carried_by_two_tracks_is_reduced_to_one(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """The failure measured live: two tracks on one object, fed by one stream of measurements.
+
+    The first cycle delivers two detections of the drone that do not associate together —
+    which is how fusion's ambiguity rule leaves them — so two tracks start. From then on there
+    is one measurement per cycle, as there is for one object, and the tracks can only share
+    it. The younger must be retired, and the operator must keep the identifier they had.
+    """
+    manager.process(
+        [
+            detection(clock, [0.0, 0.0, 100.0], "det-a", sensor="RADAR-N"),
+            detection(clock, [25.0, 0.0, 100.0], "det-b", sensor="RADAR-S"),
+        ]
+    )
+    first, second = sorted(t.track_id for t in manager.active_tracks())
+    clock.advance(0.5)
+
+    for turn in range(1, 30):
+        if len(manager.active_tracks()) < 2:
+            break
+        alternating_measurement(manager, clock, turn, "det")
+        clock.advance(0.5)
+
+    remaining = {t.track_id for t in manager.active_tracks()}
+    assert remaining == {first}, f"expected only {first} to survive, have {remaining}"
+
+    (retired,) = lost_events(events, "duplicate")
+    assert retired.track_id == second
+    assert retired.payload["duplicate_of"] == first
+    assert retired.payload["shared_update_cycles"] <= 0.25 * retired.payload["evidence_cycles"]
+
+
+def test_two_real_objects_flying_together_are_never_merged(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """The case a duplicate rule must not touch: formation flight inside the co-location gate.
+
+    Two objects 15 m apart on the same course — statistically indistinguishable by position and
+    velocity alone. What separates them is that each produces its own detection every cycle,
+    so both tracks are updated together every cycle. Merging them would hide a contact, which
+    is the worst thing this tracker can do.
+    """
+    from scipy.stats import chi2
+
+    from backend.tracking.association.gnn import AssociationConfig
+    from backend.tracking.track_manager.manager import _STATE_DOF, _same_state
+
+    threshold = float(chi2.ppf(AssociationConfig().gate_confidence, _STATE_DOF))
+    co_located_cycles = 0
+
+    for i in range(60):
+        manager.process(
+            [
+                detection(clock, [i * 10.0, 0.0, 100.0], f"lead-{i}", sensor="RADAR-N"),
+                detection(clock, [i * 10.0, 15.0, 100.0], f"wing-{i}", sensor="RADAR-N"),
+            ]
+        )
+        clock.advance(0.5)
+        active = [t for t in manager._active.values()]
+        if len(active) == 2 and _same_state(
+            active[0].filter_state, active[1].filter_state, threshold
+        ):
+            co_located_cycles += 1
+
+    assert co_located_cycles >= 30, (
+        "the pair was not inside the co-location gate, so this test proved nothing"
+    )
+    assert lost_events(events, "duplicate") == []
+    assert len(manager.active_tracks()) == 2
+
+
+def test_a_brief_coincidence_does_not_accumulate_into_a_merge(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Evidence must be continuous. Two tracks that meet, part and meet again must not add the
+    two meetings together into one object."""
+    from backend.tracking.track_manager.manager import TrackManagerConfig as Config
+
+    needed = Config().duplicate_min_cycles
+    manager.process(
+        [
+            detection(clock, [0.0, 0.0, 100.0], "a0", sensor="RADAR-N"),
+            detection(clock, [20.0, 0.0, 100.0], "b0", sensor="RADAR-S"),
+        ]
+    )
+    clock.advance(0.5)
+    # Fewer cycles than the window of turn-taking, then two clearly separate objects.
+    for turn in range(1, needed - 3):
+        alternating_measurement(manager, clock, turn, "one")
+        clock.advance(0.5)
+    tracks_before = {t.track_id for t in manager.active_tracks()}
+    assert len(tracks_before) == 2, "the setup did not produce the two tracks it needs"
+
+    for i in range(needed - 3, needed + 20):
+        manager.process(
+            [
+                detection(clock, [i * 10.0, 0.0, 100.0], f"x-{i}", sensor="RADAR-N"),
+                detection(clock, [i * 10.0, 2_000.0, 100.0], f"y-{i}", sensor="RADAR-N"),
+            ]
+        )
+        clock.advance(0.5)
+
+    assert lost_events(events, "duplicate") == []
+
+
+def test_two_short_meetings_do_not_add_up_to_one_object(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Evidence must be continuous — driven directly, so the separation is exact.
+
+    Two real objects that pass close twice can each time look like one stream for a few cycles
+    (fusion merges their detections while they are inside sensor noise). Six cycles at each
+    meeting is under the window; twelve across both would be over it. If evidence survived the
+    separation in between, two real contacts would be merged into one.
+    """
+    manager.process(
+        [
+            detection(clock, [0.0, 0.0, 100.0], "a", sensor="RADAR-N"),
+            detection(clock, [10.0, 0.0, 100.0], "b", sensor="RADAR-S"),
+        ]
+    )
+    first, second = sorted(manager._active)
+    window = TrackManagerConfig().duplicate_min_cycles
+    meeting = window // 2 + 1
+
+    def turns(count: int) -> None:
+        for i in range(count):
+            manager._retire_duplicates({first} if i % 2 == 0 else {second}, clock.now())
+
+    turns(meeting)
+    manager._active[second].filter_state.mean[1] += 5_000.0  # separate: far beyond any gate
+    manager._retire_duplicates({first, second}, clock.now())
+    manager._active[second].filter_state.mean[1] -= 5_000.0  # and meet again
+    turns(meeting)
+
+    assert 2 * meeting >= window, "the two meetings together must exceed the window"
+    assert lost_events(events, "duplicate") == []
+
+
+def test_a_track_coasting_through_a_dropout_is_never_taken_for_a_duplicate(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Found by the ground-truth sweep, in the swarm scenario.
+
+    A real object in a sensor dropout stops receiving detections and coasts on prediction. If
+    it coasts next to a track that is still being fed, the pair looks like "almost never
+    updated together" — because one of them is never updated at all. That is starvation, not
+    turn-taking, and retiring the coasting track would hide a contact for exactly as long as the
+    dropout lasts. Only two tracks that are each being fed, but not together, are one object.
+    """
+    manager.process(
+        [
+            detection(clock, [0.0, 0.0, 100.0], "a", sensor="RADAR-N"),
+            detection(clock, [10.0, 0.0, 100.0], "b", sensor="RADAR-S"),
+        ]
+    )
+    fed, coasting = sorted(manager._active)
+
+    for _ in range(3 * TrackManagerConfig().duplicate_min_cycles):
+        manager._retire_duplicates({fed}, clock.now())
+
+    assert lost_events(events, "duplicate") == []
+    assert coasting in manager._active
+
+
+def test_the_survivor_keeps_its_identifier_and_takes_both_estimates(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """The older identifier survives — the one the operator has been watching — but not with
+    its own estimate alone: a duplicate can form because the older track is lagging its object.
+    The two took turns on mostly different measurements, so their estimates combine into one
+    tighter than either, and the change is in the log so a rebuild matches what is held."""
+    manager.process(
+        [
+            detection(clock, [0.0, 0.0, 100.0], "a", sensor="RADAR-N"),
+            detection(clock, [20.0, 0.0, 100.0], "b", sensor="RADAR-S"),
+        ]
+    )
+    older, younger = sorted(manager._active)
+    before = {tid: manager._active[tid].filter_state.copy() for tid in (older, younger)}
+
+    for i in range(3 * TrackManagerConfig().duplicate_min_cycles):
+        if older not in manager._active or younger not in manager._active:
+            break
+        if manager._active[younger].state is TrackState.LOST:
+            break
+        before = {tid: manager._active[tid].filter_state.copy() for tid in (older, younger)}
+        manager._retire_duplicates({older} if i % 2 == 0 else {younger}, clock.now())
+
+    (retired,) = lost_events(events, "duplicate")
+    assert retired.track_id == younger and retired.payload["duplicate_of"] == older
+
+    survivor = manager._active[older].filter_state
+    east = survivor.mean[0]
+    low, high = sorted((before[older].mean[0], before[younger].mean[0]))
+    assert low < east < high, "the survivor's position is not a combination of both estimates"
+    assert np.trace(survivor.covariance) < min(
+        np.trace(before[older].covariance), np.trace(before[younger].covariance)
+    )
+
+    absorbed = [
+        e
+        for e in events.read_from(1)
+        if e.track_id == older and e.payload.get("reason") == "absorbed_duplicate"
+    ]
+    assert len(absorbed) == 1 and absorbed[0].payload["absorbed"] == younger

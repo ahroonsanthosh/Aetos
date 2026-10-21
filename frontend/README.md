@@ -88,11 +88,10 @@ dependency and renders identically offline.
 
 ## Known limitations
 
-- **One object can still appear as two tracks.** Fusion removes most multi-sensor duplicates
-  before tracking, but deliberately leaves a detection apart when it could belong to either of
-  two objects, and a duplicate that forms that way can persist (`docs/failure_modes.md` FM-023,
-  measured). The interface does not hide it; the situation advisory reports it once the two
-  tracks' motion agrees.
+- **One object can briefly appear as two tracks.** Fusion removes most multi-sensor duplicates
+  before tracking, and the tracker retires what it leaves once the evidence is in — about five
+  seconds of the two tracks taking turns (`docs/failure_modes.md` FM-023, ADR 0021). The
+  interface does not hide the duplicate in the meantime.
 - **Sensor runtime status is not broken out per sensor.** The watchdog judges every source and
   the System Health page shows the result and the overall posture, but the Sensors page shows
   placement only. Per-sensor status there is not invented.

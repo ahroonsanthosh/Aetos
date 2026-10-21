@@ -384,7 +384,7 @@ class Pipeline:
         # only whether a level warrants interrupting a human; it has no opinion on how that
         # level was reached, and taking its input from `track.threat` is what keeps it that
         # way (ADR 0015).
-        self.alerting.review_cycle(assessed, now)
+        self.alerting.review_cycle(assessed, now, self.tracker.last_retired_duplicates)
 
         # After everything that could report a fault, and before the projection catches up, so
         # any status event this pass appends is visible to the API in the same cycle it was

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import numpy as np
+from scipy.stats import chi2
 
 from backend.common.clock import Clock
 from backend.common.geodesy import EnuPoint, LocalFrame
@@ -59,6 +60,52 @@ substrate, and a compact log that cannot reproduce the system's state is worth v
 """
 
 
+_STATE_DOF = 6
+"""Degrees of freedom of the track-to-track test: position and velocity, three axes each."""
+
+
+@dataclass(slots=True)
+class _PairEvidence:
+    """What two co-located tracks have shown about whether they are one object."""
+
+    cycles: int = 0
+    """Cycles in which at least one of the pair received a detection."""
+
+    shared: int = 0
+    """Of those, cycles in which both did."""
+
+    older_updates: int = 0
+    """Cycles in which the older track received a detection, shared or not."""
+
+    younger_updates: int = 0
+    """Cycles in which the younger track received a detection, shared or not."""
+
+
+def _same_state(left: KalmanState, right: KalmanState, threshold: float) -> bool:
+    """Whether two tracks' estimates — position and velocity — are statistically one state.
+
+    Squared Mahalanobis distance of the difference under the summed covariances. The
+    cross-covariance between the two estimates is ignored, which makes the test *more*
+    permissive than exact; that is acceptable only because co-location is necessary, not
+    sufficient — the update pattern is what decides.
+    """
+    offset = left.mean - right.mean
+    if float(np.linalg.norm(offset[:3])) > _PREFILTER_SEPARATION_M:
+        return False
+    try:
+        distance_squared = float(
+            offset @ np.linalg.solve(left.covariance + right.covariance, offset)
+        )
+    except np.linalg.LinAlgError:
+        return False
+    return distance_squared <= threshold
+
+
+_PREFILTER_SEPARATION_M = 2_000.0
+"""Pairs further apart than this are not tested at all. A cheap bound so a saturated picture
+does not pay for a matrix solve per pair; no duplicate is ever kilometres from its original."""
+
+
 @dataclass(frozen=True, slots=True)
 class TrackManagerConfig:
     """Lifecycle tuning.
@@ -94,6 +141,37 @@ class TrackManagerConfig:
     """Ceiling on simultaneously maintained tracks. Scenario I's saturation bound made
     explicit: past this, new track initiation is refused and recorded rather than allowed to
     exhaust memory (ADR 0008)."""
+
+    duplicate_min_cycles: int = 10
+    """Cycles of evidence before two tracks are judged to be one object (ADR 0021).
+
+    Counted only on cycles where at least one of the pair received a detection — the cycles
+    that carry information about whether there is one object or two. Ten is a few seconds at
+    the shipped tick: long enough that a crossing or a brief coincidence cannot accumulate it,
+    short enough that a duplicate does not sit on the operator's display for the whole run.
+    """
+
+    duplicate_min_turn_fraction: float = 0.25
+    """Of those cycles, the fewest in which *each* track must have been updated on its own.
+
+    What makes the pattern turn-taking rather than starvation. Without it, a track that has
+    simply stopped receiving detections — a real object in a sensor dropout, coasting on
+    prediction — would satisfy "rarely updated together" next to any track that is still being
+    fed, and be retired as its duplicate: a hidden contact. The safety sweep found exactly that
+    in the swarm scenario, a track five and seven cycles into coasting. A starved track goes
+    stale on its own; only two tracks that are both being fed, but never together, are one
+    object.
+    """
+
+    duplicate_max_shared_fraction: float = 0.25
+    """Of those cycles, the most in which *both* tracks may have been updated.
+
+    The discriminator. One object seen twice feeds both tracks from a single stream of
+    measurements, so they take turns: measured at 4 shared cycles in 60. Two real objects each
+    produce their own detections — fusion never combines two detections from one sensor — so
+    both tracks are updated nearly every cycle. A pair above this fraction is two objects, and
+    is never retired however close it flies.
+    """
 
 
 @dataclass(slots=True)
@@ -224,6 +302,8 @@ class TrackManager:
         self._ids = track_id_generator()
         self._active: dict[str, _ActiveTrack] = {}
         self._last_assignments: dict[str, str] = {}
+        self._pairs: dict[tuple[str, str], _PairEvidence] = {}
+        self._last_retired_duplicates: dict[str, str] = {}
 
     @property
     def config(self) -> TrackManagerConfig:
@@ -270,9 +350,19 @@ class TrackManager:
         for detection_id in result.unassigned_detections:
             self._initiate(by_id[detection_id], now)
 
+        self._retire_duplicates(set(result.assignments), now)
         self._retire_expired(now)
 
         return [self.to_track(t) for t in self._active.values() if t.state.is_displayable]
+
+    @property
+    def last_retired_duplicates(self) -> dict[str, str]:
+        """Tracks retired this cycle as duplicates, mapped to the track each duplicated.
+
+        Read by alerting, so an alert on a retired duplicate closes as what it was rather than
+        as "the object was lost" — which tells an operator something may still be out there.
+        """
+        return dict(self._last_retired_duplicates)
 
     def active_tracks(self) -> list[Track]:
         """Every maintained track, including those not yet displayable."""
@@ -483,6 +573,140 @@ class TrackManager:
             track_id=track.track_id,
         )
 
+    def _retire_duplicates(self, updated: set[str], now: datetime) -> None:
+        """Retire the younger of two tracks that the evidence says are one object (ADR 0021).
+
+        How a duplicate arises, and why fusion cannot always prevent it: two sensors' detections
+        of one object can fall just outside the gate while a broad sensor gates with both, and
+        fusion then fuses none of them rather than guess. The surplus detection starts a track,
+        and from then on the two tracks *take turns* winning the one measurement each cycle —
+        so neither goes stale, and both persist for as long as the object is in view.
+
+        Taking turns is also what identifies them. Two real objects, however close, each produce
+        their own detections every cycle, so both tracks are updated together almost every
+        cycle. A pair that has stayed statistically co-located and co-moving for
+        `duplicate_min_cycles` cycles of evidence, sharing updates in no more than
+        `duplicate_max_shared_fraction` of them while *each* was updated on its own in at least
+        `duplicate_min_turn_fraction` of them, is one object. The last condition is what keeps
+        a coasting track — a real object in a dropout — from being mistaken for a duplicate.
+
+        The older track is kept, so the operator keeps the identifier they have been watching,
+        and it takes both estimates rather than only its own: a duplicate can form because the
+        older one is falling behind its object, and keeping its estimate alone would keep the
+        lag. The retired track ends in LOST like any other, with the reason and the survivor
+        recorded, so the log says why it disappeared.
+        """
+        self._last_retired_duplicates = {}
+        candidates = [
+            t
+            for t in self._active.values()
+            if t.state in (TrackState.NEW, TrackState.TENTATIVE, TrackState.CONFIRMED)
+        ]
+        threshold = float(chi2.ppf(self._associator.config.gate_confidence, _STATE_DOF))
+        seen: set[tuple[str, str]] = set()
+
+        for i, first in enumerate(candidates):
+            for second in candidates[i + 1 :]:
+                older, younger = sorted((first, second), key=lambda t: (t.first_seen, t.track_id))
+                key = (older.track_id, younger.track_id)
+                if not _same_state(older.filter_state, younger.filter_state, threshold):
+                    continue
+                seen.add(key)
+
+                evidence = self._pairs.setdefault(key, _PairEvidence())
+                older_updated = older.track_id in updated
+                younger_updated = younger.track_id in updated
+                if older_updated or younger_updated:
+                    evidence.cycles += 1
+                if older_updated and younger_updated:
+                    evidence.shared += 1
+                evidence.older_updates += older_updated
+                evidence.younger_updates += younger_updated
+
+        # A pair that drifted apart, or lost a member, starts again from nothing: evidence
+        # must be continuous, or two objects that met briefly twice could add up to one.
+        self._pairs = {key: value for key, value in self._pairs.items() if key in seen}
+
+        for (older_id, younger_id), evidence in sorted(self._pairs.items()):
+            if evidence.cycles < self._config.duplicate_min_cycles:
+                continue
+            if evidence.shared > self._config.duplicate_max_shared_fraction * evidence.cycles:
+                continue
+            fewest_turns = self._config.duplicate_min_turn_fraction * evidence.cycles
+            if min(evidence.older_updates, evidence.younger_updates) < fewest_turns:
+                continue
+
+            older = self._active.get(older_id)
+            younger = self._active.get(younger_id)
+            if older is None or younger is None:
+                continue
+            if TrackState.LOST in (older.state, younger.state):
+                continue
+
+            # The older survives, so the operator keeps the identifier they have been watching,
+            # and takes both estimates (see `_absorb`). Choosing between them by who got more
+            # updates was tried and measured worse on ground truth: over ten cycles a lead of
+            # one or two is noise, and it swapped the operator's long-standing track for a
+            # newcomer with a poorer velocity — 87 identity swaps across the scenario library.
+            survivor, retired = older, younger
+            survivor_updates, retired_updates = evidence.older_updates, evidence.younger_updates
+
+            previous = retired.state
+            retired.state = TrackState.LOST
+            self._emit_transition(
+                retired,
+                previous,
+                now,
+                extra={
+                    "reason": "duplicate",
+                    "duplicate_of": survivor.track_id,
+                    "evidence_cycles": evidence.cycles,
+                    "shared_update_cycles": evidence.shared,
+                    "survivor_update_cycles": survivor_updates,
+                    "retired_update_cycles": retired_updates,
+                },
+            )
+            self._last_retired_duplicates[retired.track_id] = survivor.track_id
+            self._absorb(survivor, retired, now)
+
+        retired = set(self._last_retired_duplicates)
+        self._pairs = {k: v for k, v in self._pairs.items() if not retired.intersection(k)}
+
+    def _absorb(self, survivor: _ActiveTrack, retired: _ActiveTrack, now: datetime) -> None:
+        """Fold a retired duplicate's estimate into the survivor, and record that it happened.
+
+        Information-weighted. The two took turns on one object's measurements, so each estimate
+        rests on mostly different measurements — roughly half the information each — and they
+        combine as near-independent evidence into an estimate better than either. That is what
+        lets the older identifier survive without also keeping a lagging estimate: measured on
+        ground truth across the scenario library, keeping the older track's estimate alone left
+        objects without a well-matched track slightly more often than combining (417 against 413
+        object-cycles; 411 with no duplicate retirement at all).
+
+        The survivor's state changes outside a detection update, so it is published as an event
+        like any other change — the log must rebuild into what the tracker holds (ADR 0006).
+        """
+        try:
+            inverse_survivor = np.linalg.inv(survivor.filter_state.covariance)
+            inverse_retired = np.linalg.inv(retired.filter_state.covariance)
+            covariance = np.linalg.inv(inverse_survivor + inverse_retired)
+        except np.linalg.LinAlgError:
+            return
+        mean = covariance @ (
+            inverse_survivor @ survivor.filter_state.mean
+            + inverse_retired @ retired.filter_state.mean
+        )
+        survivor.filter_state = KalmanState(mean, covariance)
+        survivor.contributing_sensors |= retired.contributing_sensors
+        survivor.last_supported = max(survivor.last_supported, retired.last_supported)
+        survivor.last_seen = max(survivor.last_seen, retired.last_seen)
+        self._emit_transition(
+            survivor,
+            survivor.state,
+            now,
+            extra={"reason": "absorbed_duplicate", "absorbed": retired.track_id},
+        )
+
     def _retire_expired(self, now: datetime) -> None:
         """Remove LOST tracks from the active set.
 
@@ -493,7 +717,13 @@ class TrackManager:
         for track_id in [t.track_id for t in self._active.values() if t.state is TrackState.LOST]:
             del self._active[track_id]
 
-    def _emit_transition(self, track: _ActiveTrack, previous: TrackState, now: datetime) -> None:
+    def _emit_transition(
+        self,
+        track: _ActiveTrack,
+        previous: TrackState,
+        now: datetime,
+        extra: dict[str, object] | None = None,
+    ) -> None:
         event_type = {
             TrackState.CONFIRMED: EventType.TRACK_CONFIRMED,
             TrackState.STALE: EventType.TRACK_STALE,
@@ -508,6 +738,7 @@ class TrackManager:
                 "state": str(track.state),
                 "detection_count": track.detection_count,
                 "seconds_since_detection": round(track.seconds_since_detection(now), 3),
+                **(extra or {}),
                 TRACK_SNAPSHOT_KEY: self._snapshot(track),
             },
             track_id=track.track_id,

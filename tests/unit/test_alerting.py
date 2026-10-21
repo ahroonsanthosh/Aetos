@@ -369,3 +369,42 @@ def test_clearing_records_the_alert_it_cleared(
 
     cleared = alert_events(events, EventType.ALERT_CLEARED)[0]
     assert cleared.payload[ALERT_ID_KEY] == raised
+
+
+def test_a_retired_duplicates_alert_closes_as_a_duplicate_not_as_lost(
+    events: SqliteEventStore,
+) -> None:
+    """ADR 0021. "Track lost" tells an operator the object may still be out there unwatched.
+    When the tracker retired a second track on an object another track still follows, that is
+    false — the incident continues under the survivor — so the alert says what happened and
+    names the survivor. It does so even on a site that keeps lost-track alerts open, because a
+    duplicate's alert is a second alert for one incident, not an object that left coverage."""
+    service = AlertService(
+        AlertPolicy(
+            raise_at=RiskLevel.HIGH,
+            clear_at_or_below=RiskLevel.MEDIUM,
+            clear_on_track_lost=False,
+        ),
+        events,
+    )
+    now = EPOCH
+    service.review_cycle([track("TRK-00001"), track("TRK-00045")], now)
+    assert len(service.active) == 2
+
+    service.review_cycle([track("TRK-00001")], now, {"TRK-00045": "TRK-00001"})
+
+    assert [a.track_id for a in service.active] == ["TRK-00001"]
+    (cleared,) = [e for e in events.read_from(1) if e.event_type is EventType.ALERT_CLEARED]
+    assert cleared.payload["reason"] == "duplicate_track"
+    assert cleared.payload["duplicate_of"] == "TRK-00001"
+
+
+def test_an_ordinary_lost_track_is_still_reported_as_lost(
+    service: AlertService, events: SqliteEventStore
+) -> None:
+    """The duplicate path must not swallow the honest one."""
+    service.review_cycle([track("TRK-00001")], EPOCH)
+    service.review_cycle([], EPOCH, {})
+
+    (cleared,) = [e for e in events.read_from(1) if e.event_type is EventType.ALERT_CLEARED]
+    assert cleared.payload["reason"] == "track_lost"

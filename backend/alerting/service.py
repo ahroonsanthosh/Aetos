@@ -17,6 +17,7 @@ the operator, from one that was dealt with.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -103,8 +104,16 @@ class AlertService:
     # The cycle
     # -----------------------------------------------------------------------------------
 
-    def review_cycle(self, tracks: list[Track], now: datetime) -> list[Alert]:
+    def review_cycle(
+        self,
+        tracks: list[Track],
+        now: datetime,
+        duplicates: Mapping[str, str] | None = None,
+    ) -> list[Alert]:
         """Bring the alert set into line with this cycle's assessments.
+
+        `duplicates` maps tracks the tracker retired this cycle as duplicates to the track each
+        duplicated, so their alerts close as duplicates rather than as lost objects.
 
         Returns the alerts that changed state, so a caller can react without re-diffing.
         """
@@ -122,7 +131,7 @@ class AlertService:
             if altered is not None:
                 changed.append(altered)
 
-        changed.extend(self._clear_absent(present, now))
+        changed.extend(self._clear_absent(present, now, duplicates or {}))
         return changed
 
     def _review_track(self, track: Track, now: datetime) -> Alert | None:
@@ -170,20 +179,33 @@ class AlertService:
 
         return self._clear(alert, ClearReason.RISK_SUBSIDED, now)
 
-    def _clear_absent(self, present: set[str], now: datetime) -> list[Alert]:
-        """Clear alerts whose track is no longer in the picture."""
-        if not self._policy.clear_on_track_lost:
-            return []
+    def _clear_absent(
+        self, present: set[str], now: datetime, duplicates: Mapping[str, str]
+    ) -> list[Alert]:
+        """Clear alerts whose track is no longer in the picture.
 
-        missing = [
-            (track_id, alert_id)
-            for track_id, alert_id in self._by_track.items()
-            if track_id not in present
-        ]
-        return [
-            self._clear(self._open[alert_id], ClearReason.TRACK_LOST, now)
-            for _, alert_id in missing
-        ]
+        A retired duplicate is cleared whatever `clear_on_track_lost` says. That setting is about
+        objects that left coverage; a duplicate's alert is a second alert for an incident that
+        continues under the surviving track, and leaving it open is the "two incursions where
+        there was one" reading this module exists to avoid.
+        """
+        changed: list[Alert] = []
+        for track_id, alert_id in list(self._by_track.items()):
+            if track_id in present:
+                continue
+            survivor = duplicates.get(track_id)
+            if survivor is not None:
+                changed.append(
+                    self._clear(
+                        self._open[alert_id],
+                        ClearReason.DUPLICATE_TRACK,
+                        now,
+                        extra={"duplicate_of": survivor},
+                    )
+                )
+            elif self._policy.clear_on_track_lost:
+                changed.append(self._clear(self._open[alert_id], ClearReason.TRACK_LOST, now))
+        return changed
 
     # -----------------------------------------------------------------------------------
     # Transitions
@@ -269,7 +291,13 @@ class AlertService:
         )
         return acknowledged
 
-    def _clear(self, alert: Alert, reason: ClearReason, now: datetime) -> Alert:
+    def _clear(
+        self,
+        alert: Alert,
+        reason: ClearReason,
+        now: datetime,
+        extra: dict[str, object] | None = None,
+    ) -> Alert:
         cleared = alert.model_copy(
             update={"state": AlertState.CLEARED, "cleared_at": now, "clear_reason": reason}
         )
@@ -284,6 +312,7 @@ class AlertService:
                 "reason": str(reason),
                 "acknowledged": alert.acknowledged,
                 "open_duration_s": round((now - alert.raised_at).total_seconds(), 3),
+                **(extra or {}),
             },
         )
         return cleared

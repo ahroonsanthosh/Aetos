@@ -58,6 +58,12 @@ class ClearReason(StrEnum):
     """The track disappeared — out of coverage, or dropped by the tracker. The object may
     still be out there; the system simply cannot see it any more."""
 
+    DUPLICATE_TRACK = "duplicate_track"
+    """The track was a second track on an object another track already follows, and the
+    tracker retired it (ADR 0021). Distinct from TRACK_LOST on purpose: that one tells an
+    operator something may still be out there unwatched, and here nothing is — the incident
+    continues under the surviving track, which the event names."""
+
 
 class Alert(BaseModel):
     """One raised alert, at one point in its life.
