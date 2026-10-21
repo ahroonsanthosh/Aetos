@@ -378,7 +378,7 @@ class Pipeline:
         )
 
         now = self.clock.now()
-        assessed = self.risk.assess_cycle(classified, now)
+        assessed = self.risk.assess_cycle(classified, now, self.tracker.last_retired_duplicates)
 
         # Last, and reading the assessed tracks rather than the risk engine. Alerting decides
         # only whether a level warrants interrupting a human; it has no opinion on how that

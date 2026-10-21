@@ -408,3 +408,37 @@ def test_an_ordinary_lost_track_is_still_reported_as_lost(
 
     (cleared,) = [e for e in events.read_from(1) if e.event_type is EventType.ALERT_CLEARED]
     assert cleared.payload["reason"] == "track_lost"
+
+
+def test_a_retired_duplicates_alert_moves_to_a_survivor_that_has_none(
+    service: AlertService, events: SqliteEventStore
+) -> None:
+    """ADR 0021. Measured before this existed: a HIGH alert on a retired duplicate closed while
+    the survivor — the same aircraft, held at MEDIUM by its own history — had no alert, and the
+    operator's alert on a real, continuing threat simply ended. The alert follows the object
+    instead: same incident, same identifier, same acknowledgement, now on the survivor."""
+    service.review_cycle([track("TRK-00045")], EPOCH)
+    (raised,) = service.active
+    service.acknowledge(raised.alert_id, "alice", EPOCH)
+
+    later = EPOCH + timedelta(seconds=1)
+    service.review_cycle(
+        [track("TRK-00001", level=RiskLevel.MEDIUM, score=55)], later, {"TRK-00045": "TRK-00001"}
+    )
+
+    (moved,) = service.active
+    assert moved.alert_id == raised.alert_id
+    assert moved.track_id == "TRK-00001"
+    assert moved.state is AlertState.ACKNOWLEDGED
+    assert alert_events(events, EventType.ALERT_CLEARED) == []
+    (transfer,) = alert_events(events, EventType.ALERT_TRANSFERRED)
+    assert transfer.payload["from_track_id"] == "TRK-00045"
+    assert alert_events(events, EventType.ALERT_CREATED)[1:] == [], "a second alert was raised"
+
+    rebuilt = AlertService(service._policy, events)
+    rebuilt.rebuild()
+    assert [(a.alert_id, a.track_id, a.state) for a in rebuilt.active] == [
+        (raised.alert_id, "TRK-00001", AlertState.ACKNOWLEDGED)
+    ]
+    rebuilt.review_cycle([track("TRK-00001", level=RiskLevel.MEDIUM, score=55)], later)
+    assert len(rebuilt.active) == 1, "the rebuilt service still maps the alert to the old track"

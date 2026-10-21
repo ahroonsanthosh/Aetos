@@ -700,11 +700,14 @@ class TrackManager:
         survivor.contributing_sensors |= retired.contributing_sensors
         survivor.last_supported = max(survivor.last_supported, retired.last_supported)
         survivor.last_seen = max(survivor.last_seen, retired.last_seen)
+        # TRACK_UPDATED explicitly: the survivor's state has not changed, and deriving the type
+        # from it would publish a second TRACK_CONFIRMED for a track confirmed long ago.
         self._emit_transition(
             survivor,
             survivor.state,
             now,
             extra={"reason": "absorbed_duplicate", "absorbed": retired.track_id},
+            event_type=EventType.TRACK_UPDATED,
         )
 
     def _retire_expired(self, now: datetime) -> None:
@@ -723,8 +726,9 @@ class TrackManager:
         previous: TrackState,
         now: datetime,
         extra: dict[str, object] | None = None,
+        event_type: EventType | None = None,
     ) -> None:
-        event_type = {
+        event_type = event_type or {
             TrackState.CONFIRMED: EventType.TRACK_CONFIRMED,
             TrackState.STALE: EventType.TRACK_STALE,
             TrackState.LOST: EventType.TRACK_LOST,

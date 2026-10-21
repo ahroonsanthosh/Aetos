@@ -71,8 +71,24 @@ proximity.**
 
   By position alone (any track within 150 m) every policy scored identically to no retirement
   at all: none ever left an object without a track near it.
-- **An alert on the retired track closes as `duplicate_track`, naming the survivor** — not as
+- **The object's risk and alert carry over to the survivor.** The two tracks were assessed
+  separately, and hysteresis (ADR 0007) can hold them at different levels — measured, a
+  duplicate at HIGH beside a survivor at MEDIUM. Retiring the HIGH one must not de-escalate
+  the object on the spot, skipping the dwell every other de-escalation is held to, so the
+  survivor inherits the higher level with the time it was reached and comes down from it on
+  the ordinary schedule. An open alert on the retired track moves to the survivor
+  (`ALERT_TRANSFERRED`) with its identifier and acknowledgement, when the survivor has none;
+  when it has one, the duplicate's closes as `duplicate_track`, naming the survivor. Never as
   `track_lost`, which tells an operator something may still be out there unwatched.
+
+  Found by running every scenario and following each retirement downstream: before this, 8
+  of 98 alerts on retired duplicates closed while the survivor — the same aircraft — had no
+  alert, most at HIGH. After: none, and the alert set and the track projection both rebuild
+  from the log into exactly what the running services hold.
+- **What does not carry over.** Classification evidence stays with the track that gathered
+  it; the survivor keeps its own and goes on accumulating. Its label can therefore be less
+  confident for a few cycles than the duplicate's was. Risk does not wait on that, because
+  the level is inherited.
 
 ## Why this is safe, and how that was checked
 

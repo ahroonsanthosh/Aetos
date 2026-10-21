@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -107,8 +108,16 @@ class RiskService:
         """
         return self._situation
 
-    def assess_cycle(self, tracks: list[Track], now: datetime) -> list[Track]:
+    def assess_cycle(
+        self,
+        tracks: list[Track],
+        now: datetime,
+        duplicates: Mapping[str, str] | None = None,
+    ) -> list[Track]:
         """Score each track, then assess what they mean together.
+
+        `duplicates` maps tracks the tracker retired this cycle as duplicates to the track each
+        duplicated (ADR 0021); see `_inherit_levels`.
 
         The two passes are deliberately sequential and independent. Per-track scoring is a pure
         function of one track; the situation pass reads every track and writes to none of their
@@ -118,6 +127,7 @@ class RiskService:
         """
         assessed: list[Track] = []
         described: list[TrackRisk] = []
+        self._inherit_levels(duplicates or {})
 
         for track in tracks:
             self._remember(track, now)
@@ -280,6 +290,24 @@ class RiskService:
             },
             track_id=track.track_id,
         )
+
+    def _inherit_levels(self, duplicates: Mapping[str, str]) -> None:
+        """Give a surviving track its retired duplicate's level, when that level is higher.
+
+        The two were one object, assessed twice, and their levels can differ: hysteresis holds
+        each where its own history put it. Without this, retiring the duplicate that stood at
+        HIGH would drop the object to its survivor's MEDIUM at once — a de-escalation that
+        skipped the dwell ADR 0007 requires of every other one. Inheriting the state, with the
+        time it was reached, means the object comes down from HIGH as it would have done had it
+        only ever carried one identifier.
+        """
+        for retired, survivor in duplicates.items():
+            inherited = self._levels.get(retired)
+            current = self._levels.get(survivor)
+            if inherited is None:
+                continue
+            if current is None or inherited.level.severity > current.level.severity:
+                self._levels[survivor] = LevelState(inherited.level, inherited.changed_at)
 
     def _forget_absent(self, tracks: list[Track]) -> None:
         """Drop everything remembered about tracks that are no longer present."""

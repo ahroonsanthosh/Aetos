@@ -113,11 +113,12 @@ class AlertService:
         """Bring the alert set into line with this cycle's assessments.
 
         `duplicates` maps tracks the tracker retired this cycle as duplicates to the track each
-        duplicated, so their alerts close as duplicates rather than as lost objects.
+        duplicated. Their alerts move to the survivor, or close as duplicates if it already has
+        one — never as lost objects (ADR 0021).
 
         Returns the alerts that changed state, so a caller can react without re-diffing.
         """
-        changed: list[Alert] = []
+        changed = self._transfer_duplicates(duplicates or {}, now)
         present: set[str] = set()
 
         for track in tracks:
@@ -178,6 +179,36 @@ class AlertService:
             return None
 
         return self._clear(alert, ClearReason.RISK_SUBSIDED, now)
+
+    def _transfer_duplicates(self, duplicates: Mapping[str, str], now: datetime) -> list[Alert]:
+        """Move a retired duplicate's open alert to its survivor, if the survivor has none.
+
+        Done before the survivor is reviewed, so the moved alert is the one its level updates,
+        escalates or lets subside — rather than the survivor raising a second alert for the
+        same incident while the first closes. Measured before this existed: a HIGH alert on a
+        retired duplicate closed while its survivor, held at MEDIUM by its own history, had
+        none — the operator's alert on a real, continuing threat simply ended.
+
+        The acknowledgement moves with it. It was an acknowledgement of the object, and asking
+        the operator to acknowledge the same aircraft again under a new number is noise.
+        """
+        moved: list[Alert] = []
+        for retired, survivor in sorted(duplicates.items()):
+            alert_id = self._by_track.get(retired)
+            if alert_id is None or survivor in self._by_track:
+                continue
+            transferred = self._open[alert_id].model_copy(
+                update={"track_id": survivor, "updated_at": now}
+            )
+            self._by_track.pop(retired, None)
+            self._remember(transferred)
+            self._record(
+                EventType.ALERT_TRANSFERRED,
+                transferred,
+                extra={"from_track_id": retired, "reason": "duplicate_track"},
+            )
+            moved.append(transferred)
+        return moved
 
     def _clear_absent(
         self, present: set[str], now: datetime, duplicates: Mapping[str, str]
@@ -381,6 +412,13 @@ class AlertService:
                             }
                         )
                     )
+            elif event.event_type is EventType.ALERT_TRANSFERRED:
+                recorded = event.payload.get(ALERT_KEY)
+                previous = event.payload.get("from_track_id")
+                if isinstance(recorded, dict) and alert_id in self._open:
+                    if isinstance(previous, str):
+                        self._by_track.pop(previous, None)
+                    self._remember(Alert.model_validate(recorded))
             elif event.event_type is EventType.ALERT_CLEARED:
                 closing = self._open.pop(alert_id, None)
                 if closing is not None:

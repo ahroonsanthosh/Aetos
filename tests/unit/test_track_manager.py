@@ -707,6 +707,9 @@ def test_the_survivor_keeps_its_identifier_and_takes_both_estimates(
     )
     older, younger = sorted(manager._active)
     before = {tid: manager._active[tid].filter_state.copy() for tid in (older, younger)}
+    for tid in (older, younger):
+        # The case that matters: a duplicate of a track the operator already has confirmed.
+        manager._active[tid].state = TrackState.CONFIRMED
 
     for i in range(3 * TrackManagerConfig().duplicate_min_cycles):
         if older not in manager._active or younger not in manager._active:
@@ -733,3 +736,6 @@ def test_the_survivor_keeps_its_identifier_and_takes_both_estimates(
         if e.track_id == older and e.payload.get("reason") == "absorbed_duplicate"
     ]
     assert len(absorbed) == 1 and absorbed[0].payload["absorbed"] == younger
+    # The survivor's lifecycle did not change, so this is an update — not a second
+    # TRACK_CONFIRMED, which the live stream does not carry and the log would misreport.
+    assert absorbed[0].event_type is EventType.TRACK_UPDATED
