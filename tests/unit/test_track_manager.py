@@ -739,3 +739,25 @@ def test_the_survivor_keeps_its_identifier_and_takes_both_estimates(
     # The survivor's lifecycle did not change, so this is an update — not a second
     # TRACK_CONFIRMED, which the live stream does not carry and the log would misreport.
     assert absorbed[0].event_type is EventType.TRACK_UPDATED
+
+
+def test_dropped_clutter_is_never_recorded_as_confirmed(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """An unsupported tentative track ends in LOST directly. It used to be walked through the
+    whole lifecycle list on the way, so every dropped false detection left a TRACK_CONFIRMED
+    and a TRACK_STALE in the log — 206 of them in five minutes of one live run, for one drone."""
+    manager.process([detection(clock, [0.0, 0.0, 100.0], "only")])
+    (track_id,) = manager._active
+    for _ in range(TrackManagerConfig().tentative_max_misses + 1):
+        clock.advance(0.5)
+        manager.process([])
+
+    lifecycle = [
+        (e.event_type, e.payload.get("previous_state"), e.payload.get("state"))
+        for e in events.read_from(1)
+        if e.track_id == track_id and e.event_type is not EventType.TRACK_COASTING
+    ]
+    assert EventType.TRACK_CONFIRMED not in [kind for kind, _, _ in lifecycle]
+    assert EventType.TRACK_STALE not in [kind for kind, _, _ in lifecycle]
+    assert lifecycle[-1] == (EventType.TRACK_LOST, "new", "lost")

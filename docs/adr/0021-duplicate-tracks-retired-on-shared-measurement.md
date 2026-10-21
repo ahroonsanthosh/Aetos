@@ -88,7 +88,11 @@ proximity.**
 - **What does not carry over.** Classification evidence stays with the track that gathered
   it; the survivor keeps its own and goes on accumulating. Its label can therefore be less
   confident for a few cycles than the duplicate's was. Risk does not wait on that, because
-  the level is inherited.
+  the level is inherited. Pooling the duplicate's sensor hints into the survivor was tried and
+  measured slightly worse against ground truth — 99.1% of survivor-cycles correctly labelled
+  in the 30 cycles after a retirement, against 99.4% without — because a duplicate's hints
+  are likelier to include a neighbour's misassociated report. Neither ever labelled a UAS as
+  anything else.
 
 ## Why this is safe, and how that was checked
 
@@ -116,8 +120,13 @@ to fail with its rule removed.
 - One drone is one track, after a short delay: the duplicate is visible for the ten cycles of
   evidence (about five seconds at the shipped tick) before it is retired.
 - **The limit, stated.** Two real objects that stay closer than sensor noise *and* are each seen
-  by only one, different, sensor would present one stream and could be merged. That is an
-  information limit — the sensors are not telling them apart — not a tuning choice, and when
-  they separate the second object's detections start a new track.
+  by only one, different, sensor would present one stream and could be merged. So could two
+  that a single sensor resolves only one of per frame, alternately — a radar whose returns
+  from two close targets flicker between them. Both are information limits — the sensors are
+  not telling the objects apart — not tuning choices, and when the objects separate the
+  second one's detections start a new track.
+- **The console follows the object.** The `TRACK_LOST` that ends a duplicate names its
+  survivor, and an operator who had the duplicate selected finds the survivor selected
+  instead, rather than an empty details panel while the aircraft is still in the air.
 - The situation assessment's `duplicate_tracks_suspected` finding stays, for the window before a
   duplicate is retired and for anything this rule does not catch.

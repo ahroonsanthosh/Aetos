@@ -521,7 +521,15 @@ class TrackManager:
 
         Stepping rather than jumping keeps every transition observable in the log, which is
         what lets replay reconstruct exactly how a track ended.
+
+        Except across states the track never earned. An unsupported NEW or TENTATIVE track goes
+        straight to LOST: walking it through the list recorded every piece of dropped clutter
+        as TRACK_CONFIRMED and then TRACK_STALE — a confirmation that never happened, in the
+        permanent record — and published a dying NEW track as TENTATIVE on its way out, so it
+        flashed onto the console in its last cycle.
         """
+        if target is TrackState.LOST and current in (TrackState.NEW, TrackState.TENTATIVE):
+            return TrackState.LOST
         order = [
             TrackState.NEW,
             TrackState.TENTATIVE,

@@ -551,6 +551,17 @@ fragmented and the operator sees a "new" object that is not new.
 **Intended handling:** coasting on predicted position through brief dropout before demoting
 state; track history retained after LOST rather than deleted.
 
+
+### FM-0212 — Dropped clutter was recorded as a confirmed track
+**Status:** Closed · **Severity:** was Medium for the record's integrity
+
+A NEW or TENTATIVE track retired for lack of support was stepped through the whole lifecycle
+list on its way to LOST, so the log recorded `TRACK_CONFIRMED` and `TRACK_STALE` for an object
+that was never confirmed, and a dying NEW track was published as TENTATIVE in its last cycle.
+Found by reading one live run's log rather than its display: 209 tracks created for one drone
+in five minutes, 206 "confirmed". Present since the lifecycle was first built. An unsupported
+track now goes straight to LOST (`_next_state_towards`), pinned by a test.
+
 ---
 
 ## System failures
