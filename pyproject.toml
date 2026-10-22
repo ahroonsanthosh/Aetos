@@ -1,6 +1,6 @@
 [project]
 name = "aetos"
-version = "0.8.0"
+version = "0.8.1"
 description = "Aetos — modular Counter-UAS command-and-control platform (software only; recommendation, never execution)"
 requires-python = ">=3.11"
 dependencies = [
