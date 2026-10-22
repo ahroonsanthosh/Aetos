@@ -2,167 +2,99 @@
   <img src="frontend/brand/aetos-logo-source.png" alt="Aetos" width="260">
 </p>
 
-# Aetos — Counter-UAS Command & Control Platform
+# Aetos
 
-**Aetos turns raw drone-sensor detections into tracked, classified, risk-scored threats and
-gives a human operator a recommendation they can audit.** Every judgement carries its
-reasons, and every event lands on an append-only log.
+**Command and control software for counter-drone teams.** Aetos takes raw
+detections from drone sensors, turns them into tracked, classified,
+risk-scored threats, and gives a human operator a clear recommendation
+they can audit.
 
 ![The Aetos operator console tracking a simulated approach](docs/assets/console.png)
 
-<sub>The operator console during a simulated approach: one drone, seen by three sensors and
-fused into one track. The amber badge says SIMULATION because this is synthetic data; the badge
-is set by the backend from the sensors actually attached, not by the interface. Also:
-[the front page](docs/assets/landing.png) · [system health](docs/assets/system-health.png).</sub>
+<sub>One drone, seen by three sensors, fused into one track. The amber
+SIMULATION badge is set by the backend from the sensors actually attached,
+not by the interface.</sub>
 
-Aetos is a modular Counter-UAS (C-UAS) command-and-control platform. It ingests detections
-from sensors, forms and maintains tracks, classifies them, assesses risk against a
-configured protected site, and presents a human operator with a **recommendation**.
+## Why it matters
 
-## Scope boundary — read this first
+Sites like airports, prisons and critical infrastructure now deal with
+drones regularly. The sensors exist, but the hard part is the layer in
+between: merging noisy detections from different sensors, deciding what is
+a real threat, and showing an operator something they can act on with
+confidence. That's what Aetos does.
 
-Aetos is **software only**. It stops at a human-facing recommendation.
+Every judgement comes with its reasons, and every event is written to an
+append-only log, so any decision can be replayed and explained afterwards.
 
-- No effector control. No weapons integration. No autonomous response execution.
-- The highest-severity output the system can produce is the recommendation category
-  `RESPONSE_RECOMMENDED`, which is advice to a human operator and nothing more.
-- This is a hard architectural boundary, not a phase-one simplification. Response and
-  effector integration is a separate future system with its own authorisation and safety
-  architecture, and does not belong in this codebase.
+## What it is, and what it isn't
 
-By default every detection is **synthetic**, from a built-in simulator. Aetos can also run
-against a real radar — `./start.sh --live`, see **[docs/live_mode.md](docs/live_mode.md)** —
-but that hardware is a testbed unit whose detection performance has never been measured
-(FM-050, FM-052). Live mode makes the system usable; it does not make the sensor trustworthy.
+Aetos is **software only, and it stops at a recommendation**. It has no
+effector control, no weapons integration and no autonomous response. The
+strongest thing it can output is `RESPONSE_RECOMMENDED`: advice to a human.
+This is a deliberate, permanent boundary, not a missing feature.
 
-## Core principle
-
-The tracking engine cannot tell whether a detection came from the simulator or from a
-physical sensor. Both produce the same canonical `Detection` through the same
-`SensorAdapter` interface. This is enforced by test, not by convention — see
-`docs/adr/0002-detection-schema-provenance.md`.
-
-## Pipeline
+## How it works
 
 ```
-sensor adapter → normalisation → association → track → classification
-              → risk assessment → decision support → operator
+sensor → normalise → associate → track → classify → assess risk → recommend → operator
 ```
 
-Each arrow is a module boundary with an explicit interface. They are never collapsed into
-a single combined pipeline function.
+Each step is its own module with a defined interface. The tracker can't
+tell a simulated detection from a real one: both arrive in the same format
+through the same adapter, and a test enforces that. So everything you see
+in simulation is the same code path a real sensor uses.
 
-## Repository layout
-
-| Path | Responsibility |
-|---|---|
-| `docs/` | Architecture, canonical schema, failure modes, decision records |
-| `backend/common/` | Cross-cutting primitives: clock, geodesy, identifiers, config |
-| `backend/ingestion/` | Detection validation and normalisation; event-bus entry point |
-| `backend/tracking/` | Association, filtering, lifecycle, prediction |
-| `backend/fusion/` | Multi-sensor reconciliation |
-| `backend/classification/` | What the object is, and how confident |
-| `backend/zones/` | Site geometry, geofencing, zone-crossing prediction |
-| `backend/risk/` | Threat scoring with reason codes |
-| `backend/decision/` | Recommendation category only — never execution |
-| `backend/events/` | Append-only durable event store; replay |
-| `backend/system_health/` | Watchdog: judges sensor silence, declares the posture, detects a stalled pipeline |
-| `backend/database/` | Persistence adapters |
-| `backend/api/` | REST + WebSocket |
-| `sensors/` | `SensorAdapter` contract, simulated adapter, testbed radar driver |
-| `scenarios/` | Named, reusable scenario definitions |
-| `frontend/` | Aetos operator interface — see its own README |
-| `twin/` | 3-D digital-twin command interface. **Standalone prototype**, not yet wired to the backend |
-| `response/` | **Empty placeholder.** Future response integration; see its README |
-| `config/` | Sites, sensor registry, environment configuration |
-| `tests/` | Unit, integration, scenario replay, chaos |
-
-## Running it
-
-One command. It sets up Python, builds the interface, starts everything and opens a browser.
+## Try it
 
 ```bash
 ./start.sh
 ```
 
-Then **http://localhost:8000** — a single process serves both the API and the operator
-interface, so there is no second terminal and no proxy to configure.
+Then open **http://localhost:8000**. One command sets up Python, builds the
+interface and starts everything. Needs Python 3.11+ and Node 20+. On
+Windows, run it from Git Bash.
 
 ```bash
-./start.sh --list                  # show the nine scenarios and what each one is for
-./start.sh h_track_crossing        # run a specific one
-./start.sh --no-scenario           # idle system, no synthetic data
-./start.sh --live                  # real radar instead of the simulator
-./start.sh --port 9000             # serve somewhere else
+./start.sh --list              # the nine built-in scenarios
+./start.sh h_track_crossing    # run one
+./start.sh --live              # a real radar instead of the simulator
 ```
 
-Needs Python 3.11+ and Node 20+. Re-running is cheap: it skips whatever is already done.
+By default all data is synthetic. Live mode works with a testbed radar
+whose detection performance hasn't been measured yet, so it proves the
+pipeline, not the sensor. See [docs/live_mode.md](docs/live_mode.md).
 
-### Windows
+Tests: `pytest -q` for the backend, `cd frontend && npm test` for the
+interface.
 
-`start.sh` is a bash script — run it from **Git Bash**, not PowerShell or cmd.exe. If you
-cloned with `git clone`, you already have Git for Windows installed, which includes it:
-right-click the repository folder and choose **Git Bash Here**, then run `./start.sh` exactly
-as above. It handles the Windows-specific paths (`.venv\Scripts\`) and opens your default
-browser itself.
+## Deploying
 
-There is no native PowerShell equivalent yet. If you'd rather not install or use Git Bash, say
-so and one can be added — but treat that as untested until it has actually been run on
-Windows (FM-040 has the same caveat for the container files).
-
-### Tests
+Aetos requires a login (viewer, operator and admin roles) and keeps an
+audit trail of who did what. It refuses to start in an unsafe
+configuration: it binds to localhost only, unless you put it behind a TLS
+reverse proxy with `--behind-proxy`. Create the first account with:
 
 ```bash
-pytest -q                      # backend
-cd frontend && npm test        # interface
+.venv/bin/python -m backend.auth.admin add --username alice --role admin
 ```
 
-## Before you put this anywhere
+See [docs/deployment.md](docs/deployment.md) for the full checklist, and
+read [docs/failure_modes.md](docs/failure_modes.md) before relying on it in
+the field.
 
-**Aetos requires a login, and refuses to start in a configuration that would expose it.**
-Session cookies, three roles (`viewer` / `operator` / `admin`), scrypt password hashing, and
-an audit trail that records who logged in, who acknowledged what, and when.
+## Repository
 
-It does **not** terminate TLS. It binds loopback by default and refuses to bind anything else
-without `--behind-proxy`, which is your assertion that a reverse proxy in front of it is
-handling TLS. It also refuses to start unauthenticated off loopback, or with no accounts at
-all. Create the first account before deploying:
-
-```bash
-# Use the interpreter inside .venv, not the bare `python` on PATH — the dependencies live
-# there. On Windows the layout is Scripts, not bin.
-.venv/bin/python -m backend.auth.admin add --username alice --role admin           # Linux, macOS
-.venv/Scripts/python.exe -m backend.auth.admin add --username alice --role admin   # Windows
-```
-
-`./start.sh` prints the correct command for your machine if no account exists yet.
-
-**[docs/deployment.md](docs/deployment.md)** has the proxy configuration and a post-deploy
-checklist. [ADR 0016](docs/adr/0016-authentication-and-authorisation.md) explains the design;
-`docs/failure_modes.md` FM-001 records what this replaced.
-
-For a single-user machine, `--no-auth` restores the old behaviour — every action attributed to
-one local operator with nothing checked. It works on loopback only, and `GET /system/health`
-says so in as many words when it is in use.
-
-**Read `docs/failure_modes.md` before relying on this.** Authentication is closed; sensor
-silence, restart recovery and saturation are not, and they matter more on a site than on a
-laptop.
+| Path        | What's there                                                                  |
+| ----------- | ----------------------------------------------------------------------------- |
+| `backend/`  | Ingestion, tracking, fusion, classification, zones, risk, decision, event log |
+| `sensors/`  | The sensor adapter contract, the simulator and the testbed radar driver       |
+| `frontend/` | The operator console                                                          |
+| `twin/`     | A standalone 3D digital twin prototype, not yet wired to the backend          |
+| `docs/`     | Architecture, schema, failure modes and design decisions (`docs/adr/`)        |
 
 ## Status
 
-Under active construction. See `docs/architecture.md` for the current state of each module
-and `docs/adr/` for why things are built the way they are.
-
-## Where this is going
-
-`docs/vision.md` records the long-term product vision — hardware-agnostic sensor integration,
-multi-sensor fusion, a site digital twin, asset-aware protection, distributed nodes, fleet
-and cross-site coordination, and the rest. It is **aspirational**, marks the build status of
-every capability, and does not relax the scope boundary above: the response capabilities it
-describes are decision support, and `RECOMMENDED`, `AUTHORISED` and `EXECUTED` remain three
-distinct states with three distinct authors.
-
-The digital twin is the furthest along of those: `twin/` is a standalone 3-D command interface
-prototype with its own simulator, developed on its own until it is ready to be wired to the
-backend. See `twin/README.md`.
+In active development. The roadmap (multi-sensor fusion at scale, a site
+digital twin, distributed nodes, cross-site coordination) is in
+[docs/vision.md](docs/vision.md). Current state of each module:
+[docs/architecture.md](docs/architecture.md).
