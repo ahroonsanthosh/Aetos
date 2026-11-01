@@ -135,6 +135,29 @@ export interface DisplayTrack {
   readonly lastAppliedSeq: number
 }
 
+/**
+ * The tracks an operator is shown, from everything the backend holds.
+ *
+ * Filtered on the backend's own `displayable` judgement, never re-derived here. That withholds
+ * NEW tracks — a single unconfirmed return, which is what clutter and a duplicate's surplus
+ * detection look like — from the list, the count and the selection, as the map already did.
+ * Showing them made one drone flicker between one and two rows every second or two.
+ * They remain in the API and in the event log; only the operator picture leaves them out.
+ */
+export function operatorPicture(
+  views: Iterable<TrackView>,
+  frame: LocalFrame,
+): DisplayTrack[] {
+  return (
+    [...views]
+      .filter((view) => view.displayable)
+      .map((view) => toDisplayTrack(view, frame))
+      // Stable ordering by identifier. Sorting by a changing quantity would make rows jump
+      // under an operator's cursor every update cycle.
+      .sort((a, b) => a.id.localeCompare(b.id))
+  )
+}
+
 export function toDisplayTrack(view: TrackView, frame: LocalFrame): DisplayTrack {
   const state = STATE_LABELS[view.state]
   const enu = frame.toEnu(view.position)

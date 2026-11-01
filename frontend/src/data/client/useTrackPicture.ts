@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SiteView, StreamedEvent, TrackView } from '../models/api'
 import { LocalFrame } from '../models/geo'
 import { rememberRetirement, survivorNamedBy } from '../models/succession'
-import { toDisplayTrack, type DisplayTrack } from '../models/track'
+import { operatorPicture, type DisplayTrack } from '../models/track'
 import { api, ApiError } from './api'
 import { useAuth } from './auth'
 import { EventStream, type StreamStatus } from './stream'
@@ -143,14 +143,10 @@ export function useTrackPicture(): TrackPicture {
 
   const frame = useMemo(() => (site ? new LocalFrame(site.reference) : null), [site])
 
-  const tracks = useMemo(() => {
-    if (!frame) return []
-    return [...tracksById.values()]
-      .map((view) => toDisplayTrack(view, frame))
-      // Stable ordering by identifier. Sorting by a changing quantity would make rows jump
-      // under an operator's cursor every update cycle.
-      .sort((a, b) => a.id.localeCompare(b.id))
-  }, [tracksById, frame])
+  const tracks = useMemo(
+    () => (frame ? operatorPicture(tracksById.values(), frame) : []),
+    [tracksById, frame],
+  )
 
   return { tracks, site, frame, status, error, latestSeq, mergedInto, reload }
 }

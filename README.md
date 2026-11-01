@@ -2,12 +2,13 @@
   <img src="frontend/brand/aetos-logo-source.png" alt="Aetos" width="260">
 </p>
 
-# Aetos
+<h1 align="center">Aetos</h1>
 
-**Command and control software for counter-drone teams.** Aetos takes raw
-detections from drone sensors, turns them into tracked, classified,
-risk-scored threats, and gives a human operator a clear recommendation
-they can audit.
+<p align="center">Command and control software for counter-drone teams.</p>
+
+Aetos takes raw detections from drone sensors, turns them into tracked,
+classified, risk-scored threats, and gives a human operator a clear
+recommendation they can audit.
 
 ![The Aetos operator console tracking a simulated approach](docs/assets/console.png)
 
@@ -98,3 +99,10 @@ In active development. The roadmap (multi-sensor fusion at scale, a site
 digital twin, distributed nodes, cross-site coordination) is in
 [docs/vision.md](docs/vision.md). Current state of each module:
 [docs/architecture.md](docs/architecture.md).
+
+Changes are listed in [CHANGELOG.md](CHANGELOG.md). Found a security
+problem? See [SECURITY.md](SECURITY.md).
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).

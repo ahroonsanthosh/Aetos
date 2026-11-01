@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
+from scipy.stats import chi2
 
 from backend.common.clock import SimClock
 from backend.common.geodesy import GeodeticPoint, LocalFrame
 from backend.events.store import SqliteEventStore
 from backend.events.types import EventType
-from backend.tracking.filters.kalman import isotropic_covariance
+from backend.tracking.filters.kalman import KalmanState, isotropic_covariance
 from backend.tracking.models import TrackState
 from backend.tracking.track_manager.manager import (
     IncomingDetection,
     TrackManager,
     TrackManagerConfig,
+    _colocated_pairs,
+    _same_state,
 )
 
 START = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
@@ -761,3 +765,58 @@ def test_dropped_clutter_is_never_recorded_as_confirmed(
     assert EventType.TRACK_CONFIRMED not in [kind for kind, _, _ in lifecycle]
     assert EventType.TRACK_STALE not in [kind for kind, _, _ in lifecycle]
     assert lifecycle[-1] == (EventType.TRACK_LOST, "new", "lost")
+
+
+def test_the_older_duplicate_is_the_one_created_first_not_the_one_with_the_earlier_clock(
+    manager: TrackManager, clock: SimClock, events: SqliteEventStore
+) -> None:
+    """Which track the operator has been watching is a fact about this tracker, not about a
+    sensor's clock. Ingestion accepts tens of seconds of skew, so a duplicate started by a
+    lagging sensor carries an earlier `first_seen` than the track it duplicates; ordering by
+    that would retire the operator's track and keep the newcomer."""
+    manager.process([detection(clock, [0.0, 0.0, 100.0], "a", sensor="RADAR-N")])
+    (watched,) = manager._active
+    clock.advance(5.0)
+    lagging = detection(clock, [20.0, 0.0, 100.0], "b", sensor="RADAR-S")
+    lagging = dataclasses.replace(lagging, timestamp=clock.now() - timedelta(seconds=25))
+    manager._initiate(lagging, clock.now())
+    (newcomer,) = set(manager._active) - {watched}
+    assert manager._active[newcomer].first_seen < manager._active[watched].first_seen
+
+    for i in range(3 * TrackManagerConfig().duplicate_min_cycles):
+        if newcomer not in manager._active or manager._active[newcomer].state is TrackState.LOST:
+            break
+        manager._retire_duplicates({watched} if i % 2 == 0 else {newcomer}, clock.now())
+
+    (retired,) = lost_events(events, "duplicate")
+    assert retired.track_id == newcomer
+    assert retired.payload["duplicate_of"] == watched
+
+
+def test_the_batched_co_location_test_agrees_with_the_pair_by_pair_one() -> None:
+    """`_colocated_pairs` exists only to be fast; it must decide exactly what `_same_state`
+    decides, pair for pair — including pairs near the threshold, covariances of every size, and
+    a singular one that forces the fallback."""
+    rng = np.random.default_rng(21)
+    threshold = float(chi2.ppf(0.99, 6))
+
+    def state(spread_m: float, sigma: float) -> KalmanState:
+        mean = np.concatenate([rng.normal(0.0, spread_m, 3), rng.normal(0.0, 3.0, 3)])
+        root = rng.normal(0.0, sigma, (6, 6))
+        return KalmanState(mean, root @ root.T + np.eye(6) * sigma)
+
+    for trial in range(40):
+        states = [
+            state(rng.choice([30.0, 300.0, 3_000.0]), rng.choice([1.0, 10.0, 200.0]))
+            for _ in range(int(rng.integers(2, 40)))
+        ]
+        if trial % 10 == 0:
+            states.append(KalmanState(states[0].mean.copy(), np.zeros((6, 6))))
+            states.append(KalmanState(states[0].mean.copy(), np.zeros((6, 6))))
+        expected = [
+            (i, j)
+            for i in range(len(states))
+            for j in range(i + 1, len(states))
+            if _same_state(states[i], states[j], threshold)
+        ]
+        assert _colocated_pairs(states, threshold) == expected

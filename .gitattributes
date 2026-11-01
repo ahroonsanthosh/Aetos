@@ -1,0 +1,9 @@
+# Line endings: LF in the repo and the working copy, so start.sh runs from Git Bash on Windows.
+* text=auto eol=lf
+# Binary: never diff or convert.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pmtiles binary

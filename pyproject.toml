@@ -1,7 +1,11 @@
 [project]
 name = "aetos"
-version = "0.8.1"
-description = "Aetos — modular Counter-UAS command-and-control platform (software only; recommendation, never execution)"
+version = "0.8.2"
+description = "Command and control software for counter-drone teams. Software only: it recommends, it never acts."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Ahroon Santhosh" }]
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",
@@ -26,7 +30,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -41,6 +45,7 @@ include = ["backend*", "sensors*", "scenarios*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["error::DeprecationWarning"]
 
 [tool.ruff]

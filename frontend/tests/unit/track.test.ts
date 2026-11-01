@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ThreatView, TrackHistoryPointView, TrackView } from '../../src/data/models/api'
 import { LocalFrame } from '../../src/data/models/geo'
-import { toDisplayTrack, toHistoryPoint } from '../../src/data/models/track'
+import { operatorPicture, toDisplayTrack, toHistoryPoint } from '../../src/data/models/track'
 
 const SITE = { latitude: 53.35, longitude: -6.26, altitude_m: 0 }
 const frame = new LocalFrame(SITE)
@@ -285,5 +285,20 @@ describe('staleness', () => {
     const track = toDisplayTrack(view({ tracking: tracking(null) }), frame)
 
     expect(track.secondsSinceDetection).toBeNull()
+  })
+})
+
+describe('the operator picture', () => {
+  it('withholds what the backend says is not displayable, and orders by identifier', () => {
+    const picture = operatorPicture(
+      [
+        view({ track_id: 'TRK-00009', state: 'confirmed', displayable: true }),
+        // A single unconfirmed return: the backend withholds it, so must the list.
+        view({ track_id: 'TRK-00010', state: 'new', displayable: false }),
+        view({ track_id: 'TRK-00002', state: 'tentative', displayable: true }),
+      ],
+      frame,
+    )
+    expect(picture.map((t) => t.id)).toEqual(['TRK-00002', 'TRK-00009'])
   })
 })

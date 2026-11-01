@@ -47,7 +47,9 @@ proximity.**
   again from nothing, so two real contacts that pass close twice cannot add two short
   coincidences into one long one.
 - **The older track keeps its identifier and takes both estimates.** Keeping the older keeps
-  the identifier the operator has been watching. But a duplicate can form *because* the older
+  the identifier the operator has been watching. "Older" means created first by this tracker, not
+  the earlier `first_seen`: that is on the sensor's clock, and with the skew ingestion accepts
+  a duplicate started by a lagging sensor would look older than the track it duplicates. But a duplicate can form *because* the older
   track is falling behind its object — the sweep found one in the swarm running 7 m/s slow,
   which lost its drone 2.5 s after the well-fed newcomer was retired. So the survivor does not
   keep its own estimate alone: the two took turns on mostly different measurements, each holds
@@ -116,6 +118,10 @@ inside the co-location gate, are never merged; two short meetings do not add up.
 to fail with its rule removed.
 
 ## Consequences
+
+- **Cost.** Every pair of live tracks is tested each cycle, on the event loop the API shares.
+  Batched, with an exact lower bound pruning pairs that cannot pass, that is about 5 ms at the
+  tracker's 200-track ceiling; tested pair by pair it was 155 ms of a 500 ms tick.
 
 - One drone is one track, after a short delay: the duplicate is visible for the ten cycles of
   evidence (about five seconds at the shipped tick) before it is retired.
