@@ -93,6 +93,11 @@ dependency and renders identically offline.
   seconds of the two tracks taking turns (`docs/failure_modes.md` FM-023, ADR 0021). The
   interface does not hide the duplicate in the meantime. When it is retired, a selection on it
   moves to the track that carries on (`src/data/models/succession.ts`).
+- **Single unconfirmed returns are not shown.** A NEW track — one detection, not yet evidence of
+  an object — is left off the map, the track list and the count, on the backend's own
+  `displayable` flag (`operatorPicture` in `src/data/models/track.ts`). Showing them in the list
+  made one drone flicker between one and five rows: measured live, one row in 43% of
+  half-second samples before, 94% after. They stay in the API and the event log.
 - **Sensor runtime status is not broken out per sensor.** The watchdog judges every source and
   the System Health page shows the result and the overall posture, but the Sensors page shows
   placement only. Per-sensor status there is not invented.

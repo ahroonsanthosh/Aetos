@@ -13,6 +13,7 @@ and its history is retained (spec §5).
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -99,6 +100,52 @@ def _same_state(left: KalmanState, right: KalmanState, threshold: float) -> bool
     except np.linalg.LinAlgError:
         return False
     return distance_squared <= threshold
+
+
+def _colocated_pairs(states: list[KalmanState], threshold: float) -> list[tuple[int, int]]:
+    """Every index pair `(i, j)`, `i < j`, whose states pass `_same_state`, tested together.
+
+    The same answer as calling `_same_state` on each pair, at a fraction of the cost: the pair
+    loop ran every cycle on the event loop the API shares, and at the 200-track ceiling it took
+    150 ms of a 500 ms tick — exactly when the picture is saturated and time matters most.
+
+    Two exact prunings come first. The prefilter distance, as before. Then a lower bound on the
+    squared Mahalanobis distance, ``|offset|^2 / trace(S)`` — no larger than the true value,
+    since the largest eigenvalue of a covariance never exceeds its trace — so a pair it rules
+    out would have failed the full test too. Only the survivors pay for a solve, and those are
+    solved as one batch.
+    """
+    count = len(states)
+    if count < 2:
+        return []
+    means = np.stack([state.mean for state in states])
+    covariances = np.stack([state.covariance for state in states])
+    traces = np.trace(covariances, axis1=1, axis2=2)
+
+    first, second = np.triu_indices(count, k=1)
+    offsets = means[first] - means[second]
+    squared = np.einsum("ij,ij->i", offsets, offsets)
+    near = np.linalg.norm(offsets[:, :3], axis=1) <= _PREFILTER_SEPARATION_M
+    possible = near & (squared <= threshold * (traces[first] + traces[second]))
+    first, second, offsets = first[possible], second[possible], offsets[possible]
+    if first.size == 0:
+        return []
+
+    try:
+        solved = np.linalg.solve(
+            covariances[first] + covariances[second], offsets[..., np.newaxis]
+        )[..., 0]
+    except np.linalg.LinAlgError:
+        # One singular sum fails the whole batch; fall back to the pair-by-pair test, which
+        # treats a singular pair as not co-located.
+        return [
+            (int(i), int(j))
+            for i, j in zip(first, second, strict=True)
+            if _same_state(states[i], states[j], threshold)
+        ]
+    distances = np.einsum("ij,ij->i", offsets, solved)
+    within = distances <= threshold
+    return [(int(i), int(j)) for i, j in zip(first[within], second[within], strict=True)]
 
 
 _PREFILTER_SEPARATION_M = 2_000.0
@@ -217,6 +264,12 @@ class _ActiveTrack:
     consecutive_misses: int = 0
     contributing_sensors: set[str] = field(default_factory=set)
 
+    serial: int = 0
+    """Order of creation in this tracker. Decides which of two duplicates is the older
+    (ADR 0021) — not `first_seen`, which is on the sensor's clock: with the skew ingestion
+    accepts, a duplicate started by a lagging sensor could look older than the track the
+    operator had been watching, and that track would be the one retired."""
+
     threat: TrackThreat = field(default_factory=TrackThreat)
     """The most recent risk assessment, held here for the same reason as `classification`
     below: the tracker owns the Track objects and emits a full snapshot on every event, so a
@@ -300,6 +353,7 @@ class TrackManager:
         self._kalman = kalman or ConstantVelocityFilter()
         self._associator = associator or GlobalNearestNeighbourAssociator(self._kalman)
         self._ids = track_id_generator()
+        self._serials = itertools.count(1)
         self._active: dict[str, _ActiveTrack] = {}
         self._last_assignments: dict[str, str] = {}
         self._pairs: dict[tuple[str, str], _PairEvidence] = {}
@@ -566,6 +620,7 @@ class TrackManager:
             last_updated=now,
             detection_count=1,
             contributing_sensors=set(detection.sensors),
+            serial=next(self._serials),
         )
         self._active[track.track_id] = track
 
@@ -613,23 +668,20 @@ class TrackManager:
         threshold = float(chi2.ppf(self._associator.config.gate_confidence, _STATE_DOF))
         seen: set[tuple[str, str]] = set()
 
-        for i, first in enumerate(candidates):
-            for second in candidates[i + 1 :]:
-                older, younger = sorted((first, second), key=lambda t: (t.first_seen, t.track_id))
-                key = (older.track_id, younger.track_id)
-                if not _same_state(older.filter_state, younger.filter_state, threshold):
-                    continue
-                seen.add(key)
+        for i, j in _colocated_pairs([t.filter_state for t in candidates], threshold):
+            older, younger = sorted((candidates[i], candidates[j]), key=lambda t: t.serial)
+            key = (older.track_id, younger.track_id)
+            seen.add(key)
 
-                evidence = self._pairs.setdefault(key, _PairEvidence())
-                older_updated = older.track_id in updated
-                younger_updated = younger.track_id in updated
-                if older_updated or younger_updated:
-                    evidence.cycles += 1
-                if older_updated and younger_updated:
-                    evidence.shared += 1
-                evidence.older_updates += older_updated
-                evidence.younger_updates += younger_updated
+            evidence = self._pairs.setdefault(key, _PairEvidence())
+            older_updated = older.track_id in updated
+            younger_updated = younger.track_id in updated
+            if older_updated or younger_updated:
+                evidence.cycles += 1
+            if older_updated and younger_updated:
+                evidence.shared += 1
+            evidence.older_updates += older_updated
+            evidence.younger_updates += younger_updated
 
         # A pair that drifted apart, or lost a member, starts again from nothing: evidence
         # must be continuous, or two objects that met briefly twice could add up to one.
