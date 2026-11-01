@@ -6,44 +6,38 @@
 
 <p align="center">Command and control software for counter-drone teams.</p>
 
-Aetos takes raw detections from drone sensors, turns them into tracked,
-classified, risk-scored threats, and gives a human operator a clear
-recommendation they can audit.
+Drones turn up over airports, prisons and power stations all the time now. The sensors to spot
+them already exist. What I kept seeing missing was the layer in between: something that takes
+noisy detections from several different sensors, works out which ones are the same drone,
+decides whether it's actually a threat, and shows the person on duty something they can act on
+without second-guessing it.
+
+So I built Aetos.
 
 ![The Aetos operator console tracking a simulated approach](docs/assets/console.png)
 
-<sub>One drone, seen by three sensors, fused into one track. The amber
-SIMULATION badge is set by the backend from the sensors actually attached,
-not by the interface.</sub>
+<sub>One drone, seen by three sensors, fused into one track. The amber SIMULATION badge comes
+from the backend, based on which sensors are actually attached, not from the interface.</sub>
 
-## Why it matters
+## What it does
 
-Sites like airports, prisons and critical infrastructure now deal with
-drones regularly. The sensors exist, but the hard part is the layer in
-between: merging noisy detections from different sensors, deciding what is
-a real threat, and showing an operator something they can act on with
-confidence. That's what Aetos does.
-
-Every judgement comes with its reasons, and every event is written to an
-append-only log, so any decision can be replayed and explained afterwards.
-
-## What it is, and what it isn't
-
-Aetos is **software only, and it stops at a recommendation**. It has no
-effector control, no weapons integration and no autonomous response. The
-strongest thing it can output is `RESPONSE_RECOMMENDED`: advice to a human.
-This is a deliberate, permanent boundary, not a missing feature.
-
-## How it works
+Aetos takes raw detections, turns them into tracks, classifies them, scores the risk, and gives
+the operator a recommendation. Every judgement comes with its reasons, and every event goes into
+an append-only log, so I can replay any decision afterwards and show exactly why it was made.
 
 ```
 sensor → normalise → associate → track → classify → assess risk → recommend → operator
 ```
 
-Each step is its own module with a defined interface. The tracker can't
-tell a simulated detection from a real one: both arrive in the same format
-through the same adapter, and a test enforces that. So everything you see
-in simulation is the same code path a real sensor uses.
+Each step is its own module. The tracker can't tell a simulated detection from a real one: both
+come in through the same adapter in the same format, and a test makes sure it stays that way.
+So what you see in simulation is the same code path a real sensor goes through.
+
+## What it won't do
+
+Aetos is software only, and it stops at a recommendation. No effector control, no weapons, no
+autonomous response. The strongest thing it will ever say is `RESPONSE_RECOMMENDED`, and that's
+advice to a human. I made that a hard line on purpose. It isn't a missing feature.
 
 ## Try it
 
@@ -51,9 +45,8 @@ in simulation is the same code path a real sensor uses.
 ./start.sh
 ```
 
-Then open **http://localhost:8000**. One command sets up Python, builds the
-interface and starts everything. Needs Python 3.11+ and Node 20+. On
-Windows, run it from Git Bash.
+Then open **http://localhost:8000**. That one command sets up Python, builds the interface and
+starts everything. You need Python 3.11+ and Node 20+. On Windows, run it from Git Bash.
 
 ```bash
 ./start.sh --list              # the nine built-in scenarios
@@ -61,47 +54,52 @@ Windows, run it from Git Bash.
 ./start.sh --live              # a real radar instead of the simulator
 ```
 
-By default all data is synthetic. Live mode works with a testbed radar
-whose detection performance hasn't been measured yet, so it proves the
-pipeline, not the sensor. See [docs/live_mode.md](docs/live_mode.md).
+Out of the box, everything is synthetic. Live mode runs against a testbed radar, but I haven't
+measured its detection performance yet, so for now it proves the pipeline, not the sensor. More
+in [docs/live_mode.md](docs/live_mode.md).
 
-Tests: `pytest -q` for the backend, `cd frontend && npm test` for the
-interface.
+Tests: `pytest -q` for the backend, `cd frontend && npm test` for the console.
 
-## Deploying
+## Running it for real
 
-Aetos requires a login (viewer, operator and admin roles) and keeps an
-audit trail of who did what. It refuses to start in an unsafe
-configuration: it binds to localhost only, unless you put it behind a TLS
-reverse proxy with `--behind-proxy`. Create the first account with:
+Aetos needs a login (viewer, operator and admin roles) and keeps an audit trail of who did what.
+It won't start in a setup I consider unsafe: it only listens on localhost unless you put it
+behind a TLS reverse proxy and pass `--behind-proxy`. Create the first account with:
 
 ```bash
 .venv/bin/python -m backend.auth.admin add --username alice --role admin
 ```
 
-See [docs/deployment.md](docs/deployment.md) for the full checklist, and
-read [docs/failure_modes.md](docs/failure_modes.md) before relying on it in
-the field.
+The full checklist is in [docs/deployment.md](docs/deployment.md). Please read
+[docs/failure_modes.md](docs/failure_modes.md) before you rely on it anywhere that matters.
+I write down every way I've found it can go wrong, including the ones I haven't fixed.
 
-## Repository
+## What it can't do yet
+
+- The radar in live mode is a testbed unit with unmeasured detection performance.
+- The 3D digital twin in `twin/` is a standalone prototype. It isn't wired to the backend yet.
+- One drone sometimes still shows as more than one track for a moment, while the evidence that
+  two tracks are the same object builds up. It's one row about 94 % of the time now, up from 43 %.
+
+If it breaks, [open an issue](https://github.com/ahroonsanthosh/Aetos/issues). Found a security
+problem? See [SECURITY.md](SECURITY.md).
+
+## What's where
 
 | Path        | What's there                                                                  |
 | ----------- | ----------------------------------------------------------------------------- |
 | `backend/`  | Ingestion, tracking, fusion, classification, zones, risk, decision, event log |
 | `sensors/`  | The sensor adapter contract, the simulator and the testbed radar driver       |
 | `frontend/` | The operator console                                                          |
-| `twin/`     | A standalone 3D digital twin prototype, not yet wired to the backend          |
+| `twin/`     | The 3D digital twin prototype                                                 |
 | `docs/`     | Architecture, schema, failure modes and design decisions (`docs/adr/`)        |
 
-## Status
+## Where it's going
 
-In active development. The roadmap (multi-sensor fusion at scale, a site
-digital twin, distributed nodes, cross-site coordination) is in
-[docs/vision.md](docs/vision.md). Current state of each module:
-[docs/architecture.md](docs/architecture.md).
-
-Changes are listed in [CHANGELOG.md](CHANGELOG.md). Found a security
-problem? See [SECURITY.md](SECURITY.md).
+It's just me working on this, and it's in active development. Next up: fusion across more
+sensors, a digital twin of the site, distributed nodes and coordination across sites. The longer
+version is in [docs/vision.md](docs/vision.md), and where each module stands today is in
+[docs/architecture.md](docs/architecture.md). Changes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
