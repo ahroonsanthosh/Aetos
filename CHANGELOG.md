@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.3 (2026-11-01)
+
+**Docs**: the README is rewritten in my own voice, with a list of what Aetos can't do yet.
+
 ## 0.8.2 (2026-11-01)
 
 **Fixed**: single unconfirmed returns no longer flicker into the operator's track list. The map
