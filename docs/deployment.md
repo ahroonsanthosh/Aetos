@@ -8,6 +8,43 @@ Read `docs/failure_modes.md` before deploying. It is the honest list of what thi
 not do, and several entries matter more once the system is on a network than they did on a
 laptop.
 
+## Hosted (Render, Fly, Railway)
+
+The quickest way online, with no shell anywhere. The `Dockerfile` at the repository root
+builds the interface and the backend into one image meant for a host that terminates TLS in
+front of it, which is what makes the `--behind-proxy` baked into its entrypoint true. It binds
+`0.0.0.0:$PORT` (8000 if the host sets none) and runs `b_approaching_threat` with `--loop`, so
+the picture is not empty for whoever opens it hours later.
+
+**Accounts come from the environment**, because these hosts usually give no shell to run
+`backend.auth.admin` in, and a free tier's disk forgets anything made by hand at the next
+restart. Set these as secrets in the host's dashboard:
+
+| Variable | |
+|---|---|
+| `AETOS_ADMIN_USERNAME`, `AETOS_ADMIN_PASSWORD` | Required. An admin account. Password 12+ characters |
+| `AETOS_VIEWER_USERNAME`, `AETOS_VIEWER_PASSWORD` | Optional. A read-only account to share |
+
+Every start makes those accounts match the environment: created if missing, password and role
+reset if they differ. Change the password in the dashboard and redeploy to rotate it. A
+username without a password, a short password, or the same name for both refuses the start
+with a message saying which. With nothing set there are no accounts, and the guard refuses to
+start, as it would anywhere else. Accounts made with the CLI on a persistent disk are left
+alone.
+
+**Render.** `render.yaml` is a blueprint for exactly this. Use the button in the README, or
+New > Blueprint in the dashboard. The free plan sleeps after 15 minutes idle (about a minute to
+wake) and has no persistent disk, so every wake starts with an empty event log. To keep history,
+move to a paid plan and attach a disk at `/app/data`. Size that disk deliberately: nothing
+rotates the event log (FM-003), and the looped scenario writes it at roughly 1 MB a minute.
+
+**Anywhere else.** Point the host at the root `Dockerfile`, set the variables above, and make
+sure only its TLS proxy can reach the container port. To run a different scenario, override the
+command with any `backend.main` arguments, for example `--scenario h_track_crossing --loop`.
+
+What the rest of this document says about rate limiting, backups and failure modes still holds
+for a hosted instance; a public URL is a network deployment like any other.
+
 ## 1. Create the first account
 
 ```bash

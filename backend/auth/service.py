@@ -340,6 +340,31 @@ class AuthService:
         )
         self._events.append(EventType.USER_PASSWORD_CHANGED, SOURCE, payload={"user_id": user_id})
 
+    def ensure_account(self, username: str, password: str, role: Role) -> str:
+        """Make `username` exist with exactly this password and role.
+
+        Returns `"created"`, `"updated"` or `"unchanged"`. Used by the environment bootstrap
+        (`backend.auth.bootstrap`), where the hosting platform's secret store is the source of
+        truth for the account and a restart must converge on it rather than fail because the
+        account already exists. Nothing is written when nothing differs, so a restart does not
+        add a password-change event to the log every time.
+        """
+        normalised = username.strip().lower()
+        user = self._users.by_username(normalised)
+        if user is None:
+            self.create_user(username=normalised, password=password, role=role)
+            return "created"
+
+        changed = False
+        credential = self._credentials.get(user.user_id)
+        if credential is None or not verify_password(password, credential.password_hash):
+            self.set_password(user.user_id, password)
+            changed = True
+        if user.role != role:
+            self.set_role(user.user_id, role)
+            changed = True
+        return "updated" if changed else "unchanged"
+
     def set_role(self, user_id: str, role: Role) -> User | None:
         user = self._users.get(user_id)
         if user is None:

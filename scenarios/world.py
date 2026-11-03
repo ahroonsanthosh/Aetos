@@ -29,16 +29,31 @@ class ScenarioWorld:
     scenario fails at load rather than several minutes into a run.
     """
 
-    __slots__ = ("_scenario", "_epoch", "_trajectories")
+    __slots__ = ("_scenario", "_epoch", "_trajectories", "_period_s")
 
     def __init__(
-        self, scenario: Scenario, epoch: datetime, step_s: float = TRAJECTORY_STEP_S
+        self,
+        scenario: Scenario,
+        epoch: datetime,
+        step_s: float = TRAJECTORY_STEP_S,
+        loop_gap_s: float | None = None,
     ) -> None:
+        """`loop_gap_s`, when set, replays the scenario forever: it runs to the end, the sky
+        stays empty for that many seconds, and it starts again from the beginning.
+
+        For an unattended demonstration (a hosted instance someone opens hours after it
+        started), not for evaluation. The gap is what keeps it honest to the tracker: the last
+        run's tracks coast out and retire on an empty sky before the next run's objects appear,
+        rather than the same object jumping from its end point back to its start.
+        """
         if epoch.tzinfo is None:
             raise ValueError("scenario epoch must be timezone-aware")
+        if loop_gap_s is not None and loop_gap_s < 0:
+            raise ValueError("loop gap must not be negative")
 
         self._scenario = scenario
         self._epoch = epoch.astimezone(UTC)
+        self._period_s = None if loop_gap_s is None else scenario.duration_s + loop_gap_s
         self._trajectories = tuple(
             ObjectTrajectory(spec, scenario.duration_s, step_s) for spec in scenario.objects
         )
@@ -52,8 +67,12 @@ class ScenarioWorld:
         return self._epoch
 
     def elapsed_s(self, when: datetime) -> float:
-        """Seconds into the scenario. Negative before it starts."""
-        return (when.astimezone(UTC) - self._epoch).total_seconds()
+        """Seconds into the scenario (into the current run, when looping). Negative before it
+        starts."""
+        elapsed = (when.astimezone(UTC) - self._epoch).total_seconds()
+        if self._period_s is not None and elapsed >= 0:
+            return elapsed % self._period_s
+        return elapsed
 
     def objects_at(self, when: datetime) -> tuple[TruthObject, ...]:
         """Every object in the air at `when`, in site-relative ENU metres."""
@@ -90,4 +109,6 @@ class ScenarioWorld:
         return degradation
 
     def is_finished(self, when: datetime) -> bool:
+        if self._period_s is not None:
+            return False
         return self.elapsed_s(when) > self._scenario.duration_s

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+**Added**: one-click hosting. A `Dockerfile` at the repository root and a Render blueprint
+(`render.yaml`) put Aetos online with no terminal. Accounts can be declared with
+`AETOS_ADMIN_USERNAME`/`AETOS_ADMIN_PASSWORD`, plus an optional read-only
+`AETOS_VIEWER_USERNAME`/`AETOS_VIEWER_PASSWORD`, for hosts with no shell. `--loop` replays a
+scenario forever with an empty sky between runs, so a hosted console is never left empty.
+
+**Fixed**: the container files no longer sit in the wrong directory or refuse to start (FM-040).
+
 ## 0.8.3 (2026-11-01)
 
 **Docs**: the README is rewritten in my own voice, with a list of what Aetos can't do yet.
