@@ -4,7 +4,7 @@
 # image: only the built bundle crosses over.
 
 # ---- Stage 1: build the operator interface ----------------------------------------------
-FROM node:20-slim AS interface
+FROM node:22-slim AS interface
 
 WORKDIR /build/frontend
 
@@ -41,9 +41,9 @@ RUN pip install --no-cache-dir --quiet -e .
 
 COPY --from=interface /build/frontend/dist ./frontend/dist
 
-# The event log and the projection live here. Mounted as a volume in compose so a restart
-# does not lose the record — the log is the source of truth, and a container that discards
-# it on every run cannot demonstrate replay or recovery.
+# The event log, the projection and the account table live here. Mount a volume on it if the
+# host offers one; without one (Render's free tier, for example) every restart starts a fresh
+# history, and accounts are recreated from the environment (backend/auth/bootstrap.py).
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
@@ -54,10 +54,20 @@ USER aetos
 
 EXPOSE 8000
 
-# 0.0.0.0 so the port is reachable from outside the container. The published port is bound to
-# localhost in compose — there is no authentication (FM-001), and this must not be reachable
-# beyond the machine running it.
-ENTRYPOINT ["python", "-m", "backend.main", \
-            "--host", "0.0.0.0", "--port", "8000", \
-            "--data-dir", "/app/data"]
-CMD ["--scenario", "b_approaching_threat"]
+# This image is for a host that terminates TLS in front of it: Render, Fly.io, Railway, or your
+# own Caddy/nginx (docs/deployment.md). That is what makes `--behind-proxy` a true statement
+# here, and why it is baked in. Do not publish this container's port directly to a network
+# without such a proxy: session cookies would cross it in clear.
+#
+# 0.0.0.0 so the proxy can reach it from outside the container. $PORT because most platforms
+# choose the port and pass it in; 8000 otherwise.
+#
+# Accounts come from the environment, since a hosted platform usually has no shell to run
+# `backend.auth.admin` in. Set AETOS_ADMIN_USERNAME and AETOS_ADMIN_PASSWORD (12+ characters)
+# in the platform's secret settings; optionally AETOS_VIEWER_USERNAME and AETOS_VIEWER_PASSWORD
+# for a read-only account to share. With none set the guard refuses to start, on purpose.
+ENTRYPOINT ["sh", "-c", "exec python -m backend.main --host 0.0.0.0 --port \"${PORT:-8000}\" --data-dir /app/data --behind-proxy \"$@\"", "aetos"]
+
+# Looped, so whoever opens the console hours after it started still sees the scenario rather
+# than an empty sky. Override with any other arguments `backend.main` accepts.
+CMD ["--scenario", "b_approaching_threat", "--loop"]

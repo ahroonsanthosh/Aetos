@@ -629,36 +629,27 @@ the display is exactly as it would otherwise be.
 
 ---
 
-### FM-040 — The container files exist, are broken, and the README used to claim otherwise
-**Status:** Open · **Severity:** Low — affects setup only, not runtime behaviour
+### FM-040 — The container files existed, were broken, and the README used to claim otherwise
+**Status:** Closed · **Severity:** was Low — affected setup only, not runtime behaviour
 
-This entry previously said no `Dockerfile` or `docker-compose.yml` had ever existed in this
-repository, and removed a README section telling people to run `docker compose up` from the
-repository root. That correction was itself wrong: it checked only the repository root.
-`frontend/Dockerfile` and `frontend/docker-compose.yml` do exist, at that location, and are
-broken in a way that made the removed README instruction fail regardless —
+**What it was.** `frontend/Dockerfile` and `frontend/docker-compose.yml` sat under `frontend/`
+while `COPY`ing `pyproject.toml`, `backend/` and the rest from the repository root, so the
+build context could not resolve the Dockerfile's own paths. Both claimed Aetos had no
+authentication (stale since ADR 0016). And even relocated, the container could not start: it
+must bind `0.0.0.0` to be reachable from outside itself, and `guard_bind` refuses that without
+`--behind-proxy`, an assertion a bind-to-loopback compose file cannot make truthfully.
 
-1. **Wrong location.** The Dockerfile `COPY`s `pyproject.toml`, `backend/`, `sensors/`,
-   `scenarios/` and `config/`, none of which exist under `frontend/`. Compose sets `build: .`
-   from that directory, so the build context cannot resolve the Dockerfile's own paths.
-2. **Stale security claims.** Both files assert Aetos "has no authentication of any kind
-   (FM-001)". FM-001 has been closed since ADR 0016; the port should stay loopback-only
-   because an operator console carrying the whole live picture has no business being reached
-   from off the machine, not because there is no login.
-3. **The container would not start even relocated.** It must bind `0.0.0.0` to be reachable
-   from outside itself, and `guard_bind` refuses that without `--behind-proxy`, which asserts
-   TLS is terminated in front of the process — an assertion a bind-to-loopback compose file
-   cannot make truthfully. This needs a decision, not a flag.
+**The decision.** The image is for a host that terminates TLS in front of it (Render, Fly,
+Railway, or your own Caddy/nginx), where `--behind-proxy` is true. The `Dockerfile` is at the
+repository root, binds `0.0.0.0:$PORT` with `--behind-proxy`, and takes its first accounts from
+the environment (`backend/auth/bootstrap.py`), since such hosts usually have no shell to run
+the admin CLI in. `render.yaml` deploys it. The local compose file is gone: on a laptop it could
+only have run by asserting a proxy that is not there, and `./start.sh` already covers that case.
 
-An earlier, unmerged experiment relocated the files to the repository root and corrected the
-authentication claim, confirming the third point by running
-`guard_bind('0.0.0.0', authenticated=True, behind_proxy=False, user_count=0)` and observing
-`StartupRefused`. It predates live mode, the watchdog, and the network-hardening pass, so any
-revival of it should be re-verified against the current CLI and startup sequence first.
-
-**Until resolved:** `./start.sh` is the only container-free, verified, supported way to run
-Aetos, and the README says so without mentioning Docker at all — removing the instruction was
-correct; the diagnosis of why it had to be removed was not.
+**Verified** by building the image and running it as a hosted platform would: it refuses to
+start with no accounts or a short password, starts with declared ones, answers health without a
+session and `/tracks` with 401, sets the session cookie `Secure` when the proxy says https, and
+serves the console with a live stream to a signed-in viewer.
 
 ---
 

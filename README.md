@@ -70,7 +70,21 @@ behind a TLS reverse proxy and pass `--behind-proxy`. Create the first account w
 .venv/bin/python -m backend.auth.admin add --username alice --role admin
 ```
 
-The full checklist is in [docs/deployment.md](docs/deployment.md). Please read
+The full checklist is in [docs/deployment.md](docs/deployment.md).
+
+## Put it online
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ahroonsanthosh/Aetos)
+
+No terminal needed. Click the button, sign in to Render with GitHub, and fill in an admin
+username and a password of 12 characters or more. A few minutes later you get an
+`https://aetos-xxxx.onrender.com` address with the sign-in screen and the simulated approach on
+a loop. The viewer username and password are optional: they make a read-only account you can
+hand to someone else.
+
+It runs on Render's free plan, which sleeps after 15 minutes without visitors and takes about a
+minute to wake. Each wake starts a fresh event log. The same image runs on any host that
+terminates TLS in front of it; see [docs/deployment.md](docs/deployment.md#hosted-render-fly-railway). Please read
 [docs/failure_modes.md](docs/failure_modes.md) before you rely on it anywhere that matters.
 I write down every way I've found it can go wrong, including the ones I haven't fixed.
 

@@ -52,6 +52,7 @@ from backend.api.app import create_app
 from backend.api.identity import LocalOperatorIdentityProvider, SessionIdentityProvider
 from backend.api.services import ApiServices
 from backend.api.static import mount_frontend
+from backend.auth.bootstrap import BootstrapRefused, bootstrap_accounts
 from backend.auth.policy import load_auth_policy
 from backend.auth.service import AuthService
 from backend.classification.classifier import build_default_classifier
@@ -98,6 +99,9 @@ one sensor two ways. Generic kinds only — no manufacturer or model appears in 
 
 DEFAULT_SITE = "fictional_test_range"
 DEFAULT_TICK_S = 0.5
+DEFAULT_LOOP_GAP_S = 30.0
+"""Empty sky between runs of a looped scenario: long enough for the last run's tracks to coast
+out and retire before the next run's objects appear."""
 
 
 class Pipeline:
@@ -280,7 +284,7 @@ class Pipeline:
             reports.append(health)
         return reports
 
-    def attach_scenario(self, scenario_id: str) -> None:
+    def attach_scenario(self, scenario_id: str, loop_gap_s: float | None = None) -> None:
         """Point the simulated sensors at a scenario's world.
 
         Simulated placements only. A live placement is not driven by a scenario — the sky is —
@@ -290,7 +294,7 @@ class Pipeline:
         """
         scenario = load_all()[scenario_id]
         registry = load_sensor_registry()
-        world = ScenarioWorld(scenario, self.clock.now())
+        world = ScenarioWorld(scenario, self.clock.now(), loop_gap_s=loop_gap_s)
         positions = self.geometry.site.sensor_positions_enu()
 
         adapters = [
@@ -677,7 +681,8 @@ def guard_bind(host: str, *, authenticated: bool, behind_proxy: bool, user_count
         raise StartupRefused(
             f"Refusing to bind {host} with no accounts: nobody could log in. Create one "
             f"first:\n    {sys.executable} -m backend.auth.admin add --username <name> "
-            "--role admin"
+            "--role admin\n  or, on a host with no shell, set AETOS_ADMIN_USERNAME and "
+            "AETOS_ADMIN_PASSWORD in its environment (docs/deployment.md)."
         )
 
     if not behind_proxy:
@@ -867,6 +872,7 @@ def build_application(
     tick_s: float = DEFAULT_TICK_S,
     authenticated: bool = True,
     mode: RunMode = RunMode.SIMULATION,
+    loop_gap_s: float | None = None,
 ):
     """Assemble the pipeline and the API around it.
 
@@ -910,7 +916,7 @@ def build_application(
         pipeline.attach_hardware()
         _report_hardware_state(pipeline, tick_s)
     if scenario:
-        pipeline.attach_scenario(scenario)
+        pipeline.attach_scenario(scenario, loop_gap_s=loop_gap_s)
 
     # One pass before the first request, so the health endpoint answers from a real assessment
     # rather than from never having run. Without it a deployment with nothing attached — no
@@ -1039,6 +1045,14 @@ def main() -> None:
             "configured hardware only), or hybrid (both, and it must genuinely be both)"
         ),
     )
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help=(
+            "replay the scenario forever, with an empty sky between runs. For an unattended "
+            "demonstration, so the picture is not empty for whoever opens it later"
+        ),
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
@@ -1074,6 +1088,7 @@ def main() -> None:
             tick_s=arguments.tick,
             authenticated=authenticated,
             mode=arguments.mode,
+            loop_gap_s=DEFAULT_LOOP_GAP_S if arguments.loop else None,
         )
     except (ModeRefused, StartupRefused) as refusal:
         raise SystemExit(f"\n  {refusal}\n") from refusal
@@ -1084,6 +1099,14 @@ def main() -> None:
         # traceback with the useful line last. Every other refusal in this function prints
         # cleanly; a config error is not less deserving of that for being raised deeper down.
         raise SystemExit(f"\n  {invalid}\n") from invalid
+
+    # Accounts declared in the environment, for hosted platforms with no shell (see
+    # backend/auth/bootstrap.py). Before the guard, so a declared account counts towards it.
+    if authenticated:
+        try:
+            bootstrap_accounts(app.state.services.auth, os.environ)
+        except BootstrapRefused as refusal:
+            raise SystemExit(f"\n  {refusal}\n") from refusal
 
     # After the application is built, so the account count is a real read of the database rather
     # than a guess, and before uvicorn binds anything.
