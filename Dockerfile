@@ -44,12 +44,18 @@ COPY --from=interface /build/frontend/dist ./frontend/dist
 # The event log, the projection and the account table live here. Mount a volume on it if the
 # host offers one; without one (Render's free tier, for example) every restart starts a fresh
 # history, and accounts are recreated from the environment (backend/auth/bootstrap.py).
-RUN mkdir -p /app/data
-VOLUME ["/app/data"]
-
+#
+# No VOLUME instruction, deliberately. With builders other than BuildKit (the classic Docker
+# builder, Kaniko), anything a later step does to a declared volume is discarded, so the
+# `chown` below never reached /app/data: it stayed root-owned, the unprivileged user could not
+# write deployment.json, and the container refused to start on every deploy. A host that
+# offers a disk mounts it here without needing the instruction.
+#
 # Run as an unprivileged user. Nothing here needs root, and a container that does not need it
 # should not have it.
-RUN useradd --create-home --uid 10001 aetos && chown -R aetos:aetos /app
+RUN useradd --create-home --uid 10001 aetos \
+    && mkdir -p /app/data \
+    && chown -R aetos:aetos /app
 USER aetos
 
 EXPOSE 8000

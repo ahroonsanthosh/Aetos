@@ -10,6 +10,11 @@ scenario forever with an empty sky between runs, so a hosted console is never le
 
 **Fixed**: the container files no longer sit in the wrong directory or refuse to start (FM-040).
 
+**Fixed**: the image refused to start on Render with `Permission denied` on
+`/app/data/deployment.json`. Builders other than BuildKit discard changes made to a declared
+`VOLUME`, so the data directory stayed root-owned. The `VOLUME` instruction is gone and the
+directory is created and handed to the app user in one step.
+
 ## 0.8.3 (2026-11-01)
 
 **Docs**: the README is rewritten in my own voice, with a list of what Aetos can't do yet.
