@@ -34,6 +34,11 @@ scenario forever with an empty sky between runs, so a hosted console is never le
 
 **Fixed**: the hosting files no longer sit in the wrong directory or refuse to start (FM-040).
 
+**Fixed**: the image refused to start on Render with `Permission denied` on
+`/app/data/deployment.json`, because the data directory stayed root-owned. Since replaced by
+the native build above, which writes to `data/hosted` inside the project directory the service
+owns.
+
 ## 0.8.3 (2026-11-01)
 
 **Docs**: the README is rewritten in my own voice, with a list of what Aetos can't do yet.
