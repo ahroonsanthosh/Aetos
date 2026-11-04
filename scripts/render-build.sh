@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build Aetos for a host with no shell: the backend, the console and the digital twin.
+# Build Aetos without a container: the backend, the console and the digital twin.
 #
-# Run by Render as the build command (render.yaml), from the repository root. Anything else
-# that builds from source can run it too.
+# For a host that runs Python directly rather than the Dockerfile (Render deploys the
+# Dockerfile; see docs/deployment.md). Run from the repository root.
 #
 #   ./scripts/render-build.sh
 #
