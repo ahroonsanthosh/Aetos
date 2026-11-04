@@ -40,6 +40,8 @@ import { useAuth } from '../data/client/auth'
 import { useTrackPicture } from '../data/client/useTrackPicture'
 import { currentIdentity } from '../data/models/succession'
 import { AlertsPage } from './pages/AlertsPage'
+import { CameraPage } from './pages/CameraPage'
+import { DigitalTwinPage } from './pages/DigitalTwinPage'
 import { LoginPage } from './pages/LoginPage'
 import { EventLogPage } from './pages/EventLogPage'
 import { OverviewPage } from './pages/OverviewPage'
@@ -167,6 +169,8 @@ function Console() {
           }
         />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/digital-twin" element={<DigitalTwinPage />} />
+        <Route path="/camera" element={<CameraPage />} />
         <Route path="/history" element={<TrackHistoryPage picture={picture} />} />
         <Route path="/sensors" element={<SensorsPage />} />
         <Route path="/health" element={<SystemHealthPage />} />

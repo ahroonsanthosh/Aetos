@@ -30,6 +30,7 @@ const SECTIONS: Section[] = [
       { label: 'Overview', path: '/' },
       { label: 'Live Tracks', path: '/tracks' },
       { label: 'Alerts', path: '/alerts' },
+      { label: 'Digital Twin', path: '/digital-twin' },
     ],
   },
   {
@@ -57,6 +58,7 @@ const SECTIONS: Section[] = [
     title: 'Systems',
     items: [
       { label: 'Sensors', path: '/sensors' },
+      { label: 'Camera', path: '/camera' },
       { label: 'Response Systems', path: '/response' },
       { label: 'System Health', path: '/health' },
       { label: 'Event Log', path: '/events' },

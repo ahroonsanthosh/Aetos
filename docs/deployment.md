@@ -11,10 +11,11 @@ laptop.
 ## Hosted (Render, Fly, Railway)
 
 The quickest way online, with no shell anywhere. The `Dockerfile` at the repository root
-builds the interface and the backend into one image meant for a host that terminates TLS in
-front of it, which is what makes the `--behind-proxy` baked into its entrypoint true. It binds
-`0.0.0.0:$PORT` (8000 if the host sets none) and runs `b_approaching_threat` with `--loop`, so
-the picture is not empty for whoever opens it hours later.
+builds the console, the digital twin and the backend into one image meant for a host that
+terminates TLS in front of it, which is what makes the `--behind-proxy` baked into its
+entrypoint true. It binds `0.0.0.0:$PORT` (8000 if the host sets none) and runs
+`b_approaching_threat` with `--loop`, so the picture is not empty for whoever opens it hours
+later.
 
 **Accounts come from the environment**, because these hosts usually give no shell to run
 `backend.auth.admin` in, and a free tier's disk forgets anything made by hand at the next
@@ -45,6 +46,14 @@ rotates the event log (FM-003), and the looped scenario writes it at roughly 1 M
 **Anywhere else.** Point the host at the root `Dockerfile`, set the variables above, and make
 sure only its TLS proxy can reach the container port. To run a different scenario, override the
 command with any `backend.main` arguments, for example `--scenario h_track_crossing --loop`.
+
+**Without a container.** On a host that runs Python 3.11+ and has Node 20+ at build time, build
+with `./scripts/render-build.sh` and start with `python -m backend.main --host 0.0.0.0 --port
+$PORT --data-dir data/hosted --behind-proxy --scenario b_approaching_threat --loop`.
+
+**The camera needs https.** Browsers only open a camera on a secure origin (or `localhost`), so
+the Camera page works on a hosted instance behind TLS and on a laptop, but not over plain http
+on a LAN address.
 
 What the rest of this document says about rate limiting, backups and failure modes still holds
 for a hosted instance; a public URL is a network deployment like any other.
@@ -343,7 +352,7 @@ uses `setdefault`.
   `passwd`, then `disable` and `enable` to end that account's existing sessions.
 - **No rate limiting on anything except login.** A reverse proxy is the right place to add it,
   and both examples above are a natural home for that.
-- **The failure modes in `docs/failure_modes.md` that are still open** — sensor silence
-  (FM-010), backend restart recovery (FM-030), event store unavailability (FM-032), saturation
-  (FM-014) — are unaddressed. `tests/chaos/` is empty. None of them is a reason not to deploy,
+- **The failure modes in `docs/failure_modes.md` that are still open** — backend restart
+  recovery (FM-030), event store unavailability (FM-032), saturation (FM-014) — are
+  unaddressed, and there is no chaos test suite for them yet. None of them is a reason not to deploy,
   but all of them are things to know before an operator relies on the display.

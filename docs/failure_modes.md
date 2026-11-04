@@ -639,11 +639,13 @@ authentication (stale since ADR 0016). And even relocated, the container could n
 must bind `0.0.0.0` to be reachable from outside itself, and `guard_bind` refuses that without
 `--behind-proxy`, an assertion a bind-to-loopback compose file cannot make truthfully.
 
-**The decision.** The image is for a host that terminates TLS in front of it (Render, Fly,
-Railway, or your own Caddy/nginx), where `--behind-proxy` is true. The `Dockerfile` is at the
-repository root, binds `0.0.0.0:$PORT` with `--behind-proxy`, and takes its first accounts from
-the environment (`backend/auth/bootstrap.py`), since such hosts usually have no shell to run
-the admin CLI in. `render.yaml` deploys it. The local compose file is gone: on a laptop it could
+**The decision.** Hosting is for a platform that terminates TLS in front of Aetos (Render, Fly,
+Railway, or your own Caddy/nginx), where `--behind-proxy` is true. It binds `0.0.0.0:$PORT`
+with `--behind-proxy` and takes its first accounts from the environment
+(`backend/auth/bootstrap.py`), since such hosts usually have no shell to run the admin CLI in.
+`render.yaml` deploys the root `Dockerfile`, which also builds the digital twin;
+`scripts/render-build.sh` does the same build without a container. The local compose file is
+gone: on a laptop it could
 only have run by asserting a proxy that is not there, and `./start.sh` already covers that case.
 
 **Verified** by building the image and running it as a hosted platform would: it refuses to

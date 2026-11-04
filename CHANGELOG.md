@@ -2,18 +2,45 @@
 
 ## Unreleased
 
-**Added**: one-click hosting. A `Dockerfile` at the repository root and a Render blueprint
-(`render.yaml`) put Aetos online with no terminal. Accounts can be declared with
+**Added**: the 3-D digital twin is part of the site. The backend serves it at `/twin/` and the
+console shows it under **Digital Twin**. Its pages allow only their own inline scripts, by hash.
+
+**Added**: **Camera** in the console menu. The operator's device camera becomes a bearing-only
+sensor: motion is found in the browser, only the boxes are sent, and the camera adapter turns
+them into detections. The mode badge now counts sensors as they attach and detach, and reads
+HYBRID when real and simulated sensors are both feeding the picture.
+
+**Changed**: the `Dockerfile` also builds the digital twin, and stays what Render deploys.
+`scripts/render-build.sh` does the same build for a host without containers.
+
+**Fixed**: scripted sensor faults never reached the sensors. Scenarios E, F and G declared
+radar and RF degradation that was parsed and then never applied, and named sensors
+(`SIM-RADAR-01`) the shipped site does not have. Both are fixed, and a scenario that scripts an
+unknown sensor is now refused.
+
+**Fixed**: expired login sessions are swept from the account database every ten minutes
+instead of accumulating for as long as the server runs.
+
+**Removed**: dead files and code: an empty prediction package and test directories, an unused
+lockup component and its stylesheet, an unserved logo file, two unreferenced screenshots, a
+stale duplicate of the design-token guide, a vendored copy of the landing page's source
+component (credited in `AetosHero.tsx`), a throwaway browser script, and unused twin helpers.
+
+**Added**: one-click hosting. A Render blueprint (`render.yaml`) puts Aetos online with no
+terminal. Accounts can be declared with
 `AETOS_ADMIN_USERNAME`/`AETOS_ADMIN_PASSWORD`, plus an optional read-only
 `AETOS_VIEWER_USERNAME`/`AETOS_VIEWER_PASSWORD`, for hosts with no shell. `--loop` replays a
 scenario forever with an empty sky between runs, so a hosted console is never left empty.
 
-**Fixed**: the container files no longer sit in the wrong directory or refuse to start (FM-040).
+**Fixed**: the hosting files no longer sit in the wrong directory or refuse to start (FM-040).
 
 **Fixed**: the image refused to start on Render with `Permission denied` on
-`/app/data/deployment.json`. Builders other than BuildKit discard changes made to a declared
-`VOLUME`, so the data directory stayed root-owned. The `VOLUME` instruction is gone and the
-directory is created and handed to the app user in one step.
+`/app/data/deployment.json`, because the data directory stayed root-owned. The `VOLUME`
+instruction is gone and the directory is created and handed to the app user in one step.
+
+**Changed**: the Render blueprint no longer asks for any values. The admin username is `admin`
+and Render generates its password, readable in the service's Environment tab. A blank or short
+typed password refused the start by design, which Render showed as a deploy that kept failing.
 
 **Changed**: the Render blueprint no longer asks for any values. The admin username is `admin`
 and Render generates its password, readable in the service's Environment tab. A blank or short

@@ -172,10 +172,6 @@ export function attachSource(next: DataSource): () => void {
   };
 }
 
-export function sourceKind(): DataSource['kind'] | null {
-  return source?.kind ?? null;
-}
-
 // ---------------------------------------------------------------------------
 // Selectors
 // ---------------------------------------------------------------------------

@@ -9,10 +9,9 @@ A structural placeholder for a future response-integration layer, so that adding
 an extension of the architecture rather than a redesign of it. It exists to hold a shape, not
 a capability.
 
-```
-orchestration/   empty — routing logic, once authorised
-adapters/        empty — per-system adapters, later
-```
+Once authorised, it would hold routing logic (`orchestration/`) and one adapter per response
+system (`adapters/`). Neither directory exists yet, because empty directories only say the same
+thing this file does.
 
 ## What Aetos does today
 

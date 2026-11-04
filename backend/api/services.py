@@ -34,7 +34,8 @@ from backend.database.repositories import (
 from backend.events.store import EventStore
 from backend.risk.correlation import SituationAssessment
 from backend.system_health.models import HealthAssessment
-from sensors.adapters.interface import SensorHealth
+from sensors.adapters.camera import CameraFrame, CameraMount
+from sensors.adapters.interface import SensorHealth, SensorState
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,18 @@ class ApiServices:
     rather than as healthy — an unwatched system must never render as a watched one.
     """
 
+    adapters: AdapterSource | None = None
+    """The attached adapters, counted when asked rather than once at startup.
+
+    A browser camera attaches and detaches while the server runs, so a count frozen at startup
+    would leave the badge saying SIMULATION while real detections were arriving. When present
+    this is the count; `live_adapter_count` is the fallback for APIs built without a pipeline.
+    """
+
+    camera: CameraSource | None = None
+    """The browser camera bridge, if this deployment has one. None means there is no camera
+    endpoint to talk to, which the interface shows rather than offering a dead button."""
+
     def real_adapter_count(self) -> int:
         """How many non-simulated sensor adapters are feeding the pipeline.
 
@@ -156,7 +169,62 @@ class ApiServices:
         a fact rather than a restatement of the configured mode: declaring LIVE does not make
         the badge change, attaching a sensor does.
         """
+        if self.adapters is not None:
+            return self.adapters.live_adapter_count
         return self.live_adapter_count
+
+    def simulated_adapter_count(self) -> int:
+        """How many simulated adapters are feeding the pipeline. Zero if unknown."""
+        if self.adapters is not None:
+            return self.adapters.simulated_adapter_count
+        return 0
+
+
+class AdapterSource(Protocol):
+    """Anything that can count its attached adapters by kind — in practice `Pipeline`."""
+
+    @property
+    def live_adapter_count(self) -> int: ...
+
+    @property
+    def simulated_adapter_count(self) -> int: ...
+
+
+@dataclass(frozen=True)
+class CameraStatus:
+    """What the browser camera bridge knows about itself, for `GET /camera`."""
+
+    active: bool
+    sensor_id: str
+    state: SensorState
+    reason: str
+    frames_received: int = 0
+    detections_emitted: int = 0
+    seconds_since_frame: float | None = None
+    mount: CameraMount | None = None
+
+
+class CameraSource(Protocol):
+    """The browser camera bridge — in practice `PipelineCamera` in `backend/main.py`.
+
+    The API may start and stop the camera and hand it frames; it may not reach the pipeline
+    behind it. Detections still enter only through the adapter and ingestion, like every other
+    sensor's.
+    """
+
+    def status(self) -> CameraStatus: ...
+
+    def site_reference(self) -> tuple[float, float, float]:
+        """Latitude, longitude and ellipsoidal altitude of the site reference point."""
+        ...
+
+    def start(self, mount: CameraMount) -> CameraStatus: ...
+
+    def stop(self) -> None: ...
+
+    def submit(self, frame: CameraFrame) -> int:
+        """Queue one analysed frame. Returns how many regions it carried."""
+        ...
 
 
 class SensorHealthSource(Protocol):

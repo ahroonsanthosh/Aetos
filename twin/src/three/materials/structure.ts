@@ -100,4 +100,3 @@ export const doorMaterial = new MeshStandardMaterial({
 
 /** Edge highlight colour used across all structures. */
 export const EDGE_COLOUR = palette.holoDim;
-export const EDGE_COLOUR_SELECTED = palette.holo;

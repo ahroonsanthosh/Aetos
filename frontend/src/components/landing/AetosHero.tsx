@@ -1,10 +1,9 @@
 /**
  * The public landing page.
  *
- * Reskinned from 21st.dev's `halide-topo-hero` by @shivendra9795kumar, kept verbatim at
- * `frontend/vendor/halide-topo-hero.tsx` so this is readable as a diff against the original
- * rather than as a rewrite that merely resembles one. Every mechanism
- * that carries its quality is preserved and none is simplified:
+ * Reskinned from 21st.dev's `halide-topo-hero` demo component by @shivendra9795kumar
+ * (https://21st.dev). Every mechanism that carries its quality is preserved and none is
+ * simplified:
  *
  *   - real CSS `perspective` + `transform-style: preserve-3d`, not a fake 2D skew
  *   - mouse-reactive tilt of the whole canvas, with per-layer `translateZ` depth

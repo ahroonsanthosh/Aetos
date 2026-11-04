@@ -1,5 +1,5 @@
 # Keep the build context to what the image actually copies. Without this, a local
-# node_modules, .venv or event log would be sent to the builder and, for frontend/, copied in.
+# node_modules, .venv or event log would be sent to the builder and copied in.
 .git
 .venv
 venv
@@ -7,9 +7,10 @@ venv
 **/*.py[cod]
 **/node_modules
 frontend/dist
+twin/.next
+twin/out
 /data
 /.tools
-twin
 tests
 docs
 *.db

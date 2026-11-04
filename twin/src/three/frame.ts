@@ -11,26 +11,12 @@
  *   world.z = -north
  */
 
-import { Vector3 } from 'three';
-import type { Enu, Ground } from '@/types';
+import type { Enu } from '@/types';
 
 export type WorldTuple = [number, number, number];
 
 export function toWorld(p: Enu): WorldTuple {
   return [p.e, p.u, -p.n];
-}
-
-export function groundToWorld(g: Ground, u = 0): WorldTuple {
-  return [g.e, u, -g.n];
-}
-
-/** Write into an existing vector. Used in per-frame code, where allocation is not free. */
-export function writeWorld(p: Enu, target: Vector3): Vector3 {
-  return target.set(p.e, p.u, -p.n);
-}
-
-export function toVector3(p: Enu): Vector3 {
-  return new Vector3(p.e, p.u, -p.n);
 }
 
 /**
@@ -40,10 +26,4 @@ export function toVector3(p: Enu): Vector3 {
  */
 export function yawFor(heading: number): number {
   return Math.PI - heading;
-}
-
-/** Domain bearing of a world-space direction. Inverse of `yawFor`'s intent. */
-export function headingFromWorld(x: number, z: number): number {
-  const h = Math.atan2(x, -z);
-  return h < 0 ? h + Math.PI * 2 : h;
 }

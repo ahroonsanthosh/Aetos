@@ -492,6 +492,3 @@ export const DEMO_SITE: Site = {
   roads: ROADS,
   arrays: ARRAYS,
 };
-
-/** Half-extent of the site, metres. Used for camera limits and grid sizing. */
-export const SITE_EXTENT = 520;

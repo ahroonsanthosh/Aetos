@@ -1,7 +1,7 @@
-# Aetos — one image serving the API and the operator interface.
+# Aetos — one image serving the API, the operator console and the digital twin.
 #
-# Two stages so the Node toolchain used to build the interface does not ship in the runtime
-# image: only the built bundle crosses over.
+# The Node toolchain used to build the console and the twin does not ship in the runtime
+# image: only the built static files cross over.
 
 # ---- Stage 1: build the operator interface ----------------------------------------------
 FROM node:22-slim AS interface
@@ -14,6 +14,19 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --silent
 
 COPY frontend/ ./
+RUN npm run build
+
+# ---- Stage 1b: build the digital twin ---------------------------------------------------
+# A static export (twin/out), served by the backend at /twin/ (backend/api/static.py).
+FROM node:22-slim AS twin
+
+WORKDIR /build/twin
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY twin/package.json twin/package-lock.json ./
+RUN npm ci --silent
+
+COPY twin/ ./
 RUN npm run build
 
 # ---- Stage 2: runtime -------------------------------------------------------------------
@@ -40,6 +53,7 @@ COPY config/ ./config/
 RUN pip install --no-cache-dir --quiet -e .
 
 COPY --from=interface /build/frontend/dist ./frontend/dist
+COPY --from=twin /build/twin/out ./twin/out
 
 # The event log, the projection and the account table live here. Mount a volume on it if the
 # host offers one; without one (Render's free tier, for example) every restart starts a fresh

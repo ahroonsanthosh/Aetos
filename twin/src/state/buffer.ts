@@ -14,7 +14,7 @@
  * latency and buys motion that never overshoots and never stutters on a late packet.
  */
 
-import type { Enu, Snapshot, Track } from '@/types';
+import type { Enu, Snapshot } from '@/types';
 import { lerpEnu } from '@/lib/geometry';
 
 interface Frame {
@@ -38,11 +38,6 @@ export function pushSnapshot(snapshot: Snapshot): void {
 export function resetBuffer(): void {
   previous = null;
   current = null;
-}
-
-/** The newest snapshot, for anything that does not need smoothing. */
-export function latestSnapshot(): Snapshot | null {
-  return current?.snapshot ?? null;
 }
 
 /**
@@ -93,25 +88,4 @@ export function interpolatedPosition(trackId: string): Enu | null {
   scratch.n = p.n;
   scratch.u = p.u;
   return scratch;
-}
-
-/** Smoothed heading, taking the shorter way round the circle. */
-export function interpolatedHeading(trackId: string): number | null {
-  const s = sample();
-  if (!s) return null;
-
-  const from = s.a.tracks.find((t) => t.trackId === trackId);
-  const to = s.b.tracks.find((t) => t.trackId === trackId);
-  if (!to) return null;
-  if (!from) return to.heading;
-
-  let delta = to.heading - from.heading;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  while (delta < -Math.PI) delta += Math.PI * 2;
-  return from.heading + delta * s.t;
-}
-
-/** Tracks in the newest snapshot. Identity and threat do not need interpolating. */
-export function currentTracks(): Track[] {
-  return current?.snapshot.tracks ?? [];
 }
