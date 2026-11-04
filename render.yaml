@@ -1,7 +1,17 @@
 # Render blueprint: one web service, built from the Dockerfile at the repository root.
 #
 # Deploy from the "Deploy to Render" button in the README, or in the Render dashboard with
-# New > Blueprint and this repository. Render asks for the four values below on first deploy.
+# New > Blueprint and this repository. Nothing needs filling in: the admin username is `admin`
+# and Render generates a long random password for it. Read the password afterwards in the
+# service's Environment tab (AETOS_ADMIN_PASSWORD) and sign in with it.
+#
+# Neither value is a default credential: the password is generated per deployment and is
+# visible only to whoever controls the Render account. Typed values were the most common way
+# for a deploy to fail, because a blank or short password refuses the start on purpose
+# (backend/auth/bootstrap.py) and Render shows that as a deploy that keeps failing.
+#
+# To add a read-only account to share, set AETOS_VIEWER_USERNAME and AETOS_VIEWER_PASSWORD
+# (12+ characters) in the Environment tab; both or neither.
 #
 # The image builds the console and the digital twin and serves both, with the API, from one
 # process on one port.
@@ -24,13 +34,7 @@ services:
     healthCheckPath: /api/v1/system/health
     autoDeploy: true
     envVars:
-      # Required. The admin account you sign in with. Password: 12 characters or more.
       - key: AETOS_ADMIN_USERNAME
-        sync: false
+        value: admin
       - key: AETOS_ADMIN_PASSWORD
-        sync: false
-      # Optional. A read-only account to hand to someone else. Leave both blank to skip.
-      - key: AETOS_VIEWER_USERNAME
-        sync: false
-      - key: AETOS_VIEWER_PASSWORD
-        sync: false
+        generateValue: true

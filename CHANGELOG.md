@@ -38,6 +38,10 @@ scenario forever with an empty sky between runs, so a hosted console is never le
 `/app/data/deployment.json`, because the data directory stayed root-owned. The `VOLUME`
 instruction is gone and the directory is created and handed to the app user in one step.
 
+**Changed**: the Render blueprint no longer asks for any values. The admin username is `admin`
+and Render generates its password, readable in the service's Environment tab. A blank or short
+typed password refused the start by design, which Render showed as a deploy that kept failing.
+
 ## 0.8.3 (2026-11-01)
 
 **Docs**: the README is rewritten in my own voice, with a list of what Aetos can't do yet.
