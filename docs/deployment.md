@@ -33,7 +33,11 @@ start, as it would anywhere else. Accounts made with the CLI on a persistent dis
 alone.
 
 **Render.** `render.yaml` is a blueprint for exactly this. Use the button in the README, or
-New > Blueprint in the dashboard. The free plan sleeps after 15 minutes idle (about a minute to
+New > Blueprint in the dashboard. It sets the admin username to `admin` and has Render generate
+the password, so there is nothing to type and nothing to get wrong; read it from
+`AETOS_ADMIN_PASSWORD` in the service's Environment tab. If a deploy keeps failing, the last
+lines of its log name the reason, and on a first deploy that is almost always one of these
+variables. The free plan sleeps after 15 minutes idle (about a minute to
 wake) and has no persistent disk, so every wake starts with an empty event log. To keep history,
 move to a paid plan and attach a disk at `/app/data`. Size that disk deliberately: nothing
 rotates the event log (FM-003), and the looped scenario writes it at roughly 1 MB a minute.
