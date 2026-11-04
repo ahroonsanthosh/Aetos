@@ -2,13 +2,37 @@
 
 ## Unreleased
 
-**Added**: one-click hosting. A `Dockerfile` at the repository root and a Render blueprint
-(`render.yaml`) put Aetos online with no terminal. Accounts can be declared with
+**Added**: the 3-D digital twin is part of the site. The backend serves it at `/twin/` and the
+console shows it under **Digital Twin**. Its pages allow only their own inline scripts, by hash.
+
+**Added**: **Camera** in the console menu. The operator's device camera becomes a bearing-only
+sensor: motion is found in the browser, only the boxes are sent, and the camera adapter turns
+them into detections. The mode badge now counts sensors as they attach and detach, and reads
+HYBRID when real and simulated sensors are both feeding the picture.
+
+**Changed**: no more Docker. Render builds and runs Aetos on its native Python runtime with
+`scripts/render-build.sh`.
+
+**Fixed**: scripted sensor faults never reached the sensors. Scenarios E, F and G declared
+radar and RF degradation that was parsed and then never applied, and named sensors
+(`SIM-RADAR-01`) the shipped site does not have. Both are fixed, and a scenario that scripts an
+unknown sensor is now refused.
+
+**Fixed**: expired login sessions are swept from the account database every ten minutes
+instead of accumulating for as long as the server runs.
+
+**Removed**: dead files and code: an empty prediction package and test directories, an unused
+lockup component and its stylesheet, an unserved logo file, two unreferenced screenshots, a
+stale duplicate of the design-token guide, a vendored copy of the landing page's source
+component (credited in `AetosHero.tsx`), a throwaway browser script, and unused twin helpers.
+
+**Added**: one-click hosting. A Render blueprint (`render.yaml`) puts Aetos online with no
+terminal. Accounts can be declared with
 `AETOS_ADMIN_USERNAME`/`AETOS_ADMIN_PASSWORD`, plus an optional read-only
 `AETOS_VIEWER_USERNAME`/`AETOS_VIEWER_PASSWORD`, for hosts with no shell. `--loop` replays a
 scenario forever with an empty sky between runs, so a hosted console is never left empty.
 
-**Fixed**: the container files no longer sit in the wrong directory or refuse to start (FM-040).
+**Fixed**: the hosting files no longer sit in the wrong directory or refuse to start (FM-040).
 
 ## 0.8.3 (2026-11-01)
 

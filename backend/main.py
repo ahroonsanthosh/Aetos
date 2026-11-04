@@ -42,6 +42,7 @@ import logging
 import os
 import sys
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 import uvicorn
@@ -50,7 +51,7 @@ from backend.alerting.policy import load_alert_policy
 from backend.alerting.service import AlertService
 from backend.api.app import create_app
 from backend.api.identity import LocalOperatorIdentityProvider, SessionIdentityProvider
-from backend.api.services import ApiServices
+from backend.api.services import ApiServices, CameraStatus
 from backend.api.static import mount_frontend
 from backend.auth.bootstrap import BootstrapRefused, bootstrap_accounts
 from backend.auth.policy import load_auth_policy
@@ -73,7 +74,13 @@ from backend.zones.geometry import SiteGeometry, load_site_geometry
 from backend.zones.site import SensorPlacement, Site
 from scenarios.library import load_all
 from scenarios.world import ScenarioWorld
-from sensors.adapters.interface import SensorAdapter, SensorHealth, SensorState
+from sensors.adapters.camera import CameraAdapter, CameraFrame, CameraMount
+from sensors.adapters.interface import (
+    SensorAdapter,
+    SensorAdapterError,
+    SensorHealth,
+    SensorState,
+)
 from sensors.adapters.simulated.adapter import SimulatedSensorAdapter
 from sensors.adapters.simulated.registry import load_sensor_registry
 from sensors.adapters.uart_fmcw_radar import (
@@ -99,6 +106,13 @@ one sensor two ways. Generic kinds only — no manufacturer or model appears in 
 
 DEFAULT_SITE = "fictional_test_range"
 DEFAULT_TICK_S = 0.5
+CAMERA_SENSOR_ID = "browser_camera"
+CAMERA_EXPIRY_S = 60.0
+"""A browser camera that has sent nothing for this long is detached, as though stopped. The page
+was closed without saying so; leaving the adapter attached would hold the badge at LIVE for a
+camera nobody is pointing."""
+SESSION_PURGE_S = 600.0
+"""How often the cycle sweeps expired sessions out of the account database."""
 DEFAULT_LOOP_GAP_S = 30.0
 """Empty sky between runs of a looped scenario: long enough for the last run's tracks to coast
 out and retire before the next run's objects appear."""
@@ -175,6 +189,14 @@ class Pipeline:
 
         self._adapters: list[SensorAdapter] = []
 
+        self._scenario_world: ScenarioWorld | None = None
+        """The attached scenario, read every cycle for its scripted sensor availability."""
+        self._last_session_purge: datetime | None = None
+        self.camera = PipelineCamera(self)
+        self._scripted: list[SimulatedSensorAdapter] = []
+        """The simulated adapters that scenario drives. Only these take scripted degradation:
+        a real sensor degrades because something happened to it, not because a file said so."""
+
         self._poll_failures: dict[str, str] = {}
         """Sensor id to the error its last poll raised, cleared when it polls cleanly. Read by
         `sensor_health()` so a driver that throws cannot report itself healthy."""
@@ -245,6 +267,31 @@ class Pipeline:
         """
         return sum(1 for adapter in self._adapters if not adapter.sensor_type.is_simulated)
 
+    @property
+    def simulated_adapter_count(self) -> int:
+        return sum(1 for adapter in self._adapters if adapter.sensor_type.is_simulated)
+
+    def attach(self, adapter: SensorAdapter) -> None:
+        """Start one adapter and add it to the cycle, while the server runs."""
+        if any(a.sensor_id == adapter.sensor_id for a in self._adapters):
+            raise ValueError(f"a sensor {adapter.sensor_id!r} is already attached")
+        self._attach([adapter])
+
+    def detach(self, sensor_id: str) -> None:
+        """Stop one adapter and take it out of the cycle. Unknown ids are ignored."""
+        remaining = []
+        for adapter in self._adapters:
+            if adapter.sensor_id == sensor_id:
+                adapter.stop()
+            else:
+                remaining.append(adapter)
+        self._adapters = remaining
+        self._poll_failures.pop(sensor_id, None)
+        if not self._adapters:
+            # The cycle does not step an empty adapter set, so without this the watchdog's last
+            # word would be about a sensor that has gone, and would age into STALLED.
+            self.watchdog.assess(self.sensor_health())
+
     def sensor_health(self) -> list[SensorHealth]:
         """Every attached adapter's self-report, for `GET /system/health`.
 
@@ -294,6 +341,18 @@ class Pipeline:
         """
         scenario = load_all()[scenario_id]
         registry = load_sensor_registry()
+
+        # A window naming a sensor this site does not have would match nothing and the scenario
+        # would run with its scripted fault silently missing, which is how scenarios E, F and G
+        # once ran. Refused instead, naming the sensors the site does have.
+        site_sensors = {placement.sensor_id for placement in self.geometry.site.sensors}
+        unknown = sorted({w.sensor_id for w in scenario.sensor_availability} - site_sensors)
+        if unknown:
+            raise ValueError(
+                f"scenario {scenario_id} scripts sensor(s) {', '.join(unknown)}, which site "
+                f"{self.geometry.site.site_id} does not have "
+                f"(it has {', '.join(sorted(site_sensors))})"
+            )
         world = ScenarioWorld(scenario, self.clock.now(), loop_gap_s=loop_gap_s)
         positions = self.geometry.site.sensor_positions_enu()
 
@@ -311,6 +370,8 @@ class Pipeline:
             for placement in self.geometry.site.sensors
             if placement.enabled and placement.registry_key is not None
         ]
+        self._scenario_world = world
+        self._scripted = adapters
         self._attach(adapters)
 
     def attach_hardware(self, link_factory: LinkFactory | None = None) -> None:
@@ -354,6 +415,10 @@ class Pipeline:
         and a track assessed before it was classified would be scored on geometry alone for
         one cycle longer than necessary.
         """
+        self._apply_scripted_degradation()
+        self._purge_expired_sessions_if_due()
+        self.camera.expire_if_abandoned()
+
         detections: list[Detection] = []
         for adapter in self._adapters:
             detections.extend(self._poll(adapter))
@@ -401,6 +466,34 @@ class Pipeline:
         self.projection.catch_up()
         return ingested.accepted
 
+    def _purge_expired_sessions_if_due(self) -> None:
+        """Delete sessions past their absolute expiry, at most once per `SESSION_PURGE_S`.
+
+        Expired sessions are already refused on read; this only stops the table growing for as
+        long as the server runs, which on a hosted console that is never restarted is forever.
+        """
+        now = self.clock.now()
+        if (
+            self._last_session_purge is not None
+            and (now - self._last_session_purge).total_seconds() < SESSION_PURGE_S
+        ):
+            return
+        self._last_session_purge = now
+        self.auth.purge_expired_sessions()
+
+    def _apply_scripted_degradation(self) -> None:
+        """Put each simulated sensor in the condition the scenario scripts for this instant.
+
+        A scenario's `sensor_availability` windows say when a sensor degrades or goes offline.
+        Applied before the poll, so a sensor scripted offline at 200 s emits nothing from the
+        first cycle at or after 200 s, and the watchdog sees it the same cycle.
+        """
+        if self._scenario_world is None:
+            return
+        now = self.clock.now()
+        for adapter in self._scripted:
+            adapter.apply_degradation(self._scenario_world.degradation_at(adapter.sensor_id, now))
+
     def _poll(self, adapter: SensorAdapter) -> list[Detection]:
         """One adapter's detections, with its failures isolated from every other sensor's.
 
@@ -435,6 +528,74 @@ class Pipeline:
         self.events.close()
         if self.deployment_lock is not None:
             self.deployment_lock.release()
+
+
+class PipelineCamera:
+    """The browser camera, as one sensor the pipeline attaches and detaches on request.
+
+    The API's `CameraSource`. It can start, stop and feed one `CameraAdapter`; everything it
+    feeds still reaches the picture only through the adapter's detections and ingestion.
+    Requests and the cycle both run on the event loop thread, so nothing here needs a lock.
+    """
+
+    def __init__(self, pipeline: Pipeline) -> None:
+        self._pipeline = pipeline
+        self._adapter: CameraAdapter | None = None
+
+    def site_reference(self) -> tuple[float, float, float]:
+        ref = self._pipeline.geometry.site.reference
+        return ref.latitude, ref.longitude, ref.altitude_m
+
+    def status(self) -> CameraStatus:
+        adapter = self._adapter
+        if adapter is None:
+            return CameraStatus(
+                active=False,
+                sensor_id=CAMERA_SENSOR_ID,
+                state=SensorState.NOT_STARTED,
+                reason="No camera connected. Start one from the Camera page.",
+            )
+        health = adapter.health()
+        return CameraStatus(
+            active=True,
+            sensor_id=adapter.sensor_id,
+            state=health.state,
+            reason=health.reason,
+            frames_received=adapter.frames_received,
+            detections_emitted=health.detections_emitted,
+            seconds_since_frame=adapter.seconds_since_frame(),
+            mount=adapter.mount,
+        )
+
+    def start(self, mount: CameraMount) -> CameraStatus:
+        self.stop()
+        session = self._pipeline.clock.now().strftime("%Y%m%d%H%M%S")
+        adapter = CameraAdapter(self._pipeline.clock, CAMERA_SENSOR_ID, mount, session)
+        self._pipeline.attach(adapter)
+        self._adapter = adapter
+        _LOG.info("Browser camera attached, pointing %.0f degrees.", mount.boresight_deg)
+        return self.status()
+
+    def stop(self) -> None:
+        if self._adapter is None:
+            return
+        self._pipeline.detach(self._adapter.sensor_id)
+        self._adapter = None
+        _LOG.info("Browser camera detached.")
+
+    def submit(self, frame: CameraFrame) -> int:
+        if self._adapter is None:
+            raise SensorAdapterError("No camera session. Start the camera first.")
+        self._adapter.submit(frame)
+        return len(frame.regions)
+
+    def expire_if_abandoned(self) -> None:
+        if self._adapter is None:
+            return
+        age = self._adapter.seconds_since_frame()
+        if age is not None and age > CAMERA_EXPIRY_S:
+            _LOG.warning("Browser camera sent nothing for %.0fs; detaching it.", age)
+            self.stop()
 
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", ""})
@@ -946,6 +1107,8 @@ def build_application(
         situation=pipeline.risk,
         run_mode=mode,
         live_adapter_count=pipeline.live_adapter_count,
+        adapters=pipeline,
+        camera=pipeline.camera,
         sensor_health=pipeline,
         watchdog=pipeline.watchdog,
     )
@@ -980,48 +1143,49 @@ def _attach_pipeline_task(app, pipeline: Pipeline, tick_s: float) -> None:
         # broadcaster, and the pipeline should not be appending events before the projection
         # has absorbed whatever a previous run left behind.
         async with existing_lifespan(scope_app):
-            handle: asyncio.Task | None = None
+            # Started even with nothing attached, because a browser camera can attach while
+            # the server runs. An empty adapter set is not stepped: there is nothing to cycle,
+            # and the watchdog was told so when the set became empty.
+            async def run() -> None:
+                consecutive_failures = 0
 
-            if pipeline.adapters:
-
-                async def run() -> None:
-                    consecutive_failures = 0
-
-                    while True:
-                        try:
-                            # The tracker and the store are synchronous and are the only
-                            # writers, so this runs on the loop thread rather than in an
-                            # executor. That keeps the single-writer discipline (ADR 0006)
-                            # true by construction rather than by agreement between two
-                            # threads.
-                            pipeline.step()
-                            consecutive_failures = 0
-                        except Exception:
-                            # An unhandled exception here used to kill this task outright.
-                            # The server went on serving, the interface went on reporting a
-                            # live stream, and nothing was being tracked — a confident
-                            # display over dead data, which is the failure this whole system
-                            # is built to avoid. It is now logged loudly and the loop
-                            # continues, so a transient fault costs one cycle rather than
-                            # the run.
-                            consecutive_failures += 1
-                            _LOG.exception(
-                                "Pipeline cycle failed (%d consecutive). The operator "
-                                "picture is not advancing.",
-                                consecutive_failures,
-                            )
-
+                while True:
+                    if not pipeline.adapters:
                         await asyncio.sleep(tick_s)
+                        continue
+                    try:
+                        # The tracker and the store are synchronous and are the only
+                        # writers, so this runs on the loop thread rather than in an
+                        # executor. That keeps the single-writer discipline (ADR 0006)
+                        # true by construction rather than by agreement between two
+                        # threads.
+                        pipeline.step()
+                        consecutive_failures = 0
+                    except Exception:
+                        # An unhandled exception here used to kill this task outright.
+                        # The server went on serving, the interface went on reporting a
+                        # live stream, and nothing was being tracked — a confident
+                        # display over dead data, which is the failure this whole system
+                        # is built to avoid. It is now logged loudly and the loop
+                        # continues, so a transient fault costs one cycle rather than
+                        # the run.
+                        consecutive_failures += 1
+                        _LOG.exception(
+                            "Pipeline cycle failed (%d consecutive). The operator "
+                            "picture is not advancing.",
+                            consecutive_failures,
+                        )
 
-                handle = asyncio.create_task(run())
+                    await asyncio.sleep(tick_s)
+
+            handle = asyncio.create_task(run())
 
             try:
                 yield
             finally:
-                if handle is not None:
-                    handle.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await handle
+                handle.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await handle
                 pipeline.close()
 
     app.router.lifespan_context = lifespan

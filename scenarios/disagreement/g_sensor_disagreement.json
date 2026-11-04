@@ -34,7 +34,7 @@
   ],
   "sensor_availability": [
     {
-      "sensor_id": "SIM-RF-01",
+      "sensor_id": "rf_central",
       "state": "degraded",
       "from_s": 60.0,
       "to_s": 180.0,

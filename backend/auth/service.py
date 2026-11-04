@@ -411,9 +411,6 @@ class AuthService:
         )
         return updated
 
-    def revoke_sessions(self, user_id: str) -> int:
-        return self._sessions.revoke_all_for_user(user_id)
-
     def clear_lockout(self, user_id: str) -> User | None:
         """Let a locked-out account try again before its window elapses."""
         user = self._users.get(user_id)

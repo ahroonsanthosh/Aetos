@@ -20,7 +20,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from backend.api import auth_routes, rest, stream, system
+from backend.api import auth_routes, camera, rest, stream, system
 from backend.api.deps import require_role
 from backend.api.schemas import API_PREFIX, API_VERSION
 from backend.api.services import ApiServices
@@ -83,8 +83,9 @@ SECURITY_HEADERS = {
     # Track identifiers and site names live in URLs. Without this they travel in the Referer
     # header to wherever an operator clicks next.
     "Referrer-Policy": "no-referrer",
-    # None of these are used, and a compromised page should not be able to start.
-    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), usb=(), payment=()",
+    # The camera is allowed for this origin only: the Camera page opens it, and nothing else
+    # may. The rest are unused, and a compromised page should not be able to start them.
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(self), usb=(), payment=()",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
@@ -199,6 +200,7 @@ def create_app(services: ApiServices) -> FastAPI:
     app.include_router(rest.router, prefix=API_PREFIX)
     app.include_router(stream.router, prefix=API_PREFIX)
     app.include_router(system.router, prefix=API_PREFIX)
+    app.include_router(camera.router, prefix=API_PREFIX)
     _mount_documentation(app)
     return app
 

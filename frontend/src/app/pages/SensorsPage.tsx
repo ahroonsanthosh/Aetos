@@ -2,14 +2,15 @@
  * Sensor management.
  *
  * Shows configured placement. Runtime status — in contact, quiet, offline — is judged by the
- * watchdog (`backend/system_health`) and summarised on the System Health page; it is not yet
- * broken out per sensor here. Those columns are absent rather than filled with a plausible green
- * light: the backend's own sensors endpoint takes the same position, on the grounds that a green
- * light nothing computes is worse than no light.
+ * watchdog (`backend/system_health`) and shown per sensor on the System Health page, which this
+ * page links to rather than repeating. A status column here would be a second copy that could
+ * disagree with the first.
  *
  * Nothing here is specific to any sensor type or manufacturer. The page renders whatever the
  * site configuration defines.
  */
+
+import { Link } from 'react-router-dom'
 
 import { PageHeader } from './TracksPage'
 import { useSensors } from './OverviewPage'
@@ -24,9 +25,10 @@ export function SensorsPage() {
       <PageHeader title="Sensors" subtitle={`${sensors.length} configured`} />
       <div className="page__body">
         <p className="page__note">
-          Configured placement only. Runtime status, update rate and last-packet age require the
-          system health watchdog, which is not implemented — so those fields are not shown
-          rather than being displayed as unknown-but-fine.
+          Configured placement only. Whether each sensor is in contact, quiet or offline is
+          judged by the system health watchdog and shown on{' '}
+          <Link to="/health">System Health</Link>. A browser camera, if one is running, is on{' '}
+          <Link to="/camera">Camera</Link>.
         </p>
 
         <div className="panel">

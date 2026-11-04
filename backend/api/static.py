@@ -18,15 +18,33 @@ Two things this must get right:
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import re
+from functools import cache
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api.schemas import API_PREFIX
 
-FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
+TWIN_DIST = REPO_ROOT / "twin" / "out"
+TWIN_PREFIX = "/twin"
+
+TWIN_EXTERNAL_ORIGINS = {
+    # The site editor geocodes a place name, imports building outlines and draws a map
+    # beneath the tracing canvas. These are the three services it calls, and nothing else.
+    "connect": (
+        "https://nominatim.openstreetmap.org https://overpass-api.de https://tile.openstreetmap.org"
+    ),
+    "img": "https://tile.openstreetmap.org",
+}
+
+_INLINE_SCRIPT = re.compile(rb"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.DOTALL)
 
 _NOT_BUILT_PAGE = """<!doctype html>
 <html lang="en">
@@ -56,6 +74,86 @@ _NOT_BUILT_PAGE = """<!doctype html>
 assert "__PREFIX__" in _NOT_BUILT_PAGE  # the substitution this page exists to make
 
 
+@cache
+def _twin_csp(page: Path, mtime_ns: int) -> str:
+    """The twin's Content-Security-Policy for one page, allowing exactly its inline scripts.
+
+    A static Next.js export carries its page data in inline `<script>` blocks, which the
+    console's `script-src 'self'` refuses. Rather than allow every inline script, each page is
+    served with the SHA-256 of the inline scripts it actually contains, so an injected one is
+    still refused. Cached per file version; the hashes change only when the twin is rebuilt.
+
+    `frame-ancestors 'self'` rather than `'none'` because the console shows the twin inside
+    its own shell. Only this origin may frame it.
+    """
+    del mtime_ns  # part of the cache key only
+    hashes = " ".join(
+        "'sha256-" + base64.b64encode(hashlib.sha256(body).digest()).decode() + "'"
+        for body in _INLINE_SCRIPT.findall(page.read_bytes())
+    )
+    return (
+        "default-src 'self'; "
+        f"script-src 'self' {hashes}; "
+        "style-src 'self' 'unsafe-inline'; "
+        f"img-src 'self' data: blob: {TWIN_EXTERNAL_ORIGINS['img']}; "
+        "font-src 'self' data:; "
+        f"connect-src 'self' {TWIN_EXTERNAL_ORIGINS['connect']}; "
+        "worker-src 'self' blob:; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self'"
+    )
+
+
+def mount_twin(app: FastAPI, dist: Path | None = None) -> bool:
+    """Serve the built digital twin at `/twin/`. Returns whether a build was found.
+
+    Must be registered before the console's catch-all, which would otherwise answer every
+    `/twin/...` path with the console's own shell.
+    """
+    root = (dist or TWIN_DIST).resolve()
+    if not (root / "index.html").is_file():
+
+        @app.get(TWIN_PREFIX + "/{path:path}", include_in_schema=False)
+        async def _twin_not_built(path: str) -> HTMLResponse:
+            return HTMLResponse(
+                "<!doctype html><title>Twin not built</title>"
+                "<p>The digital twin has not been built. Build it with "
+                "<code>cd twin &amp;&amp; npm ci &amp;&amp; npm run build</code>.</p>",
+                status_code=404,
+            )
+
+        return False
+
+    # HEAD too: the twin's router prefetches its pages with HEAD requests.
+    @app.api_route(TWIN_PREFIX, methods=["GET", "HEAD"], include_in_schema=False)
+    async def _twin_root() -> RedirectResponse:
+        return RedirectResponse(TWIN_PREFIX + "/", status_code=308)
+
+    @app.api_route(TWIN_PREFIX + "/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    async def _twin(path: str) -> FileResponse:
+        candidate = (root / path).resolve()
+        if not candidate.is_relative_to(root):
+            raise HTTPException(status_code=404)
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        status_code = 200
+        if not candidate.is_file():
+            candidate, status_code = root / "404.html", 404
+            if not candidate.is_file():
+                raise HTTPException(status_code=404)
+
+        headers: dict[str, str] = {}
+        if candidate.suffix == ".html":
+            headers["Content-Security-Policy"] = _twin_csp(candidate, candidate.stat().st_mtime_ns)
+            headers["X-Frame-Options"] = "SAMEORIGIN"
+            headers["Cache-Control"] = "no-cache"
+        return FileResponse(candidate, status_code=status_code, headers=headers)
+
+    return True
+
+
 def mount_frontend(app: FastAPI, dist: Path | None = None) -> bool:
     """Serve the built interface at `/`. Returns whether a bundle was found.
 
@@ -64,6 +162,9 @@ def mount_frontend(app: FastAPI, dist: Path | None = None) -> bool:
     """
     root = dist or FRONTEND_DIST
     index = root / "index.html"
+    # Before the console's catch-all, so `/twin/...` is the twin's and not the console's.
+    if dist is None:
+        mount_twin(app)
 
     if not index.is_file():
         not_built_page = _NOT_BUILT_PAGE.replace("__PREFIX__", API_PREFIX)

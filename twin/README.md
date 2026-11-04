@@ -4,14 +4,16 @@ A 3D command interface for a protected site: the facility as a digital twin, the
 above it, what is in that airspace, what it threatens, and how well the system can
 currently see and protect the place.
 
-**Standalone prototype.** It runs on its own simulator and is not wired into the Aetos
-backend. It is developed here, on its own, until it is good enough to be worth integrating
+**Part of the Aetos site, on its own data.** `npm run build` exports it to static files in
+`out/`, and the Aetos backend serves them at `/twin/`. The console shows it under **Digital
+Twin** in its menu. It still runs on its own simulator rather than on the backend's live tracks
 — see [Integrating with Aetos Core](#integrating-with-aetos-core).
 
 ```bash
 cd twin
 npm install
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:3000/twin/
+npm run build      # static export to out/, served by the backend at /twin/
 npm test           # simulation layer
 npm run typecheck
 ```

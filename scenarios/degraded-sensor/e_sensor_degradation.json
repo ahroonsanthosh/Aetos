@@ -32,7 +32,7 @@
   ],
   "sensor_availability": [
     {
-      "sensor_id": "SIM-RADAR-01",
+      "sensor_id": "radar_north",
       "state": "degraded",
       "from_s": 100.0,
       "to_s": 200.0,
@@ -41,7 +41,7 @@
       "reason": "Radar returns intermittent and noisy — antenna drive fault developing"
     },
     {
-      "sensor_id": "SIM-RADAR-01",
+      "sensor_id": "radar_north",
       "state": "offline",
       "from_s": 200.0,
       "reason": "Radar has stopped reporting entirely"

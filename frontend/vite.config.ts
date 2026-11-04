@@ -22,12 +22,15 @@ export default defineConfig({
     // and no environment-specific base URL compiled into the bundle.
     proxy: {
       '/api': { target: BACKEND, changeOrigin: true, ws: true },
+      // The digital twin is served by the backend too (backend/api/static.py).
+      '/twin': { target: BACKEND, changeOrigin: true },
     },
   },
   preview: {
     port: 4173,
     proxy: {
       '/api': { target: BACKEND, changeOrigin: true, ws: true },
+      '/twin': { target: BACKEND, changeOrigin: true },
     },
   },
   test: {
