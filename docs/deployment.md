@@ -10,11 +10,12 @@ laptop.
 
 ## Hosted (Render, Fly, Railway)
 
-The quickest way online, with no shell anywhere and no container. `scripts/render-build.sh`
-installs the backend and builds the console and the digital twin; one Python process then serves
-all three on one port. It is meant for a host that terminates TLS in front of it, which is what
-makes `--behind-proxy` true. It binds `0.0.0.0:$PORT` and runs `b_approaching_threat` with
-`--loop`, so the picture is not empty for whoever opens it hours later.
+The quickest way online, with no shell anywhere. The `Dockerfile` at the repository root
+builds the console, the digital twin and the backend into one image meant for a host that
+terminates TLS in front of it, which is what makes the `--behind-proxy` baked into its
+entrypoint true. It binds `0.0.0.0:$PORT` (8000 if the host sets none) and runs
+`b_approaching_threat` with `--loop`, so the picture is not empty for whoever opens it hours
+later.
 
 **Accounts come from the environment**, because these hosts usually give no shell to run
 `backend.auth.admin` in, and a free tier's disk forgets anything made by hand at the next
@@ -35,13 +36,16 @@ alone.
 **Render.** `render.yaml` is a blueprint for exactly this. Use the button in the README, or
 New > Blueprint in the dashboard. The free plan sleeps after 15 minutes idle (about a minute to
 wake) and has no persistent disk, so every wake starts with an empty event log. To keep history,
-move to a paid plan and attach a disk at `data/` in the service's working directory. Size that disk deliberately: nothing
+move to a paid plan and attach a disk at `/app/data`. Size that disk deliberately: nothing
 rotates the event log (FM-003), and the looped scenario writes it at roughly 1 MB a minute.
 
-**Anywhere else.** Any host that runs Python 3.11+ and has Node 20+ at build time works the
-same way. Build with `./scripts/render-build.sh`, start with the `startCommand` in
-`render.yaml`, set the variables above, and make sure only its TLS proxy can reach the port. To
-run a different scenario, change `--scenario`, for example `--scenario h_track_crossing --loop`.
+**Anywhere else.** Point the host at the root `Dockerfile`, set the variables above, and make
+sure only its TLS proxy can reach the container port. To run a different scenario, override the
+command with any `backend.main` arguments, for example `--scenario h_track_crossing --loop`.
+
+**Without a container.** On a host that runs Python 3.11+ and has Node 20+ at build time, build
+with `./scripts/render-build.sh` and start with `python -m backend.main --host 0.0.0.0 --port
+$PORT --data-dir data/hosted --behind-proxy --scenario b_approaching_threat --loop`.
 
 **The camera needs https.** Browsers only open a camera on a secure origin (or `localhost`), so
 the Camera page works on a hosted instance behind TLS and on a laptop, but not over plain http

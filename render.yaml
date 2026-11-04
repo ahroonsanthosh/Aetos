@@ -1,35 +1,29 @@
-# Render blueprint: one web service on Render's native Python runtime. No container.
+# Render blueprint: one web service, built from the Dockerfile at the repository root.
 #
 # Deploy from the "Deploy to Render" button in the README, or in the Render dashboard with
 # New > Blueprint and this repository. Render asks for the four values below on first deploy.
 #
-# The build installs the backend and builds the console and the digital twin
-# (scripts/render-build.sh). The start command serves all three from one process and one port.
+# The image builds the console and the digital twin and serves both, with the API, from one
+# process on one port.
 #
-# Render terminates TLS in front of the service and it is reachable only through it, which is
-# what makes `--behind-proxy` true (docs/deployment.md).
+# Render terminates TLS in front of the container and the service is reachable only through it,
+# which is what makes the image's `--behind-proxy` true (docs/deployment.md).
 #
 # The free plan sleeps after 15 minutes without traffic and takes about a minute to wake, and
 # its disk is wiped on every restart: each wake starts a fresh event log, and the accounts are
-# recreated from these variables. Move to a paid plan and add a disk mounted on the data
-# directory below to keep history across restarts.
+# recreated from these variables. Move to a paid plan and add a disk on /app/data to keep
+# history across restarts.
 services:
   - type: web
     name: aetos
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: ./scripts/render-build.sh
-    # Looped, so whoever opens the console hours after it started still sees the scenario
-    # rather than an empty sky.
-    startCommand: >-
-      python -m backend.main --host 0.0.0.0 --port $PORT --data-dir data/hosted
-      --behind-proxy --scenario b_approaching_threat --loop
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     # Readable without a session, and liveness only until authenticated.
     healthCheckPath: /api/v1/system/health
     autoDeploy: true
     envVars:
-      - key: PYTHONUNBUFFERED
-        value: "1"
       # Required. The admin account you sign in with. Password: 12 characters or more.
       - key: AETOS_ADMIN_USERNAME
         sync: false

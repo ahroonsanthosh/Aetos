@@ -10,8 +10,8 @@ sensor: motion is found in the browser, only the boxes are sent, and the camera 
 them into detections. The mode badge now counts sensors as they attach and detach, and reads
 HYBRID when real and simulated sensors are both feeding the picture.
 
-**Changed**: no more Docker. Render builds and runs Aetos on its native Python runtime with
-`scripts/render-build.sh`.
+**Changed**: the `Dockerfile` also builds the digital twin, and stays what Render deploys.
+`scripts/render-build.sh` does the same build for a host without containers.
 
 **Fixed**: scripted sensor faults never reached the sensors. Scenarios E, F and G declared
 radar and RF degradation that was parsed and then never applied, and named sensors
@@ -35,9 +35,8 @@ scenario forever with an empty sky between runs, so a hosted console is never le
 **Fixed**: the hosting files no longer sit in the wrong directory or refuse to start (FM-040).
 
 **Fixed**: the image refused to start on Render with `Permission denied` on
-`/app/data/deployment.json`, because the data directory stayed root-owned. Since replaced by
-the native build above, which writes to `data/hosted` inside the project directory the service
-owns.
+`/app/data/deployment.json`, because the data directory stayed root-owned. The `VOLUME`
+instruction is gone and the directory is created and handed to the app user in one step.
 
 ## 0.8.3 (2026-11-01)
 

@@ -643,9 +643,9 @@ must bind `0.0.0.0` to be reachable from outside itself, and `guard_bind` refuse
 Railway, or your own Caddy/nginx), where `--behind-proxy` is true. It binds `0.0.0.0:$PORT`
 with `--behind-proxy` and takes its first accounts from the environment
 (`backend/auth/bootstrap.py`), since such hosts usually have no shell to run the admin CLI in.
-`render.yaml` deploys it. The container was later removed altogether: Render's native Python
-runtime builds and runs it from source with `scripts/render-build.sh`, with nothing to keep in
-step between an image and the repository. The local compose file is gone: on a laptop it could
+`render.yaml` deploys the root `Dockerfile`, which also builds the digital twin;
+`scripts/render-build.sh` does the same build without a container. The local compose file is
+gone: on a laptop it could
 only have run by asserting a proxy that is not there, and `./start.sh` already covers that case.
 
 **Verified** by building the image and running it as a hosted platform would: it refuses to
