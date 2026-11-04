@@ -91,7 +91,10 @@ I write down every way I've found it can go wrong, including the ones I haven't 
 ## What it can't do yet
 
 - The radar in live mode is a testbed unit with unmeasured detection performance.
-- The 3D digital twin in `twin/` is a standalone prototype. It isn't wired to the backend yet.
+- The 3D digital twin (Digital Twin in the console's menu) runs its own simulated scenario. It
+  isn't fed by the console's live tracks yet.
+- The camera (Camera in the menu) uses your device's camera and measures direction only. It
+  places what it sees at a range you choose, so treat its tracks as bearings, not positions.
 - One drone sometimes still shows as more than one track for a moment, while the evidence that
   two tracks are the same object builds up. It's one row about 94 % of the time now, up from 43 %.
 
@@ -105,7 +108,7 @@ problem? See [SECURITY.md](SECURITY.md).
 | `backend/`  | Ingestion, tracking, fusion, classification, zones, risk, decision, event log |
 | `sensors/`  | The sensor adapter contract, the simulator and the testbed radar driver       |
 | `frontend/` | The operator console                                                          |
-| `twin/`     | The 3D digital twin prototype                                                 |
+| `twin/`     | The 3D digital twin, served by the backend at `/twin/`                        |
 | `docs/`     | Architecture, schema, failure modes and design decisions (`docs/adr/`)        |
 
 ## Where it's going

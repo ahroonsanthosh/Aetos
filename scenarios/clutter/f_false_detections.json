@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "scenario_id": "f_false_detections",
   "name": "F — False detections and clutter",
-  "description": "One genuine aircraft transits the area while the acoustic array and the radar both run in a heavily cluttered environment — six times and four times their nominal false alarm rate respectively — for the middle three minutes of the run. The spurious returns are indistinguishable in shape from real ones: same uncertainty, same confidence distribution, same optional fields.",
+  "description": "One genuine aircraft transits the area while both radars run in a heavily cluttered environment, at four times their nominal false alarm rate, for the middle three minutes of the run. The spurious returns are indistinguishable in shape from real ones: same uncertainty, same confidence distribution, same optional fields.",
   "purpose": "To find out what the system does with data that looks real and is not. The failure to catch here is not missing the real object; it is promoting clutter to confirmed tracks and burying the operator in alerts, which trains them to stop reading the display.",
   "expected_behaviour": [
     "must hold one confirmed track on the genuine object throughout",
@@ -31,15 +31,15 @@
   ],
   "sensor_availability": [
     {
-      "sensor_id": "SIM-ACOUSTIC-01",
+      "sensor_id": "radar_north",
       "state": "degraded",
       "from_s": 60.0,
       "to_s": 240.0,
-      "false_alarm_rate_scale": 6.0,
-      "reason": "Sustained environmental noise raising the spurious return rate"
+      "false_alarm_rate_scale": 4.0,
+      "reason": "Ground clutter and weather returns across the sector"
     },
     {
-      "sensor_id": "SIM-RADAR-01",
+      "sensor_id": "radar_south",
       "state": "degraded",
       "from_s": 60.0,
       "to_s": 240.0,

@@ -28,6 +28,9 @@ interface Props {
 
 const HEALTH_POLL_MS = 15_000
 
+/** Dispatched on `window` when a sensor is attached or detached from this browser. */
+export const MODE_CHANGED_EVENT = 'aetos:mode-changed'
+
 export function TopBar({ streamStatus, trackCount }: Props) {
   const { session, signOut } = useAuth()
   const [mode, setMode] = useState<ModeView | null>(null)
@@ -59,9 +62,14 @@ export function TopBar({ streamStatus, trackCount }: Props) {
 
     void poll()
     const timer = window.setInterval(() => void poll(), HEALTH_POLL_MS)
+    // Something on this page attached or detached a sensor (the Camera page does). Re-ask now
+    // rather than leave the mode badge up to one poll interval behind the truth.
+    const refresh = () => void poll()
+    window.addEventListener(MODE_CHANGED_EVENT, refresh)
     return () => {
       abort.abort()
       window.clearInterval(timer)
+      window.removeEventListener(MODE_CHANGED_EVENT, refresh)
     }
   }, [])
 
@@ -155,16 +163,20 @@ function ModeIndicator({ mode }: { mode: ModeView | null }) {
   }
 
   const simulated = mode.simulated
+  const hybrid = !simulated && (mode.simulated_adapters_connected ?? 0) > 0
+  const label = simulated ? 'SIMULATION' : hybrid ? 'HYBRID' : 'LIVE'
   return (
     <span
       className={`mode ${simulated ? 'mode--simulation' : 'mode--live'}`}
       title={
         simulated
           ? `Configured mode: ${mode.mode}. No real sensor adapter is feeding the pipeline, so all data on screen is synthetic.`
-          : `${mode.real_adapters_connected} real sensor adapter(s) feeding the pipeline. The hardware is unvalidated — treat every track as evidence to be checked. See docs/live_mode.md.`
+          : hybrid
+            ? `${mode.real_adapters_connected} real and ${mode.simulated_adapters_connected} simulated sensor adapter(s) feeding the pipeline. The picture mixes real and synthetic tracks; each track's sources are on its details panel.`
+            : `${mode.real_adapters_connected} real sensor adapter(s) feeding the pipeline. The hardware is unvalidated — treat every track as evidence to be checked. See docs/live_mode.md.`
       }
     >
-      MODE: {simulated ? 'SIMULATION' : 'LIVE'}
+      MODE: {label}
     </span>
   )
 }

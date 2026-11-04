@@ -10,11 +10,11 @@ laptop.
 
 ## Hosted (Render, Fly, Railway)
 
-The quickest way online, with no shell anywhere. The `Dockerfile` at the repository root
-builds the interface and the backend into one image meant for a host that terminates TLS in
-front of it, which is what makes the `--behind-proxy` baked into its entrypoint true. It binds
-`0.0.0.0:$PORT` (8000 if the host sets none) and runs `b_approaching_threat` with `--loop`, so
-the picture is not empty for whoever opens it hours later.
+The quickest way online, with no shell anywhere and no container. `scripts/render-build.sh`
+installs the backend and builds the console and the digital twin; one Python process then serves
+all three on one port. It is meant for a host that terminates TLS in front of it, which is what
+makes `--behind-proxy` true. It binds `0.0.0.0:$PORT` and runs `b_approaching_threat` with
+`--loop`, so the picture is not empty for whoever opens it hours later.
 
 **Accounts come from the environment**, because these hosts usually give no shell to run
 `backend.auth.admin` in, and a free tier's disk forgets anything made by hand at the next
@@ -35,12 +35,17 @@ alone.
 **Render.** `render.yaml` is a blueprint for exactly this. Use the button in the README, or
 New > Blueprint in the dashboard. The free plan sleeps after 15 minutes idle (about a minute to
 wake) and has no persistent disk, so every wake starts with an empty event log. To keep history,
-move to a paid plan and attach a disk at `/app/data`. Size that disk deliberately: nothing
+move to a paid plan and attach a disk at `data/` in the service's working directory. Size that disk deliberately: nothing
 rotates the event log (FM-003), and the looped scenario writes it at roughly 1 MB a minute.
 
-**Anywhere else.** Point the host at the root `Dockerfile`, set the variables above, and make
-sure only its TLS proxy can reach the container port. To run a different scenario, override the
-command with any `backend.main` arguments, for example `--scenario h_track_crossing --loop`.
+**Anywhere else.** Any host that runs Python 3.11+ and has Node 20+ at build time works the
+same way. Build with `./scripts/render-build.sh`, start with the `startCommand` in
+`render.yaml`, set the variables above, and make sure only its TLS proxy can reach the port. To
+run a different scenario, change `--scenario`, for example `--scenario h_track_crossing --loop`.
+
+**The camera needs https.** Browsers only open a camera on a secure origin (or `localhost`), so
+the Camera page works on a hosted instance behind TLS and on a laptop, but not over plain http
+on a LAN address.
 
 What the rest of this document says about rate limiting, backups and failure modes still holds
 for a hosted instance; a public URL is a network deployment like any other.
@@ -339,7 +344,7 @@ uses `setdefault`.
   `passwd`, then `disable` and `enable` to end that account's existing sessions.
 - **No rate limiting on anything except login.** A reverse proxy is the right place to add it,
   and both examples above are a natural home for that.
-- **The failure modes in `docs/failure_modes.md` that are still open** — sensor silence
-  (FM-010), backend restart recovery (FM-030), event store unavailability (FM-032), saturation
-  (FM-014) — are unaddressed. `tests/chaos/` is empty. None of them is a reason not to deploy,
+- **The failure modes in `docs/failure_modes.md` that are still open** — backend restart
+  recovery (FM-030), event store unavailability (FM-032), saturation (FM-014) — are
+  unaddressed, and there is no chaos test suite for them yet. None of them is a reason not to deploy,
   but all of them are things to know before an operator relies on the display.

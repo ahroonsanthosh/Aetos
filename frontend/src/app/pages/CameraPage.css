@@ -1,0 +1,201 @@
+.camera-page__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .camera-page__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.camera-page__error {
+  margin-bottom: var(--space-3);
+}
+
+.camera-page__grid > .panel {
+  margin-top: 0;
+}
+
+.camera-page__view {
+  display: flex;
+  flex-direction: column;
+}
+
+.camera-page__stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-void);
+}
+
+.camera-page__video,
+.camera-page__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.camera-page__video {
+  object-fit: contain;
+}
+
+.camera-page__overlay {
+  pointer-events: none;
+}
+
+.camera-page__idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+.camera-page__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-top: 1px solid var(--line-subtle);
+}
+
+.camera-page__button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.camera-page__button:hover:not(:disabled),
+.camera-page__button:focus-visible {
+  border-color: var(--brand-accent);
+}
+
+.camera-page__button:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.camera-page__button--primary {
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
+}
+
+.camera-page__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.camera-page__toggle.is-disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.camera-page__note {
+  color: var(--text-muted);
+}
+
+.camera-page__hint {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.camera-page__boxes {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + 1em);
+  font-size: var(--text-sm);
+  color: var(--status-elevated);
+}
+
+.camera-page__side .panel__header {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.camera-page__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.camera-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.camera-page__input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.camera-page__input input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  background: var(--surface-inset);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.camera-page__help {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.camera-page__status {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.camera-page__status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.camera-page__state {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.camera-page__state--ok {
+  color: var(--status-nominal);
+}
+
+.camera-page__state--degraded {
+  color: var(--status-warning);
+}
+
+.camera-page__state--offline {
+  color: var(--status-critical);
+}
+
+.camera-page__state--not_started {
+  color: var(--status-inert);
+}

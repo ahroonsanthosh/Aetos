@@ -14,9 +14,6 @@
 import type { Ground } from '@/types';
 import { latLonToEnu, type LatLon } from './geo';
 
-/** Standard Web Mercator tile size, px. */
-export const TILE_SIZE = 256;
-
 /** Ground resolution at zoom 0, equator: metres per pixel. */
 const EQUATOR_METRES_PER_PIXEL = 156_543.033_928_04;
 

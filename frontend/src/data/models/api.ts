@@ -294,17 +294,6 @@ export interface ScenarioListResponse {
   count: number;
 }
 
-export interface DetectionView {
-  seq: number;
-  detection_id: string;
-  timestamp: string;
-  sensor_id: string;
-  sensor_type: string;
-  position: PositionView;
-  position_uncertainty_m: number;
-  confidence: number;
-}
-
 /* -------------------------------------------------------------------------------------- */
 /* System status                                                                            */
 /* -------------------------------------------------------------------------------------- */
@@ -317,6 +306,63 @@ export interface ModeView {
   /** Computed from whether a real adapter is actually feeding the pipeline, not from the
    *  configured mode string. The two can disagree, and the operator needs to see that. */
   simulated: boolean;
+  /** Simulated adapters feeding the pipeline. With real ones too, the picture is HYBRID. */
+  simulated_adapters_connected?: number;
+}
+
+/* -------------------------------------------------------------------------------------- */
+/*  Camera                                                                                 */
+/* -------------------------------------------------------------------------------------- */
+
+export interface CameraMountView {
+  latitude: number;
+  longitude: number;
+  altitude_m: number;
+  boresight_deg: number;
+  tilt_deg: number;
+  horizontal_fov_deg: number;
+  vertical_fov_deg: number;
+  assumed_range_m: number;
+  range_sigma_m: number;
+}
+
+export interface CameraStatusView {
+  available: boolean;
+  active: boolean;
+  sensor_id: string | null;
+  state: "not_started" | "ok" | "degraded" | "offline";
+  reason: string;
+  frames_received: number;
+  detections_emitted: number;
+  seconds_since_frame: number | null;
+  mount: CameraMountView | null;
+  site_reference: [number, number, number] | null;
+}
+
+export interface CameraSessionRequest {
+  latitude?: number;
+  longitude?: number;
+  height_m: number;
+  boresight_deg: number;
+  tilt_deg: number;
+  horizontal_fov_deg: number;
+  vertical_fov_deg: number;
+  assumed_range_m: number;
+  range_sigma_m: number;
+}
+
+export interface CameraRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  strength: number;
+}
+
+export interface CameraFrameIn {
+  width: number;
+  height: number;
+  regions: CameraRegion[];
 }
 
 /**

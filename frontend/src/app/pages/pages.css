@@ -125,3 +125,7 @@
     display: none;
   }
 }
+
+.page__note a {
+  color: var(--brand-accent);
+}
