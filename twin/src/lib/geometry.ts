@@ -43,19 +43,9 @@ export function distanceGround(a: Ground, b: Ground): number {
   return Math.hypot(b.e - a.e, b.n - a.n);
 }
 
-export function distance3(a: Enu, b: Enu): number {
-  return Math.hypot(b.e - a.e, b.n - a.n, b.u - a.u);
-}
-
 /** Horizontal distance only. Range to a site is a ground range, not a slant range. */
 export function horizontalDistance(a: Enu | Ground, b: Enu | Ground): number {
   return Math.hypot(b.e - a.e, b.n - a.n);
-}
-
-/** Bearing from `from` to `to`, radians clockwise from north, in [0, 2π). */
-export function bearing(from: Enu | Ground, to: Enu | Ground): number {
-  const angle = Math.atan2(to.e - from.e, to.n - from.n);
-  return angle < 0 ? angle + TAU : angle;
 }
 
 /** Smallest signed difference between two bearings, in (-π, π]. */
@@ -92,33 +82,6 @@ export function polygonCentroid(polygon: Ground[]): Ground {
     n += p.n;
   }
   return { e: e / polygon.length, n: n / polygon.length };
-}
-
-/** Shortest distance from a point to a polygon's boundary. */
-export function distanceToPolygonEdge(p: Ground, polygon: Ground[]): number {
-  let best = Infinity;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    best = Math.min(best, distanceToSegment(p, polygon[j]!, polygon[i]!));
-  }
-  return best;
-}
-
-export function distanceToSegment(p: Ground, a: Ground, b: Ground): number {
-  const de = b.e - a.e;
-  const dn = b.n - a.n;
-  const lenSq = de * de + dn * dn;
-  if (lenSq === 0) return distanceGround(p, a);
-  const t = clamp01(((p.e - a.e) * de + (p.n - a.n) * dn) / lenSq);
-  return Math.hypot(p.e - (a.e + t * de), p.n - (a.n + t * dn));
-}
-
-/**
- * Signed distance to a polygon: negative inside, positive outside. Used for zone emphasis,
- * where "how far outside" matters as much as "in or out".
- */
-export function signedDistanceToPolygon(p: Ground, polygon: Ground[]): number {
-  const d = distanceToPolygonEdge(p, polygon);
-  return pointInPolygon(p, polygon) ? -d : d;
 }
 
 /** Axis-aligned bounds of a polygon. */

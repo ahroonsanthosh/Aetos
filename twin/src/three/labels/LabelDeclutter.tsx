@@ -33,13 +33,3 @@ export function LabelDeclutter() {
 
   return null;
 }
-
-/**
- * Hook form of `acquireLabel`, handling the React lifecycle.
- *
- * Returns a stable handle for the life of the component. The caller mutates `handle.world`
- * wherever it already tracks position — per-frame for a moving track, once for a fixed
- * asset — and attaches `handle.setElement` as a ref callback on the element it wants
- * placed.
- */
-export { useLabel } from './useLabel';
