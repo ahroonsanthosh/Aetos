@@ -76,11 +76,11 @@ The full checklist is in [docs/deployment.md](docs/deployment.md).
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ahroonsanthosh/Aetos)
 
-No terminal needed. Click the button, sign in to Render with GitHub, and fill in an admin
-username and a password of 12 characters or more. A few minutes later you get an
-`https://aetos-xxxx.onrender.com` address with the sign-in screen and the simulated approach on
-a loop. The viewer username and password are optional: they make a read-only account you can
-hand to someone else.
+No terminal needed. Click the button, sign in to Render with GitHub, and press Apply. A few
+minutes later you get an `https://aetos-xxxx.onrender.com` address with the sign-in screen and
+the simulated approach on a loop. Sign in as `admin`, with the password Render generated: it is
+`AETOS_ADMIN_PASSWORD` in the service's Environment tab. To share a read-only account, add
+`AETOS_VIEWER_USERNAME` and `AETOS_VIEWER_PASSWORD` (12+ characters) there.
 
 It runs on Render's free plan, which sleeps after 15 minutes without visitors and takes about a
 minute to wake. Each wake starts a fresh event log. The same image runs on any host that
