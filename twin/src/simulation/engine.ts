@@ -120,7 +120,7 @@ export class SimulationEngine {
     // --- Zones -------------------------------------------------------------
     const zoneState: Snapshot['zones'] = {};
     for (const zone of this.site.zones) {
-      zoneState[zone.id] = this.assessZone(zone, tracks);
+      zoneState[zone.id] = assessZone(zone, tracks);
     }
 
     // --- Assets ------------------------------------------------------------
@@ -301,49 +301,49 @@ export class SimulationEngine {
 
     return tracks;
   }
+}
 
-  /**
-   * Zone emphasis: how strongly the volume should assert itself.
-   *
-   * An occupied critical zone goes to full. Otherwise emphasis follows the worst threat
-   * predicted to enter it, and decays with how far away in time that entry is — so a zone
-   * begins to show before anything reaches it, which is the entire point of predicting.
-   */
-  private assessZone(zone: Zone, tracks: Track[]): Snapshot['zones'][string] {
-    const intruderTrackIds: string[] = [];
-    const predictedIntruderTrackIds: string[] = [];
-    let emphasis = 0;
+/**
+ * Zone emphasis: how strongly the volume should assert itself.
+ *
+ * An occupied critical zone goes to full. Otherwise emphasis follows the worst threat
+ * predicted to enter it, and decays with how far away in time that entry is — so a zone
+ * begins to show before anything reaches it, which is the entire point of predicting.
+ */
+export function assessZone(zone: Zone, tracks: Track[]): Snapshot['zones'][string] {
+  const intruderTrackIds: string[] = [];
+  const predictedIntruderTrackIds: string[] = [];
+  let emphasis = 0;
 
-    for (const track of tracks) {
-      const inside = pointInVolume(track.position, zone.polygon, zone.floor, zone.ceiling);
-      if (inside) {
-        intruderTrackIds.push(track.trackId);
-        emphasis = Math.max(emphasis, track.threat.level === 'low' ? 0.35 : 1);
-      }
-
-      if (track.threat.predictedZoneId === zone.id) {
-        predictedIntruderTrackIds.push(track.trackId);
-
-        // The window is deliberately short. A zone that brightens for anything merely
-        // predicted to reach it eventually is lit most of the time, and a permanently lit
-        // zone carries no information — it just sits over the asset it is meant to draw
-        // attention to. Ninety seconds out is not yet news; thirty seconds is.
-        const eta = track.threat.etaToProtectedZone ?? 999;
-        const imminence = clamp01(1 - eta / 75);
-        const severity =
-          track.threat.level === 'critical'
-            ? 1
-            : track.threat.level === 'high'
-              ? 0.75
-              : track.threat.level === 'medium'
-                ? 0.35
-                : 0.12;
-        emphasis = Math.max(emphasis, imminence * severity);
-      }
+  for (const track of tracks) {
+    const inside = pointInVolume(track.position, zone.polygon, zone.floor, zone.ceiling);
+    if (inside) {
+      intruderTrackIds.push(track.trackId);
+      emphasis = Math.max(emphasis, track.threat.level === 'low' ? 0.35 : 1);
     }
 
-    return { emphasis, intruderTrackIds, predictedIntruderTrackIds };
+    if (track.threat.predictedZoneId === zone.id) {
+      predictedIntruderTrackIds.push(track.trackId);
+
+      // The window is deliberately short. A zone that brightens for anything merely
+      // predicted to reach it eventually is lit most of the time, and a permanently lit
+      // zone carries no information — it just sits over the asset it is meant to draw
+      // attention to. Ninety seconds out is not yet news; thirty seconds is.
+      const eta = track.threat.etaToProtectedZone ?? 999;
+      const imminence = clamp01(1 - eta / 75);
+      const severity =
+        track.threat.level === 'critical'
+          ? 1
+          : track.threat.level === 'high'
+            ? 0.75
+            : track.threat.level === 'medium'
+              ? 0.35
+              : 0.12;
+      emphasis = Math.max(emphasis, imminence * severity);
+    }
   }
+
+  return { emphasis, intruderTrackIds, predictedIntruderTrackIds };
 }
 
 /**

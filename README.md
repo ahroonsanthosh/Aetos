@@ -91,8 +91,8 @@ I write down every way I've found it can go wrong, including the ones I haven't 
 ## What it can't do yet
 
 - The radar in live mode is a testbed unit with unmeasured detection performance.
-- The 3D digital twin (Digital Twin in the console's menu) runs its own simulated scenario. It
-  isn't fed by the console's live tracks yet.
+- The 3D digital twin (Digital Twin in the console's menu) shows the live site as airspace and
+  zones only: Aetos has no building models of a real site yet.
 - The camera (Camera in the menu) uses your device's camera and measures direction only. It
   places what it sees at a range you choose, so treat its tracks as bearings, not positions.
 - One drone sometimes still shows as more than one track for a moment, while the evidence that

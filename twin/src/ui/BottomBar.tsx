@@ -43,6 +43,10 @@ export function BottomBar() {
   const setRate = useAetos((s) => s.setRate);
 
   const scenario = SCENARIOS.find((s) => s.id === scenarioId);
+  const feed = useAetos((s) => s.feed);
+  const setFeed = useAetos((s) => s.setFeed);
+  const liveStatus = useAetos((s) => s.liveStatus);
+  const liveFallback = useAetos((s) => s.liveFallback);
 
   return (
     <footer className={`${styles.bar} panel`}>
@@ -85,47 +89,84 @@ export function BottomBar() {
 
       <div className={`${styles.group} ${styles.simulation}`}>
         <span className="heading">
-          Simulation
-          <span className={styles.simTag}>synthetic data</span>
+          Feed
+          {feed === 'simulation' && <span className={styles.simTag}>synthetic data</span>}
         </span>
 
         <div className={styles.simRow}>
-          <select
-            className={styles.select}
-            value={scenarioId}
-            onChange={(event) => setScenario(event.target.value)}
-          >
-            {SCENARIOS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            className={styles.button}
-            onClick={() => setPaused(!paused)}
-            title={paused ? 'Resume' : 'Pause'}
-          >
-            {paused ? 'Resume' : 'Pause'}
-          </button>
-
-          <div className={styles.rates}>
-            {[0.5, 1, 2, 4].map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRate(r)}
-                className={`${styles.rate} ${rate === r ? styles.buttonActive : ''}`}
-              >
-                {r}×
-              </button>
-            ))}
+          <div className={styles.buttons} role="group" aria-label="Feed">
+            <button
+              type="button"
+              onClick={() => setFeed('live')}
+              className={`${styles.button} ${feed === 'live' ? styles.buttonActive : ''}`}
+              title="The Aetos console's own site and tracks"
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeed('simulation')}
+              className={`${styles.button} ${feed === 'simulation' ? styles.buttonActive : ''}`}
+              title="Built-in scenarios on the demo or a loaded site"
+            >
+              Simulation
+            </button>
           </div>
+
+          {feed === 'simulation' && (
+            <>
+              <select
+                className={styles.select}
+                value={scenarioId}
+                onChange={(event) => setScenario(event.target.value)}
+              >
+                {SCENARIOS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                className={styles.button}
+                onClick={() => setPaused(!paused)}
+                title={paused ? 'Resume' : 'Pause'}
+              >
+                {paused ? 'Resume' : 'Pause'}
+              </button>
+
+              <div className={styles.rates}>
+                {[0.5, 1, 2, 4].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRate(r)}
+                    className={`${styles.rate} ${rate === r ? styles.buttonActive : ''}`}
+                  >
+                    {r}×
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
-        {scenario && <p className={styles.scenarioNote}>{scenario.description}</p>}
+        {feed === 'live' && (
+          <p className={styles.scenarioNote}>
+            {liveStatus?.state === 'interrupted'
+              ? `Feed interrupted: ${liveStatus.reason} Retrying every second.`
+              : liveStatus?.state === 'connecting'
+                ? 'Connecting to the Aetos console…'
+                : 'Tracks from the Aetos console, updated every second. Risk scores, reasons and recommendations are Aetos’s own.'}
+          </p>
+        )}
+        {feed === 'simulation' && liveFallback && (
+          <p className={styles.scenarioNote}>Live feed unavailable: {liveFallback}</p>
+        )}
+        {feed === 'simulation' && !liveFallback && scenario && (
+          <p className={styles.scenarioNote}>{scenario.description}</p>
+        )}
       </div>
     </footer>
   );

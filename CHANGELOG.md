@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**Added**: the digital twin is fed by the console. It shows the real Aetos site (its zones and
+sensors, with the coverage the backend reports) and the console's tracks, updated every second,
+with Aetos's own risk scores, reasons and recommendations. A Live/Simulation switch keeps the
+built-in scenarios one click away. Signed out or unreachable, it falls back to simulation and
+says why. Readiness counts only what Aetos reports.
+
 **Changed**: the digital twin matches the console: Barlow, Barlow Condensed and JetBrains Mono,
 the dark plum palette in the 3D scene and the panels, and readable 11px labels in place of tiny
 wide-spaced ones. Bloom and vignette post-processing are gone (and their packages). The feed

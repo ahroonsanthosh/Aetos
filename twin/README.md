@@ -1,13 +1,13 @@
-# Aetos Command — holographic digital twin
+# Aetos twin — the 3D digital twin
 
 A 3D command interface for a protected site: the facility as a digital twin, the airspace
 above it, what is in that airspace, what it threatens, and how well the system can
 currently see and protect the place.
 
-**Part of the Aetos site, on its own data.** `npm run build` exports it to static files in
-`out/`, and the Aetos backend serves them at `/twin/`. The console shows it under **Digital
-Twin** in its menu. It still runs on its own simulator rather than on the backend's live tracks
-— see [Integrating with Aetos Core](#integrating-with-aetos-core).
+**Part of the Aetos site, fed by it.** `npm run build` exports it to static files in `out/`,
+and the Aetos backend serves them at `/twin/`. The console shows it under **Digital Twin** in
+its menu. There it shows the console's own site and tracks (the **Live** feed); its built-in
+scenarios are one click away (**Simulation**). See [The live feed](#the-live-feed).
 
 ```bash
 cd twin
@@ -183,30 +183,24 @@ The ten built-in scenarios are flight paths written against the demo site's own 
 Loading a different site resets the scenario to "Reset" rather than flying a scripted UAV
 through buildings that were never there. Scenario authoring for arbitrary sites is not built.
 
-## Integrating with Aetos Core
+## The live feed
 
-One line, in `src/ui/CommandInterface.tsx`:
+`src/live/` reads the Aetos API from the same origin, with the console's session:
 
-```ts
-return attachSource(new SimulationSource(DEMO_SITE, DEFAULT_SCENARIO_ID));
-// becomes
-return attachSource(new WebSocketSource('wss://…/airspace'));
-```
+- `/sites` and `/sensors`, once: the real site's protected, restricted and monitored zones become
+  volumes, and its sensors are placed with the coverage the backend reports. The scene is framed
+  on the protected area. The live site has no buildings; it is the airspace and its zones.
+- `/tracks`, every second: each displayable track is placed in the local frame. Its risk score,
+  level, reasons and recommendation are **Aetos's own**; the twin re-scores nothing. The only
+  figures the twin derives are geometric: the straight-line prediction and when it enters a
+  protected zone.
+- Readiness counts only what Aetos reports (sensors and coverage). Weather reads "Not measured".
 
-`WebSocketSource` is already written (`src/state/source.ts`) — untested against a server,
-because Core does not publish this feed yet. It exists so the seam is real rather than
-asserted: if the interface could not be satisfied by a socket, the abstraction would be
-decoration.
-
-What Core would need to publish is the `Snapshot` shape in `src/types/index.ts`. Core now
-has two of the pieces the twin simulates — multi-sensor fusion (`backend/fusion/`, ADR 0020)
-and a sensor watchdog with a system posture (`backend/system_health/`, ADR 0019) — but no
-coverage model, no 3-D zones and no feed in this shape. Until then this stays a prototype, and
-says so.
-
-The site itself is the other half: `src/site/demo-site.ts` is a fictional facility written
-by hand. Real deployment means that file becoming a site survey — asset positions,
-criticalities, zone polygons, sensor placements — loaded rather than compiled in.
+The feed is live by default when the twin is served at `/twin/`. If it cannot load (signed out,
+backend unreachable), the twin falls back to its simulation and says why. A poll that fails
+once the feed is up keeps the last picture, marks the feed **INTERRUPTED**, and retries.
+Loading a site file or using the site editor switches to the simulation, which is what those
+sites are for.
 
 ## Testing
 
