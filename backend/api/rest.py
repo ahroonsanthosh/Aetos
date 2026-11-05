@@ -23,6 +23,7 @@ per worker thread or PostgreSQL, both of which the repository interface already 
 
 from __future__ import annotations
 
+from functools import cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -44,6 +45,7 @@ from backend.api.schemas import (
     ScenarioCreateRequest,
     ScenarioListResponse,
     ScenarioView,
+    SensorCoverageView,
     SensorListResponse,
     SensorView,
     SiteListResponse,
@@ -60,6 +62,8 @@ from backend.auth.models import Role
 from backend.database.records import ScenarioDefinition
 from backend.events.types import Event, EventType
 from backend.tracking.models import TrackState
+from sensors.adapters.simulated.registry import SensorRegistryError, load_sensor_registry
+from sensors.adapters.simulated.sensor_model import SensorModel
 from sensors.schemas.detection import Detection
 
 MAX_HISTORY_POINTS = 10_000
@@ -343,15 +347,42 @@ async def list_sensors(
     services: ServicesDep,
     site_id: Annotated[str | None, Query()] = None,
 ) -> SensorListResponse:
-    """Configured sensors and where they are.
+    """Configured sensors, where they are, and what a simulated one can see.
 
-    Placement only. Whether a sensor is currently healthy, degraded or silent is
-    `backend/system_health`'s answer and that module does not exist, so no health field is
-    reported — a green light nothing computes is worse than no light.
+    Placement only. Whether a sensor is currently healthy, degraded or silent is the system
+    health watchdog's answer, served by `GET /system/health`.
     """
     records = services.sensors.list_all(site_id=site_id)
+    registry = _sensor_registry()
     return SensorListResponse(
-        sensors=[SensorView.from_record(r) for r in records], count=len(records)
+        sensors=[
+            SensorView.from_record(r, _coverage_of(registry.get(r.registry_key or "")))
+            for r in records
+        ],
+        count=len(records),
+    )
+
+
+@cache
+def _sensor_registry() -> dict[str, SensorModel]:
+    """The simulation profiles, loaded once. They are configuration and do not change while
+    the server runs."""
+    try:
+        return load_sensor_registry()
+    except SensorRegistryError:
+        return {}
+
+
+def _coverage_of(model: SensorModel | None) -> SensorCoverageView | None:
+    if model is None:
+        return None
+    c = model.coverage
+    return SensorCoverageView(
+        min_range_m=c.min_range_m,
+        max_range_m=c.max_range_m,
+        azimuth_extent_deg=c.azimuth_extent_deg,
+        elevation_min_deg=c.elevation_min_deg,
+        elevation_max_deg=c.elevation_max_deg,
     )
 
 

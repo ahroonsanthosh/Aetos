@@ -435,12 +435,24 @@ class AlertListResponse(BaseModel):
     assessing: bool
 
 
+class SensorCoverageView(BaseModel):
+    """What a sensor can see, geometrically: a range annulus, an azimuth sector centred on the
+    boresight, and elevation limits. From the simulation profile; a real sensor has none."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    min_range_m: float
+    max_range_m: float
+    azimuth_extent_deg: float
+    elevation_min_deg: float
+    elevation_max_deg: float
+
+
 class SensorView(BaseModel):
     """A sensor's placement and whether it is enabled.
 
-    Note what is missing: operational health. Whether a sensor has gone silent belongs to
-    `backend/system_health`, which does not exist. Reporting a health field here would report
-    a status nothing computes.
+    Note what is missing: operational health. Whether a sensor has gone silent is judged by
+    `backend/system_health` and served by `GET /system/health`, not repeated here.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -459,9 +471,14 @@ class SensorView(BaseModel):
     height_m: float
     boresight_deg: float
     enabled: bool
+    coverage: SensorCoverageView | None = None
+    """The simulation profile's coverage, for a simulated sensor. None for a real one: a
+    fitted device's real envelope is unmeasured, and a drawn one would be a claim."""
 
     @classmethod
-    def from_record(cls, record: SensorRecord) -> SensorView:
+    def from_record(
+        cls, record: SensorRecord, coverage: SensorCoverageView | None = None
+    ) -> SensorView:
         return cls(
             sensor_id=record.sensor_id,
             site_id=record.site_id,
@@ -472,6 +489,7 @@ class SensorView(BaseModel):
             height_m=record.height_m,
             boresight_deg=record.boresight_deg,
             enabled=record.enabled,
+            coverage=coverage,
         )
 
 

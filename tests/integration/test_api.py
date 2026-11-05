@@ -694,3 +694,45 @@ def test_acknowledgement_survives_a_rebuild_with_the_operator_intact(
         "the alert rebuilt as acknowledged by nobody — the operator was lost between the "
         "payload written and the payload read"
     )
+
+
+def test_simulated_sensors_carry_their_coverage_and_type(tmp_path) -> None:
+    """The twin draws each sensor's coverage from this, and the Sensors table its type."""
+    from datetime import UTC, datetime
+
+    from fastapi.testclient import TestClient
+
+    from backend.common.clock import SimClock
+    from backend.main import Pipeline
+    from backend.zones.geometry import load_site_geometry
+
+    pipeline = Pipeline(
+        SimClock(datetime(2026, 1, 1, tzinfo=UTC)),
+        load_site_geometry("fictional_test_range"),
+        tmp_path,
+    )
+    try:
+        from backend.api.app import create_app
+        from backend.api.identity import LocalOperatorIdentityProvider
+        from backend.api.services import ApiServices
+
+        services = ApiServices(
+            clock=pipeline.clock,
+            events=pipeline.events,
+            sites=pipeline.repositories.sites,
+            sensors=pipeline.repositories.sensors,
+            scenarios=pipeline.repositories.scenarios,
+            tracks=pipeline.repositories.tracks,
+            track_history=pipeline.repositories.track_history,
+            projection=pipeline.projection,
+            identity=LocalOperatorIdentityProvider(pipeline.clock),
+        )
+        with TestClient(create_app(services)) as client:
+            sensors = {s["sensor_id"]: s for s in client.get("/api/v1/sensors").json()["sensors"]}
+    finally:
+        pipeline.close()
+
+    radar = sensors["radar_north"]
+    assert radar["sensor_type"] == "simulated_radar"
+    assert radar["coverage"]["max_range_m"] > radar["coverage"]["min_range_m"] > 0
+    assert sensors["rf_central"]["coverage"]["azimuth_extent_deg"] == 360.0

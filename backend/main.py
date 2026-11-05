@@ -217,6 +217,9 @@ class Pipeline:
         and the operator map draws none — which reads as "this site has no sensors" rather
         than "nobody told the database about them".
         """
+        # A simulated placement's type is its registry profile's, so the sensors table can say
+        # "simulated radar" rather than leaving the row blank.
+        registry_types = {key: model.sensor_type for key, model in load_sensor_registry().items()}
         self.repositories.sensors.replace_for_site(
             self.geometry.site.site_id,
             [
@@ -228,7 +231,7 @@ class Pipeline:
                     sensor_type=(
                         DRIVER_SENSOR_TYPES.get(placement.hardware.driver)
                         if placement.hardware
-                        else None
+                        else registry_types.get(placement.registry_key or "")
                     ),
                     latitude=placement.position.latitude,
                     longitude=placement.position.longitude,
