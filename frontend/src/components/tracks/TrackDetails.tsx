@@ -22,7 +22,14 @@ export function TrackDetails({ track }: Props) {
   if (!track) {
     return (
       <aside className="details details--empty">
-        <span className="label">No track selected</span>
+        <div className="details__placeholder">
+          <span className="details__placeholder-title">
+            <span className="serif">No</span> track selected
+          </span>
+          <span className="details__placeholder-hint">
+            Choose a track on the map or in the list to see what it is and why it scored.
+          </span>
+        </div>
       </aside>
     )
   }

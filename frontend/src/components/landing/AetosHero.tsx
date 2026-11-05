@@ -1,29 +1,22 @@
 /**
- * The public landing page.
+ * The public front page.
  *
- * Reskinned from 21st.dev's `halide-topo-hero` demo component by @shivendra9795kumar
- * (https://21st.dev). Every mechanism that carries its quality is preserved and none is
- * simplified:
+ * Two moments, after the calm, editorial feel of unseen.co:
  *
- *   - real CSS `perspective` + `transform-style: preserve-3d`, not a fake 2D skew
- *   - mouse-reactive tilt of the whole canvas, with per-layer `translateZ` depth
- *   - SVG `feTurbulence` film grain over everything
- *   - a topographic contour plane floating above the stack
- *   - a staged entrance that rotates the canvas up from flat
- *   - HUD monospace typography in a fixed interface grid
+ * 1. **The intro.** A blush screen, the letters of the name appearing one at a time, a line on
+ *    what Aetos is, and an Enter pill. "Enter without motion" goes in with every animation
+ *    stilled, for anyone who would rather not have them. Shown once per tab.
+ * 2. **The world.** A soft pastel sky over a tilted radar plane: rings, a slow sweep, a few
+ *    contacts and a protected area, with light orbs drifting in front. It tilts with the
+ *    pointer. Over it, a headline mixing an italic serif with a clean sans, and one pill: into
+ *    the console.
  *
- * What changed is the skin, the imagery, and the honesty of the readouts.
+ * The readouts along the bottom are real: link state, run mode, subsystem count and log head,
+ * read from the two endpoints that answer without a session. They say "——" when they do not
+ * know rather than inventing a healthy-looking number.
  *
- * ## The readouts are real
- *
- * `GET /system/mode` and `GET /system/health` are deliberately ungated (see
- * `backend/api/system.py`), so this page reads actual system state rather than printing
- * decorative numbers. When there is no backend — the page served statically, or the service
- * down — it says LINK OFFLINE and shows dashes. It never invents a figure.
- *
- * That is not scrupulousness for its own sake. This is a product whose entire argument is that
- * it does not display things it has not verified (ADR 0011); a landing page that opened with
- * invented telemetry would undercut the claim on the first screen.
+ * Nothing here says "neutralise". This system stops at a recommendation to a human, and the
+ * front page is the last place to claim a capability the product deliberately does not have.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -33,133 +26,229 @@ import { api } from '../../data/client/api'
 import type { SystemHealthView } from '../../data/models/api'
 import './AetosHero.css'
 
-/** Resting attitude of the canvas. The mouse moves the tilt around this, and it is where the
- *  entrance lands — also the fixed attitude for touch and reduced-motion. */
-const REST_X = 55
-const REST_Z = -25
+const INTRO_KEY = 'aetos.intro-seen'
+const LETTERS = ['A', 'E', 'T', 'O', 'S'] as const
+const LETTER_MS = 260
 
 interface Props {
   onLaunch: () => void
 }
 
 export function AetosHero({ onLaunch }: Props) {
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const layersRef = useRef<(HTMLDivElement | null)[]>([])
+  const [intro, setIntro] = useState(() => readIntroSeen() !== 'yes')
+  const [still, setStill] = useState(
+    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+  )
   const readouts = useSystemReadouts()
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    // Coarse pointers cannot hover, so a tilt driven by mouse position would leave the canvas
-    // stuck at whatever attitude it was born with. Locked to rest instead.
-    const coarse = window.matchMedia('(pointer: coarse)').matches
-
-    if (reduced || coarse) {
-      canvas.style.transform = `rotateX(${REST_X}deg) rotateZ(${REST_Z}deg) scale(1)`
-      canvas.style.opacity = '1'
-      // Still give the layers their depth: the parallax is what makes the stack read as
-      // stacked at all. It just stops responding to the pointer.
-      layersRef.current.forEach((layer, i) => {
-        if (layer) layer.style.transform = `translateZ(${(i + 1) * 26}px)`
-      })
-      return
-    }
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const x = (window.innerWidth / 2 - e.pageX) / 25
-      const y = (window.innerHeight / 2 - e.pageY) / 25
-
-      canvas.style.transform = `rotateX(${REST_X + y / 2}deg) rotateZ(${REST_Z + x / 2}deg)`
-
-      layersRef.current.forEach((layer, index) => {
-        if (!layer) return
-        // Deeper than the original's 15px step: three near-monochrome line drawings need more
-        // separation than three photographs to read as distinct planes.
-        const depth = (index + 1) * 26
-        const moveX = x * (index + 1) * 0.2
-        const moveY = y * (index + 1) * 0.2
-        layer.style.transform = `translateZ(${depth}px) translate(${moveX}px, ${moveY}px)`
-      })
-    }
-
-    canvas.style.opacity = '0'
-    canvas.style.transform = 'rotateX(90deg) rotateZ(0deg) scale(0.8)'
-
-    const timeout = window.setTimeout(() => {
-      canvas.style.transition = 'all 2.5s cubic-bezier(0.16, 1, 0.3, 1)'
-      canvas.style.opacity = '1'
-      canvas.style.transform = `rotateX(${REST_X}deg) rotateZ(${REST_Z}deg) scale(1)`
-    }, 300)
-
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.clearTimeout(timeout)
-    }
+  const enter = useCallback((withMotion: boolean) => {
+    if (!withMotion) setStill(true)
+    writeIntroSeen()
+    setIntro(false)
   }, [])
 
   return (
-    <div className="hero">
-      {/* The grain filter. `fractalNoise` over the whole viewport, desaturated — the same
-          construction as the source, at lower opacity because this palette is darker and
-          grain reads much more strongly on it. */}
-      <svg className="hero__filter" aria-hidden="true">
-        <filter id="aetos-grain">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" />
-          <feColorMatrix type="saturate" values="0" />
-        </filter>
-      </svg>
-      <div className="hero__grain" style={{ filter: 'url(#aetos-grain)' }} />
+    <div className={`hero ${still ? 'hero--still' : ''} ${intro ? 'hero--behind-intro' : ''}`}>
+      <World still={still} />
 
-      <div className="hero__viewport" aria-hidden="true">
-        <div className="hero__canvas" ref={canvasRef}>
-          <div className="hero__layer hero__layer--terrain" ref={(el) => (layersRef.current[0] = el)} />
-          <div className="hero__layer hero__layer--airframe" ref={(el) => (layersRef.current[1] = el)} />
-          <div className="hero__layer hero__layer--returns" ref={(el) => (layersRef.current[2] = el)} />
-          <div className="hero__contours" />
-        </div>
-      </div>
-
-      <div className="hero__grid">
-        <div className="hero__sys">AETOS SYS // 001</div>
-        <Readouts state={readouts} />
-
-        <div className="hero__centre">
-          <AetosMark size="clamp(96px, 13vw, 190px)" className="hero__mark" />
-          <h1 className="hero__title">AETOS</h1>
-        </div>
-
-        <div className="hero__foot">
-          <div className="hero__strap">
-            <p>[ COUNTER-UAS PLATFORM ]</p>
-            {/* Not "neutralize". This system stops at a recommendation to a human — the
-                boundary is architectural and enforced by test, and the front page is the last
-                place to claim a capability the product deliberately does not have. */}
-            <p className="hero__strap-line">DETECT · TRACK · ASSESS</p>
-          </div>
-          <button type="button" className="hero__cta" onClick={onLaunch}>
-            LAUNCH SYSTEM
+      <header className="hero__nav">
+        <span className="hero__wordmark">
+          <AetosMark size={30} className="hero__mark" />
+          aetos <span className="serif hero__wordmark-aside">counter-uas</span>
+        </span>
+        <nav className="hero__links" aria-label="Front page">
+          <button type="button" className="hero__link" onClick={onLaunch}>
+            Console
           </button>
-        </div>
-      </div>
+          <button type="button" className="hero__round" onClick={onLaunch} aria-label="Sign in">
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </button>
+        </nav>
+      </header>
 
-      <div className="hero__hint" aria-hidden="true" />
+      <main className="hero__centre">
+        <p className="label hero__eyebrow">A counter-UAS command platform · software only</p>
+        <h1 className="hero__title" aria-label="Guarding the open sky">
+          <BlurLine className="serif hero__title-serif" text="Guarding the" delay={intro ? 9999 : 200} />
+          <BlurLine className="hero__title-sans" text="open sky" delay={intro ? 9999 : 520} />
+        </h1>
+        <button type="button" className="pill hero__cta" onClick={onLaunch}>
+          Enter the console <span className="pill__arrow" aria-hidden="true">↘</span>
+        </button>
+      </main>
+
+      <footer className="hero__foot">
+        <Readouts state={readouts} />
+        <span className="label hero__strap">Detect · Track · Assess</span>
+        <span className="hero__copy">©2026</span>
+      </footer>
+
+      {intro && <Intro onEnter={enter} />}
     </div>
   )
 }
 
-/** What the HUD shows, and whether it is real. */
+/** The blush intro: the name letter by letter, then the line and the Enter pill. */
+function Intro({ onEnter }: { onEnter: (withMotion: boolean) => void }) {
+  const [shown, setShown] = useState(0)
+  const [leaving, setLeaving] = useState<null | boolean>(null)
+
+  useEffect(() => {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduced) {
+      setShown(LETTERS.length + 1)
+      return
+    }
+    const timers = Array.from({ length: LETTERS.length + 1 }, (_, i) =>
+      window.setTimeout(() => setShown(i + 1), 250 + i * LETTER_MS),
+    )
+    return () => timers.forEach(window.clearTimeout)
+  }, [])
+
+  const go = (withMotion: boolean) => {
+    if (leaving !== null) return
+    setLeaving(withMotion)
+    window.setTimeout(() => onEnter(withMotion), withMotion ? 900 : 0)
+  }
+
+  const ready = shown > LETTERS.length
+  const letter = shown >= 1 && shown <= LETTERS.length ? LETTERS[shown - 1] : null
+
+  return (
+    <div className={`intro ${leaving !== null ? 'is-leaving' : ''}`} role="dialog" aria-label="Aetos">
+      <div className="intro__glyph" aria-hidden="true">
+        {ready ? (
+          <AetosMark size={96} className="intro__mark" />
+        ) : (
+          letter && (
+            <span key={letter} className="intro__letter">
+              {letter}
+            </span>
+          )
+        )}
+      </div>
+      <p className="intro__name">AETOS®</p>
+      <p className="intro__line">
+        Command software for counter-drone teams. It fuses every sensor into one picture, scores
+        what it sees, and tells a human what it recommends.
+      </p>
+      <button
+        type="button"
+        className={`pill intro__enter ${ready ? 'is-ready' : ''}`}
+        onClick={() => go(true)}
+        disabled={!ready}
+      >
+        Enter <span className="pill__arrow" aria-hidden="true">↘</span>
+      </button>
+      <button type="button" className="intro__quiet" onClick={() => go(false)}>
+        Enter without motion
+      </button>
+    </div>
+  )
+}
+
+/** One headline line whose letters unblur and rise into place in sequence. */
+function BlurLine({ text, className, delay }: { text: string; className: string; delay: number }) {
+  return (
+    <span className={`hero__line ${className}`} aria-hidden="true">
+      {[...text].map((ch, i) => (
+        <span key={i} className="hero__char" style={{ animationDelay: `${delay + i * 38}ms` }}>
+          {ch === ' ' ? ' ' : ch}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** The pastel world: sky, a tilted radar plane that follows the pointer, drifting orbs. */
+function World({ still }: { still: boolean }) {
+  const planeRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const plane = planeRef.current
+    if (!plane || still) return
+    if (window.matchMedia?.('(pointer: coarse)').matches) return
+
+    let frame = 0
+    let tx = 0
+    let ty = 0
+    let x = 0
+    let y = 0
+    const onMove = (e: PointerEvent) => {
+      tx = (e.clientX / window.innerWidth - 0.5) * 2
+      ty = (e.clientY / window.innerHeight - 0.5) * 2
+    }
+    // Eased toward the pointer every frame, so the tilt glides rather than jumps.
+    const tick = () => {
+      x += (tx - x) * 0.05
+      y += (ty - y) * 0.05
+      plane.style.setProperty('--tilt-x', `${(62 + y * 4).toFixed(2)}deg`)
+      plane.style.setProperty('--tilt-z', `${(-18 + x * 6).toFixed(2)}deg`)
+      frame = window.requestAnimationFrame(tick)
+    }
+    window.addEventListener('pointermove', onMove)
+    frame = window.requestAnimationFrame(tick)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.cancelAnimationFrame(frame)
+    }
+  }, [still])
+
+  return (
+    <div className="world" aria-hidden="true">
+      <div className="world__sky" />
+      <div className="world__stage">
+        <div className="world__plane" ref={planeRef}>
+          <svg className="world__rings" viewBox="-500 -500 1000 1000">
+            <defs>
+              <radialGradient id="world-face" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" style={{ stopColor: 'var(--scope-face-inner)', stopOpacity: 0.95 }} />
+                <stop offset="70%" style={{ stopColor: 'var(--scope-face-mid)', stopOpacity: 0.6 }} />
+                <stop offset="100%" style={{ stopColor: 'var(--scope-face-outer)', stopOpacity: 0 }} />
+              </radialGradient>
+              <radialGradient id="world-zone" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" style={{ stopColor: 'var(--zone-protected)', stopOpacity: 0.18 }} />
+                <stop offset="100%" style={{ stopColor: 'var(--zone-protected)', stopOpacity: 0 }} />
+              </radialGradient>
+            </defs>
+            <circle r="500" fill="url(#world-face)" />
+            {[90, 180, 270, 360, 450].map((r) => (
+              <circle key={r} r={r} className="world__ring" />
+            ))}
+            {[0, 30, 60, 90, 120, 150].map((a) => (
+              <line
+                key={a}
+                className="world__spoke"
+                x1={-480 * Math.cos((a * Math.PI) / 180)}
+                y1={-480 * Math.sin((a * Math.PI) / 180)}
+                x2={480 * Math.cos((a * Math.PI) / 180)}
+                y2={480 * Math.sin((a * Math.PI) / 180)}
+              />
+            ))}
+            <circle r="120" fill="url(#world-zone)" />
+            <circle r="72" className="world__zone" />
+            <g className="world__contacts">
+              <circle cx="210" cy="-160" r="7" className="world__contact" />
+              <circle cx="-260" cy="90" r="6" className="world__contact world__contact--2" />
+              <circle cx="80" cy="300" r="5" className="world__contact world__contact--3" />
+              <path d="M 330 -260 Q 270 -205 210 -160" className="world__trail" />
+            </g>
+          </svg>
+          <div className="world__sweep" />
+        </div>
+      </div>
+      <div className="world__orb world__orb--a" />
+      <div className="world__orb world__orb--b" />
+      <div className="world__orb world__orb--c" />
+      <div className="world__haze" />
+    </div>
+  )
+}
+
 interface ReadoutState {
   linked: boolean
   mode: string | null
-  /** Healthy subsystems over total, from `GET /system/health`.
-   *
-   *  Labelled SUBSYSTEMS, not SENSORS. This began as a sensor count and was neither — it was
-   *  counting health components. `GET /sensors` requires a session, so a genuinely public page
-   *  cannot know the sensor count, and printing one anyway is exactly the invented figure this
-   *  page refuses to show. */
   subsystems: { ok: number; total: number } | null
   logSeq: number | null
 }
@@ -168,15 +257,15 @@ function Readouts({ state }: { state: ReadoutState }) {
   const dash = '——'
   return (
     <dl className="hero__readouts">
-      <Readout label="LINK" value={state.linked ? 'ESTABLISHED' : 'OFFLINE'} live={state.linked} />
-      <Readout label="MODE" value={state.mode ?? dash} live={state.linked} />
+      <Readout label="Link" value={state.linked ? 'established' : 'offline'} live={state.linked} />
+      <Readout label="Mode" value={state.mode ?? dash} live={state.linked} />
       <Readout
-        label="SUBSYSTEMS"
+        label="Subsystems"
         value={state.subsystems === null ? dash : `${state.subsystems.ok} / ${state.subsystems.total}`}
         live={state.linked}
       />
       <Readout
-        label="LOG SEQ"
+        label="Log"
         value={state.logSeq === null ? dash : state.logSeq.toLocaleString('en-GB')}
         live={state.linked}
       />
@@ -188,19 +277,12 @@ function Readout({ label, value, live }: { label: string; value: string; live: b
   return (
     <div className={`hero__readout ${live ? 'is-live' : 'is-dark'}`}>
       <dt>{label}</dt>
-      <dd>{value}</dd>
+      <dd className="numeric">{value}</dd>
     </div>
   )
 }
 
-/**
- * Poll the two ungated system endpoints.
- *
- * Failure is a state, not an error to swallow: `linked: false` renders as OFFLINE with dashes,
- * which is the truth when the page is served without a backend behind it. Nothing here ever
- * falls back to a plausible-looking number.
- */
-/** Whether this is the unauthenticated liveness answer rather than the component listing. */
+/** The unauthenticated health answer is liveness only; its one row is not a subsystem count. */
 function isLivenessOnly(health: SystemHealthView): boolean {
   return health.components.length === 1 && health.components[0]?.component === 'api'
 }
@@ -218,10 +300,7 @@ function useSystemReadouts(): ReadoutState {
       const [mode, health] = await Promise.all([api.mode(signal), api.health(signal)])
       setState({
         linked: true,
-        mode: mode.mode.toUpperCase(),
-        // Without a session the endpoint answers liveness only — a single `api` row — and
-        // reporting that as "1 / 1" would tell a visitor the whole system is healthy on the
-        // strength of one line that only says the process is up. Unknown is a dash.
+        mode: mode.mode,
         subsystems: isLivenessOnly(health)
           ? null
           : {
@@ -248,4 +327,21 @@ function useSystemReadouts(): ReadoutState {
   }, [poll])
 
   return state
+}
+
+/** Session storage throws in some locked-down browsers; then the intro simply shows again. */
+function readIntroSeen(): string | null {
+  try {
+    return window.sessionStorage.getItem(INTRO_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeIntroSeen(): void {
+  try {
+    window.sessionStorage.setItem(INTRO_KEY, 'yes')
+  } catch {
+    // Not remembered; the intro shows again next time. Harmless.
+  }
 }

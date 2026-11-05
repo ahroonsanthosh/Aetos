@@ -3,6 +3,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  animation: rise-in 900ms var(--ease-out);
 }
 
 .page--operational .page__main {
@@ -11,18 +12,22 @@
 
 .page__header {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--line);
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-6) var(--space-4);
   flex-shrink: 0;
 }
 
 .page__title {
   margin: 0;
-  font-size: var(--text-md);
-  font-weight: 500;
-  letter-spacing: var(--tracking-wide);
+  font-size: var(--text-display);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+}
+
+.page__title .serif {
+  letter-spacing: -0.01em;
 }
 
 .page__main {
@@ -46,36 +51,39 @@
 .page__drawer {
   height: var(--bottom-height);
   flex-shrink: 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-subtle);
   overflow: hidden;
 }
 
 .page__error {
+  margin: var(--space-2) var(--space-4);
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-sm);
   color: var(--status-critical);
   background: var(--status-critical-dim);
-  border-bottom: 1px solid var(--status-critical);
+  border-radius: var(--radius-pill);
 }
 
 .page__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-4);
+  padding: var(--space-2) var(--space-6) var(--space-6);
 }
 
 .page__note {
-  max-width: 70ch;
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  line-height: 1.6;
+  max-width: 64ch;
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  line-height: 1.55;
 }
 
 .panel {
-  background: var(--surface-panel);
-  border: 1px solid var(--line-subtle);
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
 }
 
 .panel + .panel {
@@ -128,4 +136,14 @@
 
 .page__note a {
   color: var(--brand-accent);
+}
+
+@media (max-width: 700px) {
+  .page__header {
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+
+  .page__body {
+    padding: var(--space-2) var(--space-4) var(--space-5);
+  }
 }

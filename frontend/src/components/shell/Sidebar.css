@@ -1,10 +1,7 @@
 .sidebar {
   width: var(--sidebar-width);
-  font-family: var(--font-display);
   flex-shrink: 0;
-  background: var(--surface-panel);
-  border-right: 1px solid var(--line-subtle);
-  padding: var(--space-4) 0;
+  padding: var(--space-3) var(--space-3) var(--space-5) var(--space-4);
   overflow-y: auto;
 }
 
@@ -13,46 +10,65 @@
 }
 
 .sidebar__section-title {
-  padding: 0 var(--space-4) var(--space-2);
+  padding: 0 var(--space-3) var(--space-2);
 }
 
 .sidebar__item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-sm);
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-base);
   color: var(--text-secondary);
-  border-left: 2px solid transparent;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition);
+}
+
+.sidebar__number {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  min-width: 2ch;
+}
+
+.sidebar__label {
+  flex: 1;
 }
 
 .sidebar__item:hover {
   color: var(--text-primary);
-  background: var(--surface-raised);
+  transform: translateX(3px);
 }
 
-/* The active marker is the one place in the navigation that uses the accent, and it is
-   structure rather than judgement: it says where you are, never how bad anything is. */
+/* Where you are: a white pill, the brand colour on the number. Structure, never judgement. */
 .sidebar__item.is-active {
   color: var(--text-primary);
-  background: linear-gradient(90deg, var(--brand-accent-veil) 0%, transparent 78%), var(--surface-raised);
-  border-left-color: var(--brand-accent);
-  font-weight: 500;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+  transform: none;
 }
 
-.sidebar__item--unavailable {
-  color: var(--text-disabled);
-  cursor: not-allowed;
+.sidebar__item.is-active .sidebar__number {
+  color: var(--brand-accent);
 }
 
+.sidebar__item--unavailable,
 .sidebar__item--unavailable:hover {
   color: var(--text-disabled);
-  background: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.sidebar__item--unavailable .sidebar__number {
+  color: var(--text-disabled);
 }
 
 .sidebar__badge {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-xs);
   color: var(--text-disabled);
 }

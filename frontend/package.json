@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/inter-tight": "^5.2.7",
+    "@fontsource/instrument-serif": "^5.2.8",
     "@protomaps/basemaps": "^5.7.2",
     "maplibre-gl": "^6.2.0",
     "pmtiles": "^4.4.1",

@@ -27,7 +27,7 @@
 .camera-page__stage {
   position: relative;
   aspect-ratio: 16 / 9;
-  background: var(--surface-void);
+  background: var(--surface-ink);
 }
 
 .camera-page__video,
@@ -67,18 +67,22 @@
 }
 
 .camera-page__button {
-  padding: var(--space-2) var(--space-3);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
   background: var(--surface-raised);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .camera-page__button:hover:not(:disabled),
 .camera-page__button:focus-visible {
-  border-color: var(--brand-accent);
+  background: var(--surface-ink);
+  color: var(--text-on-ink);
 }
 
 .camera-page__button:disabled {
@@ -87,8 +91,13 @@
 }
 
 .camera-page__button--primary {
-  border-color: var(--brand-accent);
-  color: var(--brand-accent);
+  border-color: var(--surface-ink);
+  background: var(--surface-ink);
+  color: var(--text-on-ink);
+}
+
+.camera-page__button--primary:hover:not(:disabled) {
+  background: var(--brand-accent);
 }
 
 .camera-page__toggle {
@@ -151,9 +160,10 @@
 .camera-page__input input {
   width: 100%;
   min-width: 0;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
-  background: var(--surface-inset);
+  border-radius: var(--radius-pill);
+  background: var(--surface-panel);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-sm);

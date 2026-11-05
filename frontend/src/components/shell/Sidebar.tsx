@@ -1,75 +1,19 @@
 /**
- * Primary navigation.
+ * The side rail: every section, numbered, always one click away on a wide screen.
  *
- * Every section of the finished system appears here, including the ones that are not built.
- * A navigation that hides unimplemented areas makes "not built yet" indistinguishable from
- * "does not exist", and this list is the clearest statement of the system's intended shape.
+ * On narrow screens it is hidden and the full-screen menu (`MenuOverlay`) carries the same list.
  * Unavailable entries are marked and are not clickable — see ADR 0011.
  */
 
 import { NavLink } from 'react-router-dom'
 
+import { NAVIGATION } from './navigation'
 import './Sidebar.css'
-
-interface Item {
-  label: string
-  path: string
-  /** Why this is not yet reachable. Present only for entries that are not built. */
-  unavailable?: string
-}
-
-interface Section {
-  title: string
-  items: Item[]
-}
-
-const SECTIONS: Section[] = [
-  {
-    title: 'Operations',
-    items: [
-      { label: 'Overview', path: '/' },
-      { label: 'Live Tracks', path: '/tracks' },
-      { label: 'Alerts', path: '/alerts' },
-      { label: 'Digital Twin', path: '/digital-twin' },
-    ],
-  },
-  {
-    title: 'Intelligence',
-    items: [
-      { label: 'Track History', path: '/history' },
-      { label: 'Sensor Fusion', path: '/fusion', unavailable: 'Fusion runs in the pipeline; no dedicated page yet' },
-      // Both modules are built and running; what these two lack is a dedicated page. Say
-      // that, rather than "not implemented" — the module claim was true when written and
-      // silently became false, leaving the sidebar denying the existence of scores the
-      // Tracks page was displaying at the same moment.
-      {
-        label: 'Classification',
-        path: '/classification',
-        unavailable: 'No dedicated page yet — classification is shown per track on Live Tracks',
-      },
-      {
-        label: 'Assessments',
-        path: '/assessments',
-        unavailable: 'No dedicated page yet — risk scores and reasons are shown per track on Live Tracks',
-      },
-    ],
-  },
-  {
-    title: 'Systems',
-    items: [
-      { label: 'Sensors', path: '/sensors' },
-      { label: 'Camera', path: '/camera' },
-      { label: 'Response Systems', path: '/response' },
-      { label: 'System Health', path: '/health' },
-      { label: 'Event Log', path: '/events' },
-    ],
-  },
-]
 
 export function Sidebar() {
   return (
     <nav className="sidebar" aria-label="Primary">
-      {SECTIONS.map((section) => (
+      {NAVIGATION.map((section) => (
         <div key={section.title} className="sidebar__section">
           <div className="label sidebar__section-title">{section.title}</div>
           {section.items.map((item) =>
@@ -80,19 +24,19 @@ export function Sidebar() {
                 title={item.unavailable}
                 aria-disabled="true"
               >
-                {item.label}
-                <span className="sidebar__badge">—</span>
+                <span className="sidebar__number numeric">{item.number}</span>
+                <span className="sidebar__label">{item.label}</span>
+                <span className="sidebar__badge">soon</span>
               </span>
             ) : (
               <NavLink
                 key={item.path}
                 to={item.path}
                 end={item.path === '/'}
-                className={({ isActive }) =>
-                  `sidebar__item ${isActive ? 'is-active' : ''}`
-                }
+                className={({ isActive }) => `sidebar__item ${isActive ? 'is-active' : ''}`}
               >
-                {item.label}
+                <span className="sidebar__number numeric">{item.number}</span>
+                <span className="sidebar__label">{item.label}</span>
               </NavLink>
             ),
           )}

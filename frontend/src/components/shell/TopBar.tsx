@@ -11,7 +11,7 @@
  * unknown rather than optimistically green (ADR 0011).
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { AetosMark } from '../brand/AetosMark'
@@ -19,6 +19,7 @@ import { api } from '../../data/client/api'
 import { useAuth } from '../../data/client/auth'
 import type { ModeView, SystemHealthView } from '../../data/models/api'
 import type { StreamStatus } from '../../data/client/stream'
+import { MenuOverlay } from './MenuOverlay'
 import './TopBar.css'
 
 interface Props {
@@ -36,6 +37,8 @@ export function TopBar({ streamStatus, trackCount }: Props) {
   const [mode, setMode] = useState<ModeView | null>(null)
   const [health, setHealth] = useState<SystemHealthView | null>(null)
   const [utc, setUtc] = useState(() => new Date())
+  const [menuOpen, setMenuOpen] = useState(false)
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
 
   useEffect(() => {
     const timer = window.setInterval(() => setUtc(new Date()), 1_000)
@@ -77,64 +80,78 @@ export function TopBar({ streamStatus, trackCount }: Props) {
     health?.components.filter((c) => c.state === 'unavailable' || c.state === 'degraded') ?? []
 
   return (
-    <header className="topbar">
-      {/* The mark links to the front page rather than to the console root. An operator who
-          clicks a logo expects to go somewhere; sending them to the page they are already on
-          is the more surprising of the two options, and `/landing` is the only route the logo
-          uniquely identifies. */}
-      <Link to="/landing" className="topbar__identity" title="Aetos — front page">
-        <AetosMark size={26} className="topbar__mark" />
-        <span className="topbar__wordmark">AETOS</span>
-        <span className="topbar__subtitle">Counter-UAS / Sensor Fusion</span>
-      </Link>
+    <>
+      <header className="topbar">
+        {/* The mark links to the front page rather than to the console root: `/landing` is the
+            only route the logo uniquely identifies. */}
+        <Link to="/landing" className="topbar__identity" title="Aetos — front page">
+          <AetosMark size={28} className="topbar__mark" />
+          <span className="topbar__wordmark">aetos</span>
+          <span className="topbar__subtitle serif">counter-uas</span>
+        </Link>
 
-      <div className="topbar__status">
-        <Chip
-          label="System"
-          value={systemLabel(health, unavailable.length)}
-          tone={health ? (unavailable.length ? 'warning' : 'nominal') : 'unknown'}
-        />
-        <Chip
-          label="Stream"
-          value={streamStatus.toUpperCase()}
-          tone={streamStatus === 'live' ? 'nominal' : streamStatus === 'closed' ? 'critical' : 'warning'}
-        />
-        <Chip label="Tracks" value={String(trackCount)} tone="info" />
-        <FusionChip health={health} />
-      </div>
+        <div className="topbar__status">
+          <Chip
+            label="System"
+            value={systemLabel(health, unavailable.length)}
+            tone={health ? (unavailable.length ? 'warning' : 'nominal') : 'unknown'}
+          />
+          <Chip
+            label="Stream"
+            value={streamStatus.toUpperCase()}
+            tone={
+              streamStatus === 'live' ? 'nominal' : streamStatus === 'closed' ? 'critical' : 'warning'
+            }
+          />
+          <Chip label="Tracks" value={String(trackCount)} tone="info" />
+          <FusionChip health={health} />
+        </div>
 
-      <div className="topbar__right">
-        <ModeIndicator mode={mode} />
-        <span className="topbar__utc numeric" title="Coordinated Universal Time">
-          {formatUtc(utc)}
-        </span>
-        {session && (
-          <span
-            className="topbar__operator"
-            title={`Signed in as ${session.display_name} (${session.role}). Every action is recorded against this account.`}
-          >
-            {session.display_name}
-            <span className="topbar__role">{session.role}</span>
+        <div className="topbar__right">
+          <ModeIndicator mode={mode} />
+          <span className="topbar__utc numeric" title="Coordinated Universal Time">
+            {formatUtc(utc)}
           </span>
-        )}
-        <button
-          type="button"
-          className="topbar__signout"
-          onClick={() => void signOut()}
-          title="End this session"
-        >
-          Sign out
-        </button>
-      </div>
-    </header>
+          {session && (
+            <span
+              className="topbar__operator"
+              title={`Signed in as ${session.display_name} (${session.role}). Every action is recorded against this account.`}
+            >
+              {session.display_name}
+              <span className="topbar__role serif">{session.role}</span>
+            </span>
+          )}
+          <button
+            type="button"
+            className="pill pill--outline topbar__signout"
+            onClick={() => void signOut()}
+            title="End this session"
+          >
+            Sign out
+          </button>
+          <button
+            type="button"
+            className="topbar__menu"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+            title="Menu"
+          >
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+      <MenuOverlay
+        open={menuOpen}
+        onClose={closeMenu}
+        onSignOut={() => void signOut()}
+        operator={session ? `${session.display_name} (${session.role})` : null}
+      />
+    </>
   )
 }
 
-/**
- * Fusion's state, read from the health endpoint's `fusion` row — never a constant. It used to
- * say NOT BUILT as a literal, and the obvious fix, a literal ON, would be the same mistake the
- * other way round: a site that switches fusion off in its policy would still be told it was on.
- */
 function FusionChip({ health }: { health: SystemHealthView | null }) {
   const fusion = health?.components.find((c) => c.component === 'fusion')
   if (!fusion) {
@@ -157,6 +174,7 @@ function ModeIndicator({ mode }: { mode: ModeView | null }) {
     // in flight would be a guess about the one thing that must never be guessed.
     return (
       <span className="mode mode--unknown" title="Run mode has not been reported by the backend">
+        <span className="mode__dot" aria-hidden="true" />
         MODE: UNKNOWN
       </span>
     )
@@ -176,6 +194,7 @@ function ModeIndicator({ mode }: { mode: ModeView | null }) {
             : `${mode.real_adapters_connected} real sensor adapter(s) feeding the pipeline. The hardware is unvalidated — treat every track as evidence to be checked. See docs/live_mode.md.`
       }
     >
+      <span className="mode__dot" aria-hidden="true" />
       MODE: {label}
     </span>
   )
@@ -196,6 +215,7 @@ function Chip({
 }) {
   return (
     <span className={`chip chip--${tone}`} title={title}>
+      <span className="chip__dot" aria-hidden="true" />
       <span className="chip__label">{label}</span>
       <span className="chip__value numeric">{value}</span>
     </span>
