@@ -6,7 +6,6 @@
   height: var(--topbar-height);
   flex-shrink: 0;
   padding: 0 var(--space-5) 0 var(--space-5);
-  animation: fade-in 800ms var(--ease-out);
 }
 
 .topbar__identity {
@@ -25,19 +24,20 @@
 
 .topbar__identity:hover .topbar__mark {
   color: var(--brand-accent);
-  transform: rotate(-6deg);
 }
 
 /* A lowercase wordmark with a serif aside, after the reference's "unseen studio". */
 .topbar__wordmark {
+  font-family: var(--font-display);
   font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.04em;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
   line-height: 1;
 }
 
 .topbar__subtitle {
-  font-size: var(--text-md);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -67,8 +67,8 @@
 }
 
 .topbar__role {
-  margin-left: var(--space-1);
-  font-size: var(--text-md);
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -78,35 +78,6 @@
   font-size: var(--text-xs);
 }
 
-/* The round menu button, two dots, as on the reference site. */
-.topbar__menu {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--surface-ink);
-  box-shadow: var(--shadow-soft);
-  transition: transform var(--transition), background var(--transition-fast);
-}
-
-.topbar__menu span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-on-ink);
-  transition: transform var(--transition);
-}
-
-.topbar__menu:hover {
-  background: var(--brand-accent);
-  transform: scale(1.06);
-}
-
-.topbar__menu:hover span:first-child { transform: translateX(-2px); }
-.topbar__menu:hover span:last-child { transform: translateX(2px); }
 
 /* ---- Status chips: white pills with a coloured dot. ---- */
 .chip {
@@ -121,10 +92,7 @@
 }
 
 .chip__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-disabled);
+  display: none;
 }
 
 .chip__label {
@@ -146,21 +114,7 @@
 .chip--inert .chip__value { color: var(--status-inert); }
 .chip--unknown .chip__value { color: var(--text-disabled); }
 
-.chip--nominal .chip__dot { background: var(--status-nominal); }
-.chip--info .chip__dot { background: var(--status-info); }
-.chip--warning .chip__dot { background: var(--status-warning); }
-.chip--critical .chip__dot { background: var(--status-critical); }
-.chip--inert .chip__dot { background: var(--status-inert); }
 
-/* A live stream breathes, so a frozen one is noticeable. */
-.chip--nominal .chip__dot {
-  animation: breathe 2.4s var(--ease-in-out) infinite;
-}
-
-@keyframes breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
 
 /* ---- Run mode: the loudest element in the bar. Synthetic data being mistaken for real is the
    failure it exists to prevent. ---- */
@@ -215,8 +169,7 @@
     padding: var(--space-3) var(--space-4);
   }
 
-  .topbar__utc,
-  .topbar__signout {
+  .topbar__utc {
     display: none;
   }
 

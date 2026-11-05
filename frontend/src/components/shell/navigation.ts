@@ -1,10 +1,9 @@
 /**
  * Every section of the console, in one list, numbered.
  *
- * Read by both the side rail and the full-screen menu, so the two can never disagree about what
- * exists. Entries that are not built yet are listed and marked rather than hidden: a navigation
- * that hides unimplemented areas makes "not built yet" indistinguishable from "does not exist"
- * (ADR 0011).
+ * Read by the side rail (a scrollable strip on narrow screens). Entries that are not built yet
+ * are listed and marked rather than hidden: a navigation that hides unimplemented areas makes
+ * "not built yet" indistinguishable from "does not exist" (ADR 0011).
  */
 
 export interface NavItem {

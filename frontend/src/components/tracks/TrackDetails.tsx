@@ -24,7 +24,7 @@ export function TrackDetails({ track }: Props) {
       <aside className="details details--empty">
         <div className="details__placeholder">
           <span className="details__placeholder-title">
-            <span className="serif">No</span> track selected
+            No track selected
           </span>
           <span className="details__placeholder-hint">
             Choose a track on the map or in the list to see what it is and why it scored.

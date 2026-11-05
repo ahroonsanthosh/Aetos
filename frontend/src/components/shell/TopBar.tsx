@@ -11,7 +11,7 @@
  * unknown rather than optimistically green (ADR 0011).
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { AetosMark } from '../brand/AetosMark'
@@ -19,7 +19,6 @@ import { api } from '../../data/client/api'
 import { useAuth } from '../../data/client/auth'
 import type { ModeView, SystemHealthView } from '../../data/models/api'
 import type { StreamStatus } from '../../data/client/stream'
-import { MenuOverlay } from './MenuOverlay'
 import './TopBar.css'
 
 interface Props {
@@ -37,8 +36,6 @@ export function TopBar({ streamStatus, trackCount }: Props) {
   const [mode, setMode] = useState<ModeView | null>(null)
   const [health, setHealth] = useState<SystemHealthView | null>(null)
   const [utc, setUtc] = useState(() => new Date())
-  const [menuOpen, setMenuOpen] = useState(false)
-  const closeMenu = useCallback(() => setMenuOpen(false), [])
 
   useEffect(() => {
     const timer = window.setInterval(() => setUtc(new Date()), 1_000)
@@ -80,14 +77,13 @@ export function TopBar({ streamStatus, trackCount }: Props) {
     health?.components.filter((c) => c.state === 'unavailable' || c.state === 'degraded') ?? []
 
   return (
-    <>
       <header className="topbar">
         {/* The mark links to the front page rather than to the console root: `/landing` is the
             only route the logo uniquely identifies. */}
         <Link to="/landing" className="topbar__identity" title="Aetos — front page">
           <AetosMark size={28} className="topbar__mark" />
           <span className="topbar__wordmark">aetos</span>
-          <span className="topbar__subtitle serif">counter-uas</span>
+          <span className="topbar__subtitle label">Counter-UAS</span>
         </Link>
 
         <div className="topbar__status">
@@ -118,7 +114,7 @@ export function TopBar({ streamStatus, trackCount }: Props) {
               title={`Signed in as ${session.display_name} (${session.role}). Every action is recorded against this account.`}
             >
               {session.display_name}
-              <span className="topbar__role serif">{session.role}</span>
+              <span className="topbar__role label">{session.role}</span>
             </span>
           )}
           <button
@@ -129,26 +125,8 @@ export function TopBar({ streamStatus, trackCount }: Props) {
           >
             Sign out
           </button>
-          <button
-            type="button"
-            className="topbar__menu"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
-            aria-expanded={menuOpen}
-            title="Menu"
-          >
-            <span aria-hidden="true" />
-            <span aria-hidden="true" />
-          </button>
         </div>
       </header>
-      <MenuOverlay
-        open={menuOpen}
-        onClose={closeMenu}
-        onSignOut={() => void signOut()}
-        operator={session ? `${session.display_name} (${session.role})` : null}
-      />
-    </>
   )
 }
 
@@ -215,7 +193,6 @@ function Chip({
 }) {
   return (
     <span className={`chip chip--${tone}`} title={title}>
-      <span className="chip__dot" aria-hidden="true" />
       <span className="chip__label">{label}</span>
       <span className="chip__value numeric">{value}</span>
     </span>

@@ -8,7 +8,7 @@
  * renders black.
  *
  * Traced from the supplied raster; see `frontend/brand/README.md` for how and why. The wordmark
- * beside it is live type in Inter Tight wherever it appears, not part of this component.
+ * beside it is live type in Barlow Condensed wherever it appears, not part of this component.
  */
 
 interface MarkProps {

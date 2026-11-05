@@ -8,9 +8,9 @@
  * The look
  * ---------------------------------------------------------------------------------------
  *
- * A warm blush ground with cream cards and near-black type: soft, calm and editorial, with
- * an italic serif for accents and a tight grotesk for everything that has to be read fast.
- * Pills and generous rounding instead of hairline boxes; slow, eased motion instead of snaps.
+ * Near-black warmed toward the eagle's plum, with light type. Condensed uppercase headings,
+ * a plain grotesk for reading and a monospace for every changing number. Pills and generous
+ * rounding instead of hairline boxes; slow, eased motion instead of snaps.
  *
  * The one rule that survives the change of look is the one that matters on a console:
  *
@@ -18,92 +18,91 @@
  *   It says where you are. It never says how bad something is.
  *
  *   STATUS — green, amber, orange and red, and nothing else saturated. These carry judgement.
- *   They are darker than on the old dark theme so each clears WCAG AA (4.5:1) against every
- *   surface it lands on, which `tests/unit/tokens.test.ts` measures rather than trusts.
+ *   Each clears WCAG AA (4.5:1) against every surface it lands on, which
+ *   `tests/unit/tokens.test.ts` measures rather than trusts.
  */
 
 :root {
-  /* ---- Brand. Identity and structure, never severity. ---- */
-  --brand-deep: #2a1f2b;        /* the launch wipe, the darkest pills */
-  --brand-mid: #5b3d5c;         /* the mark, at rest */
-  --brand-accent: #6e3f6f;      /* active nav, focus, hover, live values */
-  --brand-accent-dim: #6e3f6f33;
-  --brand-accent-veil: #6e3f6f14;   /* the faintest readable tint */
-  --brand-wash: #fff7f5;        /* the soft light behind the shell */
+  /* ---- Brand. The eagle's plum. Identity and structure, never severity. ---- */
+  --brand-deep: #3d1f3d;        /* gradients, the launch curtain */
+  --brand-mid: #8a6290;         /* the mark, at rest */
+  --brand-accent: #c39bd3;      /* active nav, focus, hover, live values */
+  --brand-accent-dim: #c39bd333;
+  --brand-accent-veil: #c39bd314;   /* the faintest readable tint */
+  --brand-wash: #3d1f3d2e;      /* a faint plum falloff at the top of the shell */
 
-  /* ---- Surfaces. Blush ground, cream cards, white for what is raised. ---- */
-  --surface-void: #e7d6d2;      /* behind the map */
-  --surface-base: #efe3e0;      /* application background */
-  --surface-panel: #f8f1ef;     /* cards */
-  --surface-raised: #ffffff;    /* headers within cards, hover states, pills */
-  --surface-inset: #ebdcd8;     /* wells, code, log rows */
-  --surface-ink: #1d1a1b;       /* dark pills and the menu button */
+  /* ---- Surfaces. Near-black, warmed very slightly toward the plum. ---- */
+  --surface-void: #060507;      /* behind the map */
+  --surface-base: #0b090c;      /* application background */
+  --surface-panel: #121014;     /* cards */
+  --surface-raised: #1b171e;    /* headers within cards, hover states, pills */
+  --surface-inset: #0e0c10;     /* wells, code, log rows */
+  --surface-ink: #ede6ef;       /* the inverted pill: light on dark, for primary actions */
 
-  /* ---- Lines. Soft; structure now comes mostly from rounding and space. ---- */
-  --line-subtle: #e4d4d0;
-  --line: #d8c5c0;
-  --line-strong: #b59d97;
+  /* ---- Lines. Quiet hairlines; structure comes mostly from rounding and space. ---- */
+  --line-subtle: #211c25;
+  --line: #2e2734;
+  --line-strong: #4a3f51;
 
   /* ---- Type. Every value clears AA on every surface above. ---- */
-  --text-primary: #1d1a1b;
-  --text-secondary: #463e40;
-  --text-muted: #62575a;
-  --text-disabled: #8d8083;     /* inactive controls only, never live content */
-  --text-on-ink: #fbf6f5;
+  --text-primary: #ede6ef;
+  --text-secondary: #b9adbd;
+  --text-muted: #978a9c;
+  --text-disabled: #6a5f6f;     /* inactive controls only, never live content */
+  --text-on-ink: #0b090c;
 
   /* ---- Status. The only saturated colours in the system, and they mean something. ---- */
-  --status-nominal: #276b4f;
-  --status-info: #6e3f6f;       /* informational; the brand accent, deliberately */
-  --status-notice: #7a4c7b;
-  --status-warning: #8a5100;
-  --status-elevated: #a2410f;
-  --status-critical: #ab2219;
-  --status-inert: #62575a;      /* not built, not connected — deliberately colourless */
+  --status-nominal: #7fbf9f;
+  --status-info: #c39bd3;       /* informational; the brand accent, deliberately */
+  --status-notice: #d4b4e0;
+  --status-warning: #e8ad52;
+  --status-elevated: #f0905a;
+  --status-critical: #f26d66;
+  --status-inert: #978a9c;      /* not built, not connected — deliberately colourless */
 
-  --status-nominal-dim: #276b4f1f;
-  --status-info-dim: #6e3f6f1f;
-  --status-warning-dim: #8a51001f;
-  --status-critical-dim: #ab22191a;
+  --status-nominal-dim: #7fbf9f1f;
+  --status-info-dim: #c39bd31f;
+  --status-warning-dim: #e8ad521f;
+  --status-critical-dim: #f26d661f;
 
   /* ---- Track and instrument colours. ---- */
-  --track-default: #5b3d5c;
-  --track-selected: #1d1a1b;
-  --track-stale: #8d8083;
-  --track-lost: #c2b1ad;
-  --track-trail: #5b3d5c66;
-  --track-prediction: #5b3d5c4d;
+  --track-default: #c39bd3;
+  --track-selected: #ffffff;
+  --track-stale: #7d7083;
+  --track-lost: #4d4452;
+  --track-trail: #c39bd366;
+  --track-prediction: #c39bd34d;
 
-  --grid-line: #e2d0cc;
-  --grid-line-major: #cbb4ae;
-  --grid-label: #6c5f62;
+  --grid-line: #1d1822;
+  --grid-line-major: #352c3b;
+  --grid-label: #8c7f91;
 
-  /* The scope face: a soft lit disc, brightest at the centre. */
-  --scope-face-inner: #fdf9f8;
-  --scope-face-mid: #f5ecea;
-  --scope-face-outer: #ecdfdb;
-  --sensor-marker: #276b4f;
-  --sensor-coverage: #276b4f14;
+  /* The scope face: a faint lit disc against the void. */
+  --scope-face-inner: #17121a;
+  --scope-face-mid: #100d12;
+  --scope-face-outer: #08070a;
+  --sensor-marker: #7fbf9f;
+  --sensor-coverage: #7fbf9f14;
 
-  /* The front page's pastel sky and its drifting orbs. */
-  --sky-top: #f4e7e4;
-  --sky-horizon: #ecd8da;
-  --sky-low: #ddd0e2;
-  --orb: #fffdfd;
-  --orb-rim: #d8c6e8;
-  --orb-shade: #b9a6c740;
+  /* The front page's night sky. */
+  --sky-top: #050407;
+  --sky-horizon: #140d17;
+  --sky-low: #1d1121;
+  --orb: #f3e8f7;
+  --orb-rim: #8a6290;
+  --orb-shade: #00000099;
 
-  --zone-protected: #ab2219;
-  --zone-restricted: #8a5100;
-  --zone-monitored: #6e3f6f;
+  --zone-protected: #f26d66;
+  --zone-restricted: #e8ad52;
+  --zone-monitored: #c39bd3;
 
   /* ---- Type families. ----
-     All three ship inside the bundle (@fontsource packages, and public/fonts for the mono).
-     Nothing is fetched from a font CDN: a console for a defence site should not make a
-     third-party request on load, and it has to render with no outbound network at all. */
-  --font-sans: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: var(--font-sans);
-  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+     Barlow for reading, Barlow Condensed for headings and labels, JetBrains Mono for every
+     number that changes. All open-source (SIL OFL), bundled from their @fontsource packages;
+     nothing is fetched from a font CDN, so the console renders with no outbound network. */
+  --font-sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* ---- Type scale. ---- */
   --text-2xs: 11px;
@@ -118,7 +117,7 @@
 
   --tracking-tight: -0.02em;    /* large type */
   --tracking-wide: 0.04em;      /* small caps labels */
-  --tracking-wider: 0.08em;
+  --tracking-wider: 0.14em;
 
   /* ---- Spacing. 4px base. ---- */
   --space-1: 4px;
@@ -135,7 +134,7 @@
   --radius: 18px;
   --radius-lg: 28px;
   --radius-pill: 999px;
-  --shadow-soft: 0 1px 1px #2a1f2b08, 0 12px 32px -12px #2a1f2b26;
+  --shadow-soft: 0 0 0 1px #ffffff0d, 0 16px 36px -18px #000000e6;
 
   /* ---- Layout. ---- */
   --topbar-height: 64px;

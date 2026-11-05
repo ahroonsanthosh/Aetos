@@ -26,7 +26,7 @@ export function DigitalTwinPage() {
           by this console's live tracks yet.
         </span>
         <a className="pill pill--ink" href={TWIN_URL} target="_blank" rel="noreferrer">
-          Open full screen <span className="pill__arrow" aria-hidden="true">↗</span>
+          Open full screen
         </a>
       </div>
       <iframe className="twin-page__frame" src={TWIN_URL} title="Aetos digital twin" />
