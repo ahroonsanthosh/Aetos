@@ -30,6 +30,7 @@ import { DEFAULT_SCENARIO_ID } from '@/simulation/scenarios';
 import { deriveScenePresentation, type ScenePresentation } from '@/site/presentation';
 import type { DataSource } from './source';
 import { pushSnapshot, resetBuffer } from './buffer';
+import type { LiveStatus } from '@/live/LiveSource';
 
 export interface LayerToggles {
   /** Sensor positions and coverage volumes. */
@@ -55,6 +56,17 @@ interface AetosState {
   layers: LayerToggles;
   /** Set once the source has delivered its first snapshot. */
   connected: boolean;
+  /**
+   * Where snapshots come from. `pending` until the interface has mounted and decided: live
+   * when the twin is served by Aetos (at `/twin/`), simulation when it runs on its own.
+   */
+  feed: Feed;
+  /** The live feed's state, for the top bar and the bottom bar. Null in simulation. */
+  liveStatus: LiveStatus | null;
+  /** Why the twin fell back from live to simulation, if it did. */
+  liveFallback: string | null;
+  /** The site the simulation runs on: the demo, or one the operator loaded or built. */
+  simulationSite: Site;
 
   setSnapshot(snapshot: Snapshot): void;
   setMode(mode: ViewMode): void;
@@ -72,7 +84,14 @@ interface AetosState {
    * synthetic UAV through buildings that were never there.
    */
   setSite(site: Site): void;
+  /** Switch feeds. Simulation returns to the simulation's own site. */
+  setFeed(feed: Exclude<Feed, 'pending'>): void;
+  /** The live feed's site: the real Aetos site, replacing the scene without leaving live. */
+  setLiveSite(site: Site): void;
+  setLiveStatus(status: LiveStatus): void;
 }
+
+export type Feed = 'pending' | 'live' | 'simulation';
 
 /**
  * The active source. Held outside the store because it is a live object with a socket or
@@ -91,6 +110,10 @@ const MODE_LAYERS: Record<ViewMode, Partial<LayerToggles>> = {
 
 export const useAetos = create<AetosState>((set, get) => ({
   site: DEMO_SITE,
+  simulationSite: DEMO_SITE,
+  feed: 'pending',
+  liveStatus: null,
+  liveFallback: null,
   snapshot: null,
   mode: 'overview',
   selection: null,
@@ -150,8 +173,57 @@ export const useAetos = create<AetosState>((set, get) => ({
   },
 
   setSite(site) {
+    // A site the operator loads or builds is for the simulation: the live feed always shows
+    // the real Aetos site.
     resetBuffer();
-    set({ site, selection: null, snapshot: null, connected: false, scenarioId: 'idle' });
+    set({
+      site,
+      simulationSite: site,
+      feed: 'simulation',
+      liveStatus: null,
+      selection: null,
+      snapshot: null,
+      connected: false,
+      scenarioId: 'idle',
+    });
+  },
+
+  setFeed(feed) {
+    if (feed === get().feed) return;
+    resetBuffer();
+    set({
+      feed,
+      site: feed === 'simulation' ? get().simulationSite : get().site,
+      liveStatus: feed === 'live' ? { state: 'connecting' } : null,
+      liveFallback: feed === 'live' ? null : get().liveFallback,
+      selection: null,
+      snapshot: null,
+      connected: false,
+    });
+  },
+
+  setLiveSite(site) {
+    resetBuffer();
+    set({ site, selection: null, snapshot: null, connected: false });
+  },
+
+  setLiveStatus(status) {
+    if (get().feed !== 'live') return;
+    if (status.state === 'failed') {
+      // Fall back to the simulation, and say why, rather than showing an empty scene.
+      resetBuffer();
+      set({
+        feed: 'simulation',
+        site: get().simulationSite,
+        liveStatus: null,
+        liveFallback: status.reason,
+        selection: null,
+        snapshot: null,
+        connected: false,
+      });
+      return;
+    }
+    set({ liveStatus: status });
   },
 }));
 

@@ -6,8 +6,9 @@
  * navigation and status bar around it. The backend allows exactly this framing: the twin's pages
  * say `frame-ancestors 'self'`, so only this origin can embed them.
  *
- * The twin runs on its own simulated picture, not on this console's live tracks, and the page
- * says so rather than letting a second display of drones read as a second view of the same sky.
+ * The twin reads this console's own site and tracks (its Live feed), and can switch to its
+ * built-in scenarios; its top bar says which, so a simulated picture is never mistaken for the
+ * live one.
  */
 
 import { PageHeader } from './TracksPage'
@@ -19,11 +20,11 @@ export const TWIN_URL = '/twin/'
 export function DigitalTwinPage() {
   return (
     <div className="page">
-      <PageHeader title="Digital Twin" subtitle="3-D site model · simulated picture" />
+      <PageHeader title="Digital Twin" subtitle="3-D site model · live tracks" />
       <div className="twin-page__bar">
         <span>
-          The twin runs its own simulated scenario over a 3-D model of the site. It is not fed
-          by this console's live tracks yet.
+          The live site and its tracks in 3-D, with Aetos's own risk scores. Switch to the
+          twin's built-in scenarios from its Feed controls.
         </span>
         <a className="pill pill--ink" href={TWIN_URL} target="_blank" rel="noreferrer">
           Open full screen
