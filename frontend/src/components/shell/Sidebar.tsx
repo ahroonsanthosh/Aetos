@@ -1,7 +1,7 @@
 /**
  * The side rail: every section, numbered, always one click away on a wide screen.
  *
- * On narrow screens it is hidden and the full-screen menu (`MenuOverlay`) carries the same list.
+ * On narrow screens it becomes a scrollable strip of the same numbered pages under the top bar.
  * Unavailable entries are marked and are not clickable — see ADR 0011.
  */
 

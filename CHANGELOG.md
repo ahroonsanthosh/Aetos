@@ -2,14 +2,12 @@
 
 ## Unreleased
 
-**Changed**: a new look for the whole site, after the calm, editorial feel of unseen.co. A warm
-blush and cream theme with film grain; Inter Tight with Instrument Serif accents (both free and
-bundled, nothing fetched at runtime); pill buttons and rounded cards; numbered navigation in the
-side rail and in a new full-screen menu behind the round button, which is also the whole
-navigation on a phone; pages and headings that rise and unblur into place. The front page opens
-with a letter-by-letter intro and an Enter pill, then a pastel radar world that tilts with the
-pointer. Every page, control and option is where it was. Status colours were darkened for the
-light ground, and a test now checks every one clears WCAG AA on every surface.
+**Changed**: a new look for the whole site. Dark surfaces with the brand plum; Barlow,
+Barlow Condensed and JetBrains Mono (free, bundled, nothing fetched at runtime); numbered side
+navigation, which becomes a scrollable strip on phones; rounded cards and pill buttons. The site
+is three screens: a plain front page, the sign-in card, and the console. The launch and boot
+animations, film grain, text reveals and other decoration are gone. Status colours clear WCAG AA
+on every surface, checked by a test.
 
 **Added**: `GET /sensors` reports each simulated sensor's coverage envelope and type.
 

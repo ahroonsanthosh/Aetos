@@ -6,7 +6,6 @@
   height: var(--topbar-height);
   flex-shrink: 0;
   padding: 0 var(--space-5) 0 var(--space-5);
-  animation: fade-in 800ms var(--ease-out);
 }
 
 .topbar__identity {
@@ -25,24 +24,28 @@
 
 .topbar__identity:hover .topbar__mark {
   color: var(--brand-accent);
-  transform: rotate(-6deg);
 }
 
 /* A lowercase wordmark with a serif aside, after the reference's "unseen studio". */
 .topbar__wordmark {
+  font-family: var(--font-display);
   font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.04em;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
   line-height: 1;
 }
 
 .topbar__subtitle {
-  font-size: var(--text-md);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
 .topbar__status {
   display: flex;
+  gap: var(--space-2);
+  flex: 1;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -64,8 +67,8 @@
 }
 
 .topbar__role {
-  margin-left: var(--space-1);
-  font-size: var(--text-md);
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -75,56 +78,17 @@
   font-size: var(--text-xs);
 }
 
-/* The round menu button, two dots, as on the reference site. */
-.topbar__menu {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1px solid var(--line-strong);
-  transition: transform var(--transition), border-color var(--transition-fast);
-}
 
-.topbar__menu span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--text-primary);
-  transition: transform var(--transition);
-}
-
-.topbar__menu:hover {
-  border-color: var(--brand-accent);
-}
-
-.topbar__menu:hover span:first-child { transform: translateX(-2px); }
-.topbar__menu:hover span:last-child { transform: translateX(2px); }
-
-/* ---- Status: one segmented readout strip, like an instrument's status line. Each segment is a
-   label over a value, divided by hairlines; the value carries the colour. ---- */
-.topbar__status {
-  flex: 0 1 auto;
-  margin: 0 auto;
-  gap: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-inset);
-}
-
+/* ---- Status chips: white pills with a coloured dot. ---- */
 .chip {
   display: inline-flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 5px var(--space-4) 6px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
   white-space: nowrap;
-}
-
-.chip + .chip {
-  border-left: 1px solid var(--line);
 }
 
 .chip__dot {
@@ -132,8 +96,8 @@
 }
 
 .chip__label {
-  font-size: 9px;
-  letter-spacing: var(--tracking-wider);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -150,6 +114,8 @@
 .chip--inert .chip__value { color: var(--status-inert); }
 .chip--unknown .chip__value { color: var(--text-disabled); }
 
+
+
 /* ---- Run mode: the loudest element in the bar. Synthetic data being mistaken for real is the
    failure it exists to prevent. ---- */
 .mode {
@@ -161,16 +127,7 @@
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-wide);
   border: 1px solid;
-  border-radius: var(--radius-sm);
-}
-
-.mode__dot {
-  animation: breathe 2.4s var(--ease-in-out) infinite;
-}
-
-@keyframes breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  border-radius: var(--radius-pill);
 }
 
 .mode__dot {
@@ -212,8 +169,7 @@
     padding: var(--space-3) var(--space-4);
   }
 
-  .topbar__utc,
-  .topbar__signout {
+  .topbar__utc {
     display: none;
   }
 

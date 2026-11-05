@@ -1,25 +1,6 @@
 @import './tokens.css';
 
-/*
- * Fonts. Inter Tight and Instrument Serif arrive through their @fontsource packages
- * (imported in main.tsx), so Vite bundles them as hashed assets. IBM Plex Mono stays
- * vendored under public/fonts. Nothing is fetched from a font CDN.
- */
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
-}
+/* Fonts arrive through their @fontsource packages (imported in main.tsx). */
 
 *,
 *::before,
@@ -35,40 +16,13 @@ body,
 }
 
 body {
-  /* Flat near-black with a faint plum falloff from the top. */
-  background:
-    radial-gradient(80% 50% at 50% -10%, var(--brand-wash) 0%, transparent 70%),
-    var(--surface-base);
+  background: var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: 1.45;
-  font-feature-settings: 'ss01', 'cv11';
   -webkit-font-smoothing: antialiased;
   overflow: hidden; /* the shell manages its own scroll regions */
-}
-
-/* Film grain over everything, as a fixed layer that never takes a click. Very faint: texture,
-   not noise. */
-body::after {
-  content: '';
-  position: fixed;
-  inset: -50%;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.045;
-  /* Light grain: on a dark ground it is the bright specks that read as film. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: grain 1.2s steps(6) infinite;
-}
-
-@keyframes grain {
-  0% { transform: translate(0, 0); }
-  20% { transform: translate(-3%, 2%); }
-  40% { transform: translate(2%, -3%); }
-  60% { transform: translate(-2%, -1%); }
-  80% { transform: translate(3%, 3%); }
-  100% { transform: translate(0, 0); }
 }
 
 /* Numbers that change in place are monospaced and tabular, so the eye can hold a value still
@@ -80,19 +34,12 @@ body::after {
 
 /* Small caps labels: the eyebrow over a heading, the name of a field. */
 .label {
-  font-size: var(--text-2xs);
-  letter-spacing: var(--tracking-wide);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   color: var(--text-muted);
   font-weight: 500;
-}
-
-/* The italic serif accent, for a word or two inside a heading. */
-.serif {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 400;
-  letter-spacing: -0.01em;
 }
 
 a {
@@ -157,10 +104,11 @@ textarea {
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   color: var(--text-primary);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   font-size: var(--text-sm);
   line-height: 1;
   white-space: nowrap;
+  box-shadow: var(--shadow-soft);
   transition:
     background var(--transition-fast),
     color var(--transition-fast),
@@ -169,8 +117,8 @@ textarea {
 }
 
 .pill:hover:not(:disabled) {
-  border-color: var(--brand-accent);
-  color: var(--text-primary);
+  background: var(--surface-ink);
+  color: var(--text-on-ink);
 }
 
 .pill:active:not(:disabled) {
@@ -180,58 +128,22 @@ textarea {
 .pill:disabled {
   color: var(--text-disabled);
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .pill--ink {
   background: var(--surface-ink);
-  border-color: var(--surface-ink);
   color: var(--text-on-ink);
 }
 
 .pill--ink:hover:not(:disabled) {
   background: var(--brand-accent);
-  border-color: var(--brand-accent);
 }
 
 .pill--outline {
   background: transparent;
   border-color: var(--line-strong);
-}
-
-.pill__arrow {
-  display: inline-block;
-  transition: transform var(--transition);
-}
-
-.pill:hover .pill__arrow {
-  transform: translate(2px, 2px);
-}
-
-/* ---------------------------------------------------------------------------------------
- * Motion. Pages rise into place; headings unblur word by word.
- * --------------------------------------------------------------------------------------- */
-@keyframes rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-    filter: blur(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-    filter: none;
-  }
-}
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.reveal-word {
-  display: inline-block;
-  opacity: 0;
-  animation: rise-in var(--duration-reveal) var(--ease-out) forwards;
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -242,12 +154,6 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .reveal-word {
-    opacity: 1;
-  }
-  body::after {
-    animation: none;
-  }
 }
 
 /* The moment between page load and the session check answering. Deliberately plain. */
@@ -255,9 +161,10 @@ textarea {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: var(--text-lg);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: var(--text-md);
   color: var(--text-muted);
   background: var(--surface-base);
 }

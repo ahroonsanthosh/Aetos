@@ -19,7 +19,7 @@
   color: var(--text-primary);
   background: var(--surface-raised);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   min-width: 220px;
 }
 

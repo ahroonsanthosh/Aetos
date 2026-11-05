@@ -49,9 +49,7 @@ export function LoginPage() {
       <form className="login__panel" onSubmit={submit}>
         <div className="login__brand">
           <span className="label">Aetos · counter-uas</span>
-          <h1 className="login__title">
-            <span className="serif">Sign</span> in
-          </h1>
+          <h1 className="login__title">Sign in</h1>
         </div>
 
         {mode?.simulated && (
@@ -101,11 +99,6 @@ export function LoginPage() {
 
         <button className="pill pill--ink login__submit" type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
-          {!busy && (
-            <span className="pill__arrow" aria-hidden="true">
-              ↘
-            </span>
-          )}
         </button>
       </form>
     </div>

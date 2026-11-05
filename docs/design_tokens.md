@@ -55,47 +55,26 @@ Every content colour (the three text tokens, the brand accent, every status colo
 default track colour) clears **WCAG AA, 4.5:1, against every surface** it can land on: void,
 base, panel, raised and inset. `frontend/tests/unit/tokens.test.ts` reads `tokens.css` and
 measures all fifty pairs, so a tweak that breaks one fails the build instead of shipping.
-
-The status colours are much darker than they were on the old dark theme (critical is
-`#ab2219`, warning `#8a5100`), because a light ground needs dark marks to carry the same
-weight. `--text-disabled` is deliberately below the bar and is for **inactive controls only**,
-never live content.
+`--text-disabled` is deliberately below the bar and is for **inactive controls only**.
 
 ## 4. Type
 
 | Token | Family | Used for |
 |---|---|---|
-| `--font-sans` / `--font-display` | Inter Tight | Navigation, body, the wordmark, most of every heading |
-| `--font-serif` | Instrument Serif, italic | One accent word in a heading (`.serif`), small asides |
-| `--font-mono` | IBM Plex Mono | All telemetry, identifiers, timestamps, log rows |
+| `--font-display` | Barlow Condensed | Headings, the wordmark, labels (uppercase, letterspaced) |
+| `--font-sans` | Barlow | Body text, navigation, buttons |
+| `--font-mono` | JetBrains Mono | Every number that changes, identifiers, timestamps |
 
-All three are open-source (SIL OFL) and **ship inside the site**: Inter Tight and Instrument
-Serif through their `@fontsource` npm packages, bundled by Vite; Plex Mono under
-`frontend/public/fonts`. Nothing is fetched from a font CDN, so the console renders with no
-outbound network and nothing costs money.
-
-Headings follow the reference site's mix: a small caps eyebrow, then a large title whose first
-word is the italic serif (`PageHeader`). Anything that changes every update cycle carries
-`.numeric`, so digits hold their width while they change.
+All three are open-source (SIL OFL) and **ship inside the site** through their `@fontsource`
+npm packages, bundled by Vite. Nothing is fetched from a font CDN and nothing costs money.
 
 ## 5. Geometry and motion
 
-Soft and rounded: cards at `--radius` (18px) and `--radius-lg` (28px), every button and chip a
-pill (`--radius-pill`, the shared `.pill` class), and depth from one soft shadow
-(`--shadow-soft`) rather than hairline boxes. A faint animated film grain sits over the whole
-interface (`body::after`).
+Rounded cards (`--radius`, `--radius-lg`), pill buttons, one soft shadow. Motion is limited to
+hover and state transitions on controls. There are no entrance animations, reveals, film grain
+or boot sequences: decoration that carries no information was removed on purpose.
 
-Motion is slow and eased (`--ease-out`, 200 to 1000 ms): pages rise and unblur into place,
-heading words reveal in sequence, the full-screen menu opens like a curtain from its button, and
-the word under the pointer swaps to the serif. Everything collapses to nothing under
-`prefers-reduced-motion: reduce`, and **no information is carried by motion alone**.
+## 6. Dark, with the brand plum
 
-## 6. Light, on purpose
-
-The interface moved from a dark-only theme to a warm light one, after the calm editorial feel of
-unseen.co. That was the "separate design pass" this section used to say a light theme would
-need: every ratio was recomputed (and is now tested), and the status hues were darkened until
-each stays readable and distinguishable on every surface.
-
-The one dark region left is deliberate: the digital twin is a holographic 3D scene and sits in a
-dark rounded window inside the light console, the way the reference site frames its 3D world.
+Near-black surfaces warmed toward the eagle's plum, light type, and plum for structure (the
+active page, focus, the mark). Status colours are the only other saturated values.

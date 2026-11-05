@@ -3,7 +3,6 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  animation: rise-in 900ms var(--ease-out);
 }
 
 .page--operational .page__main {
@@ -18,28 +17,17 @@
   flex-shrink: 0;
 }
 
-.page__subtitle {
-  display: flex;
-  gap: var(--space-2);
-  min-height: 1em;
-}
-
-.page__number {
-  color: var(--brand-accent);
-  letter-spacing: 0;
-}
-
 .page__title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-display);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: var(--tracking-tight);
+  font-weight: 600;
+  line-height: 0.95;
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
 }
 
-.page__title .serif {
-  letter-spacing: -0.01em;
-}
+
 
 .page__main {
   display: flex;
@@ -72,7 +60,7 @@
   font-size: var(--text-sm);
   color: var(--status-critical);
   background: var(--status-critical-dim);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
 }
 
 .page__body {

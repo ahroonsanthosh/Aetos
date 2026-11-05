@@ -3,9 +3,7 @@
   place-items: center;
   min-height: 100vh;
   padding: var(--space-4);
-  background:
-    radial-gradient(70% 60% at 50% 0%, var(--brand-wash) 0%, transparent 65%),
-    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-horizon) 60%, var(--sky-low) 100%);
+  background: var(--surface-base);
 }
 
 .login__panel {
@@ -14,11 +12,9 @@
   gap: var(--space-4);
   width: min(26rem, 100%);
   padding: var(--space-6);
-  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
-  backdrop-filter: blur(18px);
+  background: var(--surface-panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft);
-  animation: rise-in 1s var(--ease-out);
 }
 
 .login__brand {
@@ -29,10 +25,11 @@
 
 .login__title {
   margin: 0;
-  font-size: var(--text-display);
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: var(--tracking-tight);
+  text-transform: uppercase;
 }
 
 /* The mode banner: a statement of fact about the deployment, not a warning. */
@@ -42,7 +39,7 @@
   font-size: var(--text-xs);
   color: var(--status-warning);
   background: var(--status-warning-dim);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
 }
 
 .login__field {
@@ -57,7 +54,7 @@
   color: var(--text-primary);
   background: var(--surface-panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 

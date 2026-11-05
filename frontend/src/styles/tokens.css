@@ -8,9 +8,9 @@
  * The look
  * ---------------------------------------------------------------------------------------
  *
- * Near-black, warmed toward the eagle's plum, with light type: cinematic and quiet, after the
- * editorial craft of unseen.co. An italic serif for accents and a tight grotesk for everything
- * that has to be read fast. Pills and generous rounding; slow, eased motion instead of snaps.
+ * Near-black warmed toward the eagle's plum, with light type. Condensed uppercase headings,
+ * a plain grotesk for reading and a monospace for every changing number. Pills and generous
+ * rounding instead of hairline boxes; slow, eased motion instead of snaps.
  *
  * The one rule that survives the change of look is the one that matters on a console:
  *
@@ -97,13 +97,12 @@
   --zone-monitored: #c39bd3;
 
   /* ---- Type families. ----
-     All three ship inside the bundle (@fontsource packages, and public/fonts for the mono).
-     Nothing is fetched from a font CDN: a console for a defence site should not make a
-     third-party request on load, and it has to render with no outbound network at all. */
-  --font-sans: "Inter Tight Variable", "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: var(--font-sans);
-  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+     Barlow for reading, Barlow Condensed for headings and labels, JetBrains Mono for every
+     number that changes. All open-source (SIL OFL), bundled from their @fontsource packages;
+     nothing is fetched from a font CDN, so the console renders with no outbound network. */
+  --font-sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* ---- Type scale. ---- */
   --text-2xs: 11px;
@@ -118,7 +117,7 @@
 
   --tracking-tight: -0.02em;    /* large type */
   --tracking-wide: 0.04em;      /* small caps labels */
-  --tracking-wider: 0.08em;
+  --tracking-wider: 0.14em;
 
   /* ---- Spacing. 4px base. ---- */
   --space-1: 4px;
@@ -129,13 +128,13 @@
   --space-6: 32px;
   --space-8: 48px;
 
-  /* ---- Geometry. Tight corners and hairlines on cards; pills only for buttons. ---- */
+  /* ---- Geometry. Rounded cards, pill controls. ---- */
   --radius-none: 0;
-  --radius-sm: 4px;
-  --radius: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 10px;
+  --radius: 18px;
+  --radius-lg: 28px;
   --radius-pill: 999px;
-  --shadow-soft: 0 0 0 1px var(--line-subtle);
+  --shadow-soft: 0 0 0 1px #ffffff0d, 0 16px 36px -18px #000000e6;
 
   /* ---- Layout. ---- */
   --topbar-height: 64px;
