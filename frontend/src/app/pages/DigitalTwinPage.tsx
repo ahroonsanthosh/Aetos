@@ -25,8 +25,8 @@ export function DigitalTwinPage() {
           The twin runs its own simulated scenario over a 3-D model of the site. It is not fed
           by this console's live tracks yet.
         </span>
-        <a className="twin-page__open" href={TWIN_URL} target="_blank" rel="noreferrer">
-          Open full screen ↗
+        <a className="pill pill--ink" href={TWIN_URL} target="_blank" rel="noreferrer">
+          Open full screen <span className="pill__arrow" aria-hidden="true">↗</span>
         </a>
       </div>
       <iframe className="twin-page__frame" src={TWIN_URL} title="Aetos digital twin" />

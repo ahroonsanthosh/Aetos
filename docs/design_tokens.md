@@ -23,10 +23,8 @@ telling you the palette is incomplete.** Add the token. Do not write the hex.
 grep -rn "#[0-9a-fA-F]\{6\}" frontend/src --include="*.css" --include="*.tsx" | grep -v tokens.css
 ```
 
-Two deliberate exceptions, both in `frontend/src/components/landing/`: the hero and launch
-sequence use a handful of literal `#rrggbbaa` values inside gradients and blend layers, where an
-alpha channel is part of the value and no token would be reused anywhere else. The landing page
-is one screen with one composition; the console is a system.
+One exception: `frontend/src/components/landing/AetosHero.css` uses `#000` inside a CSS
+`mask`, where only the alpha channel is read and the colour never shows.
 
 ## 2. Two colour families, and why they must not mix
 
@@ -47,70 +45,57 @@ If you find yourself reaching for `--status-warning` because a heading needs to 
 answer is `--brand-accent` or type weight, and the fact that you reached for amber is worth
 noticing.
 
-**Blue was removed.** It used to carry informational and nominal states (`#4ba3d9`). Against an
-eggplant ground it read as a third meaning nobody had assigned, so those states are now purple —
-which is the accurate statement: they are structure, not judgement.
+**Blue was removed.** It used to carry informational and nominal states. It read as a third
+meaning nobody had assigned, so those states are plum, the brand colour: they are structure,
+not judgement.
 
 ## 3. Contrast is a constraint, not a review step
 
-Every text token clears **WCAG AA against the lightest surface it lands on**, which is
-`--surface-raised`, not the page ground.
+Every content colour (the three text tokens, the brand accent, every status colour and the
+default track colour) clears **WCAG AA, 4.5:1, against every surface** it can land on: void,
+base, panel, raised and inset. `frontend/tests/unit/tokens.test.ts` reads `tokens.css` and
+measures all fifty pairs, so a tweak that breaks one fails the build instead of shipping.
 
-That distinction is not pedantry — it is how two successive versions of this palette shipped
-failing. `--text-muted` carries `.label`, the 10px uppercase type used for every column heading
-and section title, and column headings sit on panel headers:
-
-| Attempt | Value | On base | On raised | Verdict |
-|---|---|---|---|---|
-| First | `#5c4f60` | 2.62:1 | 2.45:1 | Unreadable in a lit room |
-| Second | `#84728a` | 4.54:1 | **4.26:1** | Passed the ground, failed where it is used |
-| Shipped | `#8e7c93` | 5.21:1 | **4.51:1** | Passes |
-
-`--status-critical` failed the same way at `#d9534f` (4.38:1 on a panel header) — the single
-colour in the system that most needs to be readable. It is `#da5753`.
-
-Both were caught by computing ratios, not by looking. Looking is unreliable on a near-black
-ground, which is exactly where this interface lives.
-
-**When adding or changing a text colour**, compute its ratio against `--surface-base`,
-`--surface-panel` *and* `--surface-raised`, and take the worst. Body and small text need 4.5:1.
-`--text-disabled` is held to 3.0:1 and is for **inactive controls only** — never for live
-content. "NOT ASSESSED" is live content and uses `--text-muted`.
+The status colours are much darker than they were on the old dark theme (critical is
+`#ab2219`, warning `#8a5100`), because a light ground needs dark marks to carry the same
+weight. `--text-disabled` is deliberately below the bar and is for **inactive controls only**,
+never live content.
 
 ## 4. Type
 
 | Token | Family | Used for |
 |---|---|---|
-| `--font-display` / `--font-sans` | Space Grotesk | Headings, navigation, wordmark, body |
+| `--font-sans` / `--font-display` | Inter Tight | Navigation, body, the wordmark, most of every heading |
+| `--font-serif` | Instrument Serif, italic | One accent word in a heading (`.serif`), small asides |
 | `--font-mono` | IBM Plex Mono | All telemetry, identifiers, timestamps, log rows |
 
-Both are **vendored** under `frontend/public/fonts`, not linked from a font CDN: a console for a
-defence site should not make a third-party request on load, and it has to render correctly with
-no outbound network at all. 66 KB for all four faces, both SIL OFL.
+All three are open-source (SIL OFL) and **ship inside the site**: Inter Tight and Instrument
+Serif through their `@fontsource` npm packages, bundled by Vite; Plex Mono under
+`frontend/public/fonts`. Nothing is fetched from a font CDN, so the console renders with no
+outbound network and nothing costs money.
 
-Anything that changes every update cycle carries `.numeric`, which sets the mono family and
-`font-variant-numeric: tabular-nums` so digits hold their width and the eye can hold a value
-still while it changes.
-
-Labels are letterspaced small caps rather than bold. That keeps weight available to mean
-something.
+Headings follow the reference site's mix: a small caps eyebrow, then a large title whose first
+word is the italic serif (`PageHeader`). Anything that changes every update cycle carries
+`.numeric`, so digits hold their width while they change.
 
 ## 5. Geometry and motion
 
-Corners are square or nearly so (`--radius: 3px`). Rounding reads as consumer software, and this
-is an instrument.
+Soft and rounded: cards at `--radius` (18px) and `--radius-lg` (28px), every button and chip a
+pill (`--radius-pill`, the shared `.pill` class), and depth from one soft shadow
+(`--shadow-soft`) rather than hairline boxes. A faint animated film grain sits over the whole
+interface (`body::after`).
 
-Motion is informational only — enough to notice a change, never enough to draw attention.
-`--transition-fast: 90ms`, `--transition: 160ms`. Both collapse to `0ms` under
-`prefers-reduced-motion: reduce`, and **no information in this interface is carried by motion
-alone**, so nothing is lost when they do.
+Motion is slow and eased (`--ease-out`, 200 to 1000 ms): pages rise and unblur into place,
+heading words reveal in sequence, the full-screen menu opens like a curtain from its button, and
+the word under the pointer swaps to the serif. Everything collapses to nothing under
+`prefers-reduced-motion: reduce`, and **no information is carried by motion alone**.
 
-The landing page is the deliberate exception and is governed by its own rules; see
-`frontend/src/components/landing/`.
+## 6. Light, on purpose
 
-## 6. Dark only
+The interface moved from a dark-only theme to a warm light one, after the calm editorial feel of
+unseen.co. That was the "separate design pass" this section used to say a light theme would
+need: every ratio was recomputed (and is now tested), and the status hues were darkened until
+each stays readable and distinguishable on every surface.
 
-Stated as a decision, not a gap. The display is designed for low-light operations rooms, and the
-status palette's contrast relationships are calibrated against a near-black ground. Re-deriving
-them for a light background is a separate design pass, not a token swap — every ratio in §3 would
-have to be recomputed and several hues would have to change to stay distinguishable.
+The one dark region left is deliberate: the digital twin is a holographic 3D scene and sits in a
+dark rounded window inside the light console, the way the reference site frames its 3D world.

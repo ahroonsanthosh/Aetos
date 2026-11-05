@@ -5,51 +5,39 @@
   gap: var(--space-5);
   height: var(--topbar-height);
   flex-shrink: 0;
-  padding: 0 var(--space-4);
-  background: var(--surface-panel);
-  border-bottom: 1px solid var(--line);
+  padding: 0 var(--space-5) 0 var(--space-5);
+  animation: fade-in 800ms var(--ease-out);
 }
 
 .topbar__identity {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex-shrink: 0;
-  padding: var(--space-1) var(--space-2);
-  margin-left: calc(var(--space-2) * -1);
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast);
-}
-
-.topbar__identity:hover { background: var(--surface-raised); }
-
-.topbar__identity:focus-visible {
-  outline: 1px solid var(--brand-accent);
-  outline-offset: 0;
-}
-
-/* Mid purple at rest, not the highlight. The mark is identity, and identity that glows reads
-   as a status indicator — which is the one thing it must never be mistaken for. */
-.topbar__mark {
-  color: var(--brand-mid);
-  flex-shrink: 0;
-  transition: color var(--transition-fast);
-}
-
-.topbar__identity:hover .topbar__mark { color: var(--brand-accent); }
-
-.topbar__wordmark {
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-  font-weight: 600;
-  letter-spacing: var(--tracking-wider);
   color: var(--text-primary);
 }
 
+.topbar__mark {
+  color: var(--brand-mid);
+  flex-shrink: 0;
+  transition: color var(--transition-fast), transform var(--transition);
+}
+
+.topbar__identity:hover .topbar__mark {
+  color: var(--brand-accent);
+  transform: rotate(-6deg);
+}
+
+/* A lowercase wordmark with a serif aside, after the reference's "unseen studio". */
+.topbar__wordmark {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
 .topbar__subtitle {
-  font-size: var(--text-2xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  font-size: var(--text-md);
   color: var(--text-muted);
 }
 
@@ -64,32 +52,79 @@
 .topbar__right {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 
-.topbar__utc,
+.topbar__utc {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 .topbar__operator {
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-.topbar__operator {
-  font-family: var(--font-mono);
+.topbar__role {
+  margin-left: var(--space-1);
+  font-size: var(--text-md);
   color: var(--text-muted);
 }
 
-/* ---- Status chips ---- */
+.topbar__signout {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+}
 
+/* The round menu button, two dots, as on the reference site. */
+.topbar__menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-ink);
+  box-shadow: var(--shadow-soft);
+  transition: transform var(--transition), background var(--transition-fast);
+}
+
+.topbar__menu span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-on-ink);
+  transition: transform var(--transition);
+}
+
+.topbar__menu:hover {
+  background: var(--brand-accent);
+  transform: scale(1.06);
+}
+
+.topbar__menu:hover span:first-child { transform: translateX(-2px); }
+.topbar__menu:hover span:last-child { transform: translateX(2px); }
+
+/* ---- Status chips: white pills with a coloured dot. ---- */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  background: var(--surface-inset);
-  border: 1px solid var(--line-subtle);
-  border-radius: var(--radius-sm);
+  padding: 7px var(--space-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
   white-space: nowrap;
+}
+
+.chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-disabled);
 }
 
 .chip__label {
@@ -105,26 +140,47 @@
 }
 
 .chip--nominal .chip__value { color: var(--status-nominal); }
-.chip--info .chip__value    { color: var(--status-info); }
+.chip--info .chip__value { color: var(--status-info); }
 .chip--warning .chip__value { color: var(--status-warning); }
-.chip--critical .chip__value{ color: var(--status-critical); }
-.chip--inert .chip__value   { color: var(--status-inert); }
+.chip--critical .chip__value { color: var(--status-critical); }
+.chip--inert .chip__value { color: var(--status-inert); }
 .chip--unknown .chip__value { color: var(--text-disabled); }
 
-.chip--warning  { border-color: color-mix(in srgb, var(--status-warning) 40%, transparent); }
-.chip--critical { border-color: color-mix(in srgb, var(--status-critical) 45%, transparent); }
+.chip--nominal .chip__dot { background: var(--status-nominal); }
+.chip--info .chip__dot { background: var(--status-info); }
+.chip--warning .chip__dot { background: var(--status-warning); }
+.chip--critical .chip__dot { background: var(--status-critical); }
+.chip--inert .chip__dot { background: var(--status-inert); }
 
-/* ---- Mode indicator ----
-   Deliberately the loudest element in the bar. Synthetic data being mistaken for real is the
-   failure this exists to prevent. */
+/* A live stream breathes, so a frozen one is noticeable. */
+.chip--nominal .chip__dot {
+  animation: breathe 2.4s var(--ease-in-out) infinite;
+}
 
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ---- Run mode: the loudest element in the bar. Synthetic data being mistaken for real is the
+   failure it exists to prevent. ---- */
 .mode {
-  padding: var(--space-1) var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-wide);
   border: 1px solid;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
+}
+
+.mode__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .mode--simulation {
@@ -144,60 +200,23 @@
   border-color: var(--line);
 }
 
-/* The role beside the name. An operator sharing a console with a viewer needs to be able to
-   tell at a glance which one is signed in — otherwise the first sign that they are the wrong
-   one is an action being refused. */
-.topbar__role {
-  margin-left: var(--space-2);
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
+@media (max-width: 1280px) {
+  .topbar__subtitle,
+  .topbar__operator {
+    display: none;
+  }
 }
 
-.topbar__signout {
-  margin-left: var(--space-3);
-  padding: var(--space-1) var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--line-subtle);
-  transition: color var(--transition-fast), border-color var(--transition-fast);
-}
-
-.topbar__signout:hover {
-  color: var(--text-secondary);
-  border-color: var(--line);
-}
-
-/*
- * Narrow widths.
- *
- * The bar is a single non-shrinking row of identity, chips, mode, clock, operator and sign-out.
- * At 390px that measured 849px wide and dragged the whole document sideways with it — every
- * page scrolled horizontally, taking the navigation and page header off screen.
- *
- * It becomes two rows rather than losing anything, because almost none of it is discardable:
- *
- *   - The mode badge stays, always. Whether the data is simulated must be visible at all times
- *     (ADR 0011), and "all times" includes on a phone.
- *   - Sign-out stays; it is a control, and the inventory it is checked against lists it.
- *   - The status chips stay, in their own scrolling strip. They report what the backend says
- *     about itself, and dropping them would leave no way to see a degraded subsystem.
- *
- * Only the wall clock and the subtitle go. The clock is the one element here whose information
- * an operator's own device already carries, and the subtitle is decoration.
- */
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .topbar {
     height: auto;
     flex-wrap: wrap;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-4);
   }
 
-  .topbar__subtitle,
-  .topbar__utc {
+  .topbar__utc,
+  .topbar__signout {
     display: none;
   }
 
@@ -208,17 +227,7 @@
   .topbar__right {
     order: 2;
     margin-left: auto;
-    gap: var(--space-3);
-    min-width: 0;
-  }
-
-  .topbar__operator {
-    /* Truncated rather than hidden: which account is signed in is worth knowing, and the role
-       chip beside it is short enough to survive on its own. */
-    max-width: 12ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    gap: var(--space-2);
   }
 
   .topbar__status {
@@ -227,7 +236,7 @@
     justify-content: flex-start;
     overflow-x: auto;
     scrollbar-width: none;
-    padding-bottom: var(--space-1);
+    padding: 2px 2px var(--space-2);
   }
 
   .topbar__status::-webkit-scrollbar {

@@ -27,10 +27,10 @@ import { AetosMark } from '../brand/AetosMark'
 import './LaunchSequence.css'
 
 const LINES = [
-  'INITIALIZING SENSOR ARRAY...',
-  'CALIBRATING RADAR...',
-  'ESTABLISHING UPLINK...',
-  'SYSTEM ONLINE',
+  'Sensor array',
+  'Radar calibration',
+  'Uplink',
+  'System online',
 ] as const
 
 const WIPE_MS = 700
@@ -88,7 +88,14 @@ export function LaunchSequence({ onComplete }: Props) {
 
       {stage === 'boot' && (
         <div className="launch__boot">
-          <AetosMark size={104} className="launch__mark" />
+          <AetosMark size={72} className="launch__mark" />
+          <p className="launch__word" aria-hidden="true">
+            {[...'aetos'].map((ch, i) => (
+              <span key={i} style={{ animationDelay: `${i * 60}ms` }}>
+                {ch}
+              </span>
+            ))}
+          </p>
           <ol className="launch__lines">
             {LINES.map((line, i) => (
               <li

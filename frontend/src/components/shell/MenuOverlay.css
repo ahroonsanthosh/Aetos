@@ -1,0 +1,155 @@
+.menu {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.menu.is-open {
+  pointer-events: auto;
+}
+
+/* The panel opens like a curtain: a clip from the top-right corner, where the button is. */
+.menu__panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-8));
+  overflow-y: auto;
+  background:
+    radial-gradient(80% 60% at 80% 0%, var(--brand-wash) 0%, transparent 60%),
+    var(--surface-base);
+  clip-path: circle(0% at calc(100% - 44px) 32px);
+  transition: clip-path 900ms var(--ease-in-out);
+}
+
+.menu.is-open .menu__panel {
+  clip-path: circle(150% at calc(100% - 44px) 32px);
+}
+
+.menu__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.menu__columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-6) var(--space-8);
+  flex: 1;
+}
+
+.menu__section-title {
+  margin: 0 0 var(--space-3);
+}
+
+.menu__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.menu__entry {
+  opacity: 0;
+}
+
+.menu.is-open .menu__entry {
+  animation: rise-in 800ms var(--ease-out) forwards;
+}
+
+.menu__link {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line-subtle);
+  font-size: clamp(24px, 2.6vw, 40px);
+  line-height: 1.1;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.menu__number {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0;
+  min-width: 2ch;
+}
+
+/* On hover the word swaps to the italic serif: the reference site's signature move. */
+.menu__text {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+.menu__text-sans,
+.menu__text-serif {
+  display: block;
+  transition:
+    transform 600ms var(--ease-out),
+    opacity 600ms var(--ease-out);
+}
+
+.menu__text-serif {
+  position: absolute;
+  inset: 0;
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.menu__link:hover .menu__text-sans,
+.menu__link:focus-visible .menu__text-sans {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.menu__link:hover .menu__text-serif,
+.menu__link:focus-visible .menu__text-serif {
+  transform: none;
+  opacity: 1;
+}
+
+.menu__arrow {
+  font-size: var(--text-lg);
+  opacity: 0;
+  transform: translate(-6px, -6px);
+  transition:
+    opacity var(--transition),
+    transform var(--transition);
+}
+
+.menu__link:hover .menu__arrow,
+.menu__link.is-active .menu__arrow {
+  opacity: 1;
+  transform: none;
+}
+
+.menu__link.is-active .menu__number {
+  color: var(--brand-accent);
+}
+
+.menu__link--unavailable {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.menu__soon {
+  font-size: var(--text-md);
+}
+
+.menu__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.menu__operator {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

@@ -1,34 +1,10 @@
-/* Global reset and base typography. Everything measurable comes from tokens.css. */
-
 @import './tokens.css';
 
 /*
- * Typefaces, vendored under public/fonts rather than linked from a font CDN. A console for a
- * defence site should not make a third-party request on load, and it has to render correctly
- * with no outbound network at all. Both are SIL Open Font License 1.1 — see
- * public/fonts/LICENSE.md. Latin subsets only, ~66 KB for all four faces.
- *
- * `font-display: swap` on purpose: the interface renders immediately in the fallback and
- * re-flows when the face arrives. An operational display that withholds text while a font
- * loads is worse than one that changes typeface a beat later.
+ * Fonts. Inter Tight and Instrument Serif arrive through their @fontsource packages
+ * (imported in main.tsx), so Vite bundles them as hashed assets. IBM Plex Mono stays
+ * vendored under public/fonts. Nothing is fetched from a font CDN.
  */
-
-@font-face {
-  font-family: 'Space Grotesk';
-  font-style: normal;
-  font-weight: 300 700;      /* variable: one file covers the whole range */
-  font-display: swap;
-  src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 300;
-  font-display: swap;
-  src: url('/fonts/ibm-plex-mono-300.woff2') format('woff2');
-}
-
 @font-face {
   font-family: 'IBM Plex Mono';
   font-style: normal;
@@ -59,36 +35,63 @@ body,
 }
 
 body {
-  /* A single wide radial of the brand's deep purple, sitting behind everything at low
-     opacity. It gives the shell a centre of gravity and keeps the ground from reading as flat
-     black. Kept far below the threshold where it could be mistaken for a status wash — this is
-     structure, and structure is never allowed to look like judgement. */
+  /* A soft light falling from the top, over the blush ground. */
   background:
-    radial-gradient(120% 90% at 50% -10%, var(--brand-wash) 0%, transparent 62%),
+    radial-gradient(90% 70% at 50% -10%, var(--brand-wash) 0%, transparent 60%),
     var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: 1.45;
+  font-feature-settings: 'ss01', 'cv11';
   -webkit-font-smoothing: antialiased;
   overflow: hidden; /* the shell manages its own scroll regions */
 }
 
-/* Numbers that change every update cycle are tabular, so digits do not shift width and the
-   eye can hold a value still while it changes. */
+/* Film grain over everything, as a fixed layer that never takes a click. Very faint: texture,
+   not noise. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: -50%;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 1.2s steps(6) infinite;
+}
+
+@keyframes grain {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-3%, 2%); }
+  40% { transform: translate(2%, -3%); }
+  60% { transform: translate(-2%, -1%); }
+  80% { transform: translate(3%, 3%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Numbers that change in place are monospaced and tabular, so the eye can hold a value still
+   while it changes. */
 .numeric {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-/* Section and column labels. Letterspaced small caps rather than bold — the convention of
-   instrumentation panels, and it keeps weight available to mean something. */
+/* Small caps labels: the eyebrow over a heading, the name of a field. */
 .label {
   font-size: var(--text-2xs);
-  letter-spacing: var(--tracking-wider);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* The italic serif accent, for a word or two inside a heading. */
+.serif {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 a {
@@ -104,22 +107,133 @@ button {
   cursor: pointer;
 }
 
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--brand-accent);
+  color: var(--text-on-ink);
+}
+
+/* Thin, quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--surface-inset);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--line);
-  border: 2px solid var(--surface-inset);
+  border-radius: var(--radius-pill);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--line-strong);
 }
 
-/* Motion is informational only. A user who has asked for less of it gets none. */
+/* ---------------------------------------------------------------------------------------
+ * Pills. The one button shape. `.pill--ink` is the dark primary; the arrow nudges on hover.
+ * --------------------------------------------------------------------------------------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  font-size: var(--text-sm);
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--shadow-soft);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.pill:hover:not(:disabled) {
+  background: var(--surface-ink);
+  color: var(--text-on-ink);
+}
+
+.pill:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.pill:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.pill--ink {
+  background: var(--surface-ink);
+  color: var(--text-on-ink);
+}
+
+.pill--ink:hover:not(:disabled) {
+  background: var(--brand-accent);
+}
+
+.pill--outline {
+  background: transparent;
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+
+.pill__arrow {
+  display: inline-block;
+  transition: transform var(--transition);
+}
+
+.pill:hover .pill__arrow {
+  transform: translate(2px, 2px);
+}
+
+/* ---------------------------------------------------------------------------------------
+ * Motion. Pages rise into place; headings unblur word by word.
+ * --------------------------------------------------------------------------------------- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.reveal-word {
+  display: inline-block;
+  opacity: 0;
+  animation: rise-in var(--duration-reveal) var(--ease-out) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -128,16 +242,22 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .reveal-word {
+    opacity: 1;
+  }
+  body::after {
+    animation: none;
+  }
 }
 
-/* Shown for the moment between load and knowing whether there is a session. Deliberately
-   plain: anything more elaborate draws the eye to a state that should last milliseconds. */
+/* The moment between page load and the session check answering. Deliberately plain. */
 .app-booting {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-lg);
   color: var(--text-muted);
-  background: var(--surface-void);
+  background: var(--surface-base);
 }
