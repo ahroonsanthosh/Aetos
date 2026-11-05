@@ -35,9 +35,9 @@ body,
 }
 
 body {
-  /* A soft light falling from the top, over the blush ground. */
+  /* Flat near-black with a faint plum falloff from the top. */
   background:
-    radial-gradient(90% 70% at 50% -10%, var(--brand-wash) 0%, transparent 60%),
+    radial-gradient(80% 50% at 50% -10%, var(--brand-wash) 0%, transparent 70%),
     var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -56,8 +56,9 @@ body::after {
   inset: -50%;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.07;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.045;
+  /* Light grain: on a dark ground it is the bright specks that read as film. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   animation: grain 1.2s steps(6) infinite;
 }
 
@@ -156,11 +157,10 @@ textarea {
   border-radius: var(--radius-pill);
   background: var(--surface-raised);
   color: var(--text-primary);
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
   font-size: var(--text-sm);
   line-height: 1;
   white-space: nowrap;
-  box-shadow: var(--shadow-soft);
   transition:
     background var(--transition-fast),
     color var(--transition-fast),
@@ -169,8 +169,8 @@ textarea {
 }
 
 .pill:hover:not(:disabled) {
-  background: var(--surface-ink);
-  color: var(--text-on-ink);
+  border-color: var(--brand-accent);
+  color: var(--text-primary);
 }
 
 .pill:active:not(:disabled) {
@@ -180,22 +180,22 @@ textarea {
 .pill:disabled {
   color: var(--text-disabled);
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .pill--ink {
   background: var(--surface-ink);
+  border-color: var(--surface-ink);
   color: var(--text-on-ink);
 }
 
 .pill--ink:hover:not(:disabled) {
   background: var(--brand-accent);
+  border-color: var(--brand-accent);
 }
 
 .pill--outline {
   background: transparent;
   border-color: var(--line-strong);
-  box-shadow: none;
 }
 
 .pill__arrow {

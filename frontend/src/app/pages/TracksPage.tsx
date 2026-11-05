@@ -1,5 +1,6 @@
 /** Live tracks: the full table, with detail beside it. */
 
+import { NAVIGATION } from '../../components/shell/navigation'
 import { TrackDetails } from '../../components/tracks/TrackDetails'
 import { TrackList } from '../../components/tracks/TrackList'
 import type { TrackPicture } from '../../data/client/useTrackPicture'
@@ -37,9 +38,13 @@ export function TracksPage({ picture, selectedTrackId, onSelectTrack }: Props) {
  */
 export function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   const words = title.split(' ')
+  const number = NAVIGATION.flatMap((s) => s.items).find((i) => i.label === title)?.number
   return (
     <header className="page__header">
-      {subtitle && <span className="page__subtitle label">{subtitle}</span>}
+      <span className="page__subtitle label">
+        {number && <span className="page__number numeric">{number} /</span>}
+        {subtitle}
+      </span>
       <h1 className="page__title" aria-label={title}>
         {words.map((word, i) => (
           <span

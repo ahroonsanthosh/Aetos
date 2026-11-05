@@ -43,9 +43,6 @@
 
 .topbar__status {
   display: flex;
-  gap: var(--space-2);
-  flex: 1;
-  justify-content: center;
   min-width: 0;
 }
 
@@ -87,49 +84,56 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--surface-ink);
-  box-shadow: var(--shadow-soft);
-  transition: transform var(--transition), background var(--transition-fast);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  transition: transform var(--transition), border-color var(--transition-fast);
 }
 
 .topbar__menu span {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: var(--text-on-ink);
+  background: var(--text-primary);
   transition: transform var(--transition);
 }
 
 .topbar__menu:hover {
-  background: var(--brand-accent);
-  transform: scale(1.06);
+  border-color: var(--brand-accent);
 }
 
 .topbar__menu:hover span:first-child { transform: translateX(-2px); }
 .topbar__menu:hover span:last-child { transform: translateX(2px); }
 
-/* ---- Status chips: white pills with a coloured dot. ---- */
+/* ---- Status: one segmented readout strip, like an instrument's status line. Each segment is a
+   label over a value, divided by hairlines; the value carries the colour. ---- */
+.topbar__status {
+  flex: 0 1 auto;
+  margin: 0 auto;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+}
+
 .chip {
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 7px var(--space-3);
-  background: var(--surface-raised);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-soft);
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px var(--space-4) 6px;
   white-space: nowrap;
 }
 
+.chip + .chip {
+  border-left: 1px solid var(--line);
+}
+
 .chip__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-disabled);
+  display: none;
 }
 
 .chip__label {
-  font-size: var(--text-2xs);
-  letter-spacing: var(--tracking-wide);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -146,22 +150,6 @@
 .chip--inert .chip__value { color: var(--status-inert); }
 .chip--unknown .chip__value { color: var(--text-disabled); }
 
-.chip--nominal .chip__dot { background: var(--status-nominal); }
-.chip--info .chip__dot { background: var(--status-info); }
-.chip--warning .chip__dot { background: var(--status-warning); }
-.chip--critical .chip__dot { background: var(--status-critical); }
-.chip--inert .chip__dot { background: var(--status-inert); }
-
-/* A live stream breathes, so a frozen one is noticeable. */
-.chip--nominal .chip__dot {
-  animation: breathe 2.4s var(--ease-in-out) infinite;
-}
-
-@keyframes breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
 /* ---- Run mode: the loudest element in the bar. Synthetic data being mistaken for real is the
    failure it exists to prevent. ---- */
 .mode {
@@ -173,7 +161,16 @@
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-wide);
   border: 1px solid;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
+}
+
+.mode__dot {
+  animation: breathe 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .mode__dot {

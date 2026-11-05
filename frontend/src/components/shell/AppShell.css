@@ -12,6 +12,7 @@
 
 /* The work sits on one large rounded card, lifted off the blush ground. */
 .shell__content {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -19,9 +20,34 @@
   flex-direction: column;
   margin: 0 var(--space-4) var(--space-4) 0;
   background: var(--surface-panel);
+  border: 1px solid var(--line-subtle);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft);
   overflow: hidden;
+}
+
+/* Registration marks in two corners of the work area, as on a targeting display: a small cross
+   of hairlines. Drawn with gradients so they cost no elements and never take a click. */
+.shell__content::before,
+.shell__content::after {
+  content: '';
+  position: absolute;
+  z-index: 5;
+  width: 13px;
+  height: 13px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--line-strong), var(--line-strong)) center / 1px 100% no-repeat,
+    linear-gradient(var(--line-strong), var(--line-strong)) center / 100% 1px no-repeat;
+}
+
+.shell__content::before {
+  top: 8px;
+  right: 8px;
+}
+
+.shell__content::after {
+  bottom: 8px;
+  left: 8px;
 }
 
 /* Narrow screens: the rail goes, and the round menu button opens the full list instead. The

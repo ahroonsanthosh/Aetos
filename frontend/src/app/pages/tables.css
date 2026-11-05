@@ -43,7 +43,7 @@
   color: var(--text-primary);
   background: var(--surface-raised);
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-soft);
   transition: border-color var(--transition-fast);
 }

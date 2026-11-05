@@ -52,7 +52,7 @@
   font-size: var(--text-2xs);
   letter-spacing: var(--tracking-wide);
   border: 1px solid;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
 }
 
 .details__state--detected  { color: var(--text-muted); border-color: var(--line-strong); }

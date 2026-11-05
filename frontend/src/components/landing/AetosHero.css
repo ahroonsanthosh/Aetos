@@ -350,7 +350,7 @@
   margin: 0;
   padding: 7px var(--space-3);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   font-size: var(--text-xs);
   background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
   backdrop-filter: blur(8px);

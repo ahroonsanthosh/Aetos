@@ -42,7 +42,7 @@
   font-size: var(--text-xs);
   color: var(--status-warning);
   background: var(--status-warning-dim);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
 }
 
 .login__field {
@@ -57,7 +57,7 @@
   color: var(--text-primary);
   background: var(--surface-panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 

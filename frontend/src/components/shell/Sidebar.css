@@ -14,17 +14,15 @@
 }
 
 .sidebar__item {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  padding: 9px var(--space-3);
-  border-radius: var(--radius-pill);
+  padding: 8px var(--space-3);
   font-size: var(--text-base);
   color: var(--text-secondary);
   transition:
     color var(--transition-fast),
-    background var(--transition-fast),
-    box-shadow var(--transition-fast),
     transform var(--transition);
 }
 
@@ -43,12 +41,21 @@
   transform: translateX(3px);
 }
 
-/* Where you are: a white pill, the brand colour on the number. Structure, never judgement. */
+/* Where you are: a plum hairline bracket and a plum number. Structure, never judgement. */
 .sidebar__item.is-active {
   color: var(--text-primary);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-soft);
   transform: none;
+}
+
+.sidebar__item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 6px;
+  border: 1px solid var(--brand-accent);
+  border-right: none;
 }
 
 .sidebar__item.is-active .sidebar__number {

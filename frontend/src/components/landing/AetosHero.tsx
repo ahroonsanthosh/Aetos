@@ -3,13 +3,12 @@
  *
  * Two moments, after the calm, editorial feel of unseen.co:
  *
- * 1. **The intro.** A blush screen, the letters of the name appearing one at a time, a line on
+ * 1. **The intro.** A dark screen, the letters of the name appearing one at a time, a line on
  *    what Aetos is, and an Enter pill. "Enter without motion" goes in with every animation
  *    stilled, for anyone who would rather not have them. Shown once per tab.
- * 2. **The world.** A soft pastel sky over a tilted radar plane: rings, a slow sweep, a few
- *    contacts and a protected area, with light orbs drifting in front. It tilts with the
- *    pointer. Over it, a headline mixing an italic serif with a clean sans, and one pill: into
- *    the console.
+ * 2. **The world.** A WebGL night airspace (`NightWorld`): dotted terrain under fog, range
+ *    rings, a sweep, a protected dome and moving contacts, leaning toward the pointer. Over it,
+ *    a headline mixing a clean sans with an italic serif, and one pill: into the console.
  *
  * The readouts along the bottom are real: link state, run mode, subsystem count and log head,
  * read from the two endpoints that answer without a session. They say "——" when they do not
@@ -19,12 +18,15 @@
  * front page is the last place to claim a capability the product deliberately does not have.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 
 import { AetosMark } from '../brand/AetosMark'
 import { api } from '../../data/client/api'
 import type { SystemHealthView } from '../../data/models/api'
 import './AetosHero.css'
+
+// three.js only loads for someone who opens the front page, never for the console.
+const NightWorld = lazy(() => import('./NightWorld'))
 
 const INTRO_KEY = 'aetos.intro-seen'
 const LETTERS = ['A', 'E', 'T', 'O', 'S'] as const
@@ -49,7 +51,11 @@ export function AetosHero({ onLaunch }: Props) {
 
   return (
     <div className={`hero ${still ? 'hero--still' : ''} ${intro ? 'hero--behind-intro' : ''}`}>
-      <World still={still} />
+      <div className="hero__sky" aria-hidden="true" />
+      <Suspense fallback={null}>
+        <NightWorld still={still} />
+      </Suspense>
+      <div className="hero__vignette" aria-hidden="true" />
 
       <header className="hero__nav">
         <span className="hero__wordmark">
@@ -68,11 +74,17 @@ export function AetosHero({ onLaunch }: Props) {
       </header>
 
       <main className="hero__centre">
-        <p className="label hero__eyebrow">A counter-UAS command platform · software only</p>
-        <h1 className="hero__title" aria-label="Guarding the open sky">
-          <BlurLine className="serif hero__title-serif" text="Guarding the" delay={intro ? 9999 : 200} />
-          <BlurLine className="hero__title-sans" text="open sky" delay={intro ? 9999 : 520} />
+        <p className="label hero__eyebrow">
+          <span className="hero__eyebrow-index numeric">[01]</span> Counter-UAS command · software only
+        </p>
+        <h1 className="hero__title" aria-label="Know what is overhead.">
+          <BlurLine className="hero__title-sans" text="Know what is" delay={intro ? 9999 : 200} />
+          <BlurLine className="serif hero__title-serif" text="overhead." delay={intro ? 9999 : 560} />
         </h1>
+        <p className="hero__sub">
+          Every sensor fused into one picture. Every contact tracked, scored and explained. A
+          human makes the call.
+        </p>
         <button type="button" className="pill hero__cta" onClick={onLaunch}>
           Enter the console <span className="pill__arrow" aria-hidden="true">↘</span>
         </button>
@@ -158,91 +170,6 @@ function BlurLine({ text, className, delay }: { text: string; className: string;
         </span>
       ))}
     </span>
-  )
-}
-
-/** The pastel world: sky, a tilted radar plane that follows the pointer, drifting orbs. */
-function World({ still }: { still: boolean }) {
-  const planeRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const plane = planeRef.current
-    if (!plane || still) return
-    if (window.matchMedia?.('(pointer: coarse)').matches) return
-
-    let frame = 0
-    let tx = 0
-    let ty = 0
-    let x = 0
-    let y = 0
-    const onMove = (e: PointerEvent) => {
-      tx = (e.clientX / window.innerWidth - 0.5) * 2
-      ty = (e.clientY / window.innerHeight - 0.5) * 2
-    }
-    // Eased toward the pointer every frame, so the tilt glides rather than jumps.
-    const tick = () => {
-      x += (tx - x) * 0.05
-      y += (ty - y) * 0.05
-      plane.style.setProperty('--tilt-x', `${(62 + y * 4).toFixed(2)}deg`)
-      plane.style.setProperty('--tilt-z', `${(-18 + x * 6).toFixed(2)}deg`)
-      frame = window.requestAnimationFrame(tick)
-    }
-    window.addEventListener('pointermove', onMove)
-    frame = window.requestAnimationFrame(tick)
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      window.cancelAnimationFrame(frame)
-    }
-  }, [still])
-
-  return (
-    <div className="world" aria-hidden="true">
-      <div className="world__sky" />
-      <div className="world__stage">
-        <div className="world__plane" ref={planeRef}>
-          <svg className="world__rings" viewBox="-500 -500 1000 1000">
-            <defs>
-              <radialGradient id="world-face" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" style={{ stopColor: 'var(--scope-face-inner)', stopOpacity: 0.95 }} />
-                <stop offset="70%" style={{ stopColor: 'var(--scope-face-mid)', stopOpacity: 0.6 }} />
-                <stop offset="100%" style={{ stopColor: 'var(--scope-face-outer)', stopOpacity: 0 }} />
-              </radialGradient>
-              <radialGradient id="world-zone" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" style={{ stopColor: 'var(--zone-protected)', stopOpacity: 0.18 }} />
-                <stop offset="100%" style={{ stopColor: 'var(--zone-protected)', stopOpacity: 0 }} />
-              </radialGradient>
-            </defs>
-            <circle r="500" fill="url(#world-face)" />
-            {[90, 180, 270, 360, 450].map((r) => (
-              <circle key={r} r={r} className="world__ring" />
-            ))}
-            {[0, 30, 60, 90, 120, 150].map((a) => (
-              <line
-                key={a}
-                className="world__spoke"
-                x1={-480 * Math.cos((a * Math.PI) / 180)}
-                y1={-480 * Math.sin((a * Math.PI) / 180)}
-                x2={480 * Math.cos((a * Math.PI) / 180)}
-                y2={480 * Math.sin((a * Math.PI) / 180)}
-              />
-            ))}
-            <circle r="120" fill="url(#world-zone)" />
-            <circle r="72" className="world__zone" />
-            <g className="world__contacts">
-              <circle cx="210" cy="-160" r="7" className="world__contact" />
-              <circle cx="-260" cy="90" r="6" className="world__contact world__contact--2" />
-              <circle cx="80" cy="300" r="5" className="world__contact world__contact--3" />
-              <path d="M 330 -260 Q 270 -205 210 -160" className="world__trail" />
-            </g>
-          </svg>
-          <div className="world__sweep" />
-        </div>
-      </div>
-      <div className="world__orb world__orb--a" />
-      <div className="world__orb world__orb--b" />
-      <div className="world__orb world__orb--c" />
-      <div className="world__haze" />
-    </div>
   )
 }
 
