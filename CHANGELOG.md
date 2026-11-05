@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**Changed**: the digital twin matches the console: Barlow, Barlow Condensed and JetBrains Mono,
+the dark plum palette in the 3D scene and the panels, and readable 11px labels in place of tiny
+wide-spaced ones. Bloom and vignette post-processing are gone (and their packages). The feed
+readout now says SIMULATED, which it is, instead of LIVE. Every view, layer, scenario control
+and the site editor work as before.
+
 **Changed**: a new look for the whole site. Dark surfaces with the brand plum; Barlow,
 Barlow Condensed and JetBrains Mono (free, bundled, nothing fetched at runtime); numbered side
 navigation, which becomes a scrollable strip on phones; rounded cards and pill buttons. The site

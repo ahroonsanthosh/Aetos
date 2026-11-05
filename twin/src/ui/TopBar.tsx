@@ -34,7 +34,7 @@ export function TopBar() {
     <header className={`${styles.bar} panel`}>
       <div className={styles.identity}>
         <div className={styles.wordmark}>
-          AETOS<span className={styles.wordmarkThin}> COMMAND</span>
+          AETOS<span className={styles.wordmarkThin}> TWIN</span>
         </div>
         <div className={styles.site}>
           <span className={styles.siteId}>{site.id}</span>
@@ -54,8 +54,8 @@ export function TopBar() {
         <Metric label="Conditions" value={weather?.label ?? '—'} />
         <Metric
           label="Feed"
-          value={connected ? 'LIVE' : 'WAITING'}
-          colour={connected ? palette.nominal : palette.caution}
+          value={connected ? 'SIMULATED' : 'WAITING'}
+          colour={palette.caution}
         />
       </div>
 

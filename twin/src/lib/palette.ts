@@ -13,39 +13,39 @@
 import type { CoverageQuality, SensorStatus, ThreatLevel, ZoneClass } from '@/types';
 
 export const palette = {
-  /** Deep, slightly blue void. Not pure black — pure black kills depth cues. */
-  void: '#04070b',
-  abyss: '#020407',
+  /** Near-black, warmed toward the brand plum, matching the console. */
+  void: '#0b090c',
+  abyss: '#060507',
 
-  /** The holographic base. Everything structural is a tint of this. */
-  holo: '#58d8e6',
-  holoDim: '#2b6b78',
-  holoDeep: '#123138',
+  /** The brand plum. Everything structural is a tint of this. */
+  holo: '#c39bd3',
+  holoDim: '#6e4f75',
+  holoDeep: '#2a1c2e',
 
-  /** Physical structure that is not part of the hologram's data layer. */
-  steel: '#6f93ad',
-  steelDim: '#3c5567',
+  /** Physical structure that is not part of the data layer. */
+  steel: '#a596ab',
+  steelDim: '#584a5e',
 
   /** Ground plane and grid. */
-  ground: '#0d1822',
-  grid: '#1a4453',
-  gridMajor: '#2a6577',
+  ground: '#141016',
+  grid: '#2c2232',
+  gridMajor: '#4a3a52',
 
   /** Text. */
-  text: '#d8e9f2',
-  textDim: '#8ba4b4',
-  textFaint: '#54697a',
+  text: '#ede6ef',
+  textDim: '#b9adbd',
+  textFaint: '#978a9c',
 
-  /** Status. */
-  nominal: '#3fd39b',
-  caution: '#e9b24c',
-  warning: '#ff7a45',
-  danger: '#ff4d5e',
-  offline: '#5d4550',
+  /** Status, the console's own values. */
+  nominal: '#7fbf9f',
+  caution: '#e8ad52',
+  warning: '#f0905a',
+  danger: '#f26d66',
+  offline: '#5a4a5f',
 
   /** Selection and focus. */
   select: '#ffffff',
-  authorised: '#5ad1ff',
+  authorised: '#a9c7e8',
 } as const;
 
 export const threatColour: Record<ThreatLevel, string> = {

@@ -24,28 +24,28 @@ import { palette } from '@/lib/palette';
 
 /** Painted steel: masts, gantries, fencing, switchgear frames. */
 export const steelMaterial = new MeshStandardMaterial({
-  color: new Color('#223341'),
+  color: new Color('#38293a'),
   roughness: 0.48,
   metalness: 0.18,
 });
 
 /** Darker steel for secondary structure, so lattices do not read as a single mass. */
 export const steelDarkMaterial = new MeshStandardMaterial({
-  color: new Color('#17242f'),
+  color: new Color('#281c2a'),
   roughness: 0.58,
   metalness: 0.15,
 });
 
 /** Concrete: plinths, pads, building walls. */
 export const concreteMaterial = new MeshStandardMaterial({
-  color: new Color('#1f2a33'),
+  color: new Color('#2d232f'),
   roughness: 0.94,
   metalness: 0.02,
 });
 
 /** Transformer tanks and enclosure bodies. */
 export const enclosureMaterial = new MeshStandardMaterial({
-  color: new Color('#27353f'),
+  color: new Color('#382c3a'),
   roughness: 0.45,
   metalness: 0.2,
 });
@@ -56,23 +56,23 @@ export const enclosureMaterial = new MeshStandardMaterial({
  * would drown every signal in the scene.
  */
 export const panelMaterial = new MeshStandardMaterial({
-  color: new Color('#14293f'),
+  color: new Color('#2f2231'),
   roughness: 0.24,
   metalness: 0.3,
-  emissive: new Color('#11384c'),
+  emissive: new Color('#352637'),
   emissiveIntensity: 0.55,
 });
 
 /** Ceramic insulators — the one warm-ish note on the site, and a strong substation cue. */
 export const insulatorMaterial = new MeshStandardMaterial({
-  color: new Color('#3a424a'),
+  color: new Color('#453e46'),
   roughness: 0.85,
   metalness: 0.05,
 });
 
 /** Road surface. */
 export const roadMaterial = new MeshStandardMaterial({
-  color: new Color('#0d151d'),
+  color: new Color('#181119'),
   roughness: 1,
   metalness: 0,
 });
@@ -83,17 +83,17 @@ export const roadMaterial = new MeshStandardMaterial({
  * but it stays well under bloom threshold since a building can carry dozens of these.
  */
 export const glazingMaterial = new MeshStandardMaterial({
-  color: new Color('#0f2530'),
+  color: new Color('#241926'),
   roughness: 0.3,
   metalness: 0.1,
-  emissive: new Color('#1c4552'),
+  emissive: new Color('#3f2c42'),
   emissiveIntensity: 0.4,
 });
 
 /** A door on a photo-transcribed facade — solid, not glazed, so it reads as distinct from
  *  a window at a glance rather than as one more pane in the grid. */
 export const doorMaterial = new MeshStandardMaterial({
-  color: new Color('#182229'),
+  color: new Color('#241c25'),
   roughness: 0.7,
   metalness: 0.08,
 });

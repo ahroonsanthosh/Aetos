@@ -227,7 +227,7 @@ export function FenceRun({ points, height = 3, postSpacing = 12, closed = true }
         <mesh key={i} position={p.position} rotation={p.rotation} scale={p.scale}>
           <planeGeometry args={[1, height]} />
           <meshStandardMaterial
-            color="#1a2830"
+            color="#291f2b"
             transparent
             opacity={0.16}
             side={DoubleSide}
