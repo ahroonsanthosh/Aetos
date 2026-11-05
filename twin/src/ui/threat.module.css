@@ -45,8 +45,8 @@
 }
 
 .countLabel {
-  font-size: 9.5px;
-  letter-spacing: 0.17em;
+  font-size: 11px;
+  letter-spacing: 0.14em;
   color: var(--text-dim);
 }
 
@@ -90,12 +90,12 @@
 }
 
 .row:hover {
-  background: rgba(88, 216, 230, 0.07);
+  background: rgba(195, 155, 211, 0.07);
   transform: translateX(2px);
 }
 
 .rowSelected {
-  background: rgba(88, 216, 230, 0.11);
+  background: rgba(195, 155, 211, 0.11);
   box-shadow: inset 0 0 0 1px var(--panel-edge-strong);
 }
 
@@ -123,7 +123,7 @@
   display: flex;
   align-items: baseline;
   gap: 5px;
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--text-dim);
 }
@@ -133,7 +133,7 @@
 }
 
 .rowReason {
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1.35;
   transition: color 140ms ease;
 }

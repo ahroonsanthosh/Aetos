@@ -57,7 +57,7 @@
 
 .buttonActive {
   border-color: var(--holo);
-  background: rgba(88, 216, 230, 0.12);
+  background: rgba(195, 155, 211, 0.12);
   color: var(--holo);
 }
 
@@ -103,10 +103,10 @@
 .simTag {
   margin-left: 9px;
   padding: 1px 6px 2px;
-  border: 1px solid rgba(233, 178, 76, 0.35);
+  border: 1px solid rgba(232, 173, 82, 0.35);
   color: var(--caution);
-  font-size: 8px;
-  letter-spacing: 0.16em;
+  font-size: 11px;
+  letter-spacing: 0.14em;
 }
 
 .simRow {
@@ -141,7 +141,7 @@
   border: 1px solid var(--panel-edge);
   background: transparent;
   color: var(--text-faint);
-  font-size: 9.5px;
+  font-size: 11px;
   cursor: pointer;
   transition:
     color 140ms ease,
@@ -155,7 +155,7 @@
 .scenarioNote {
   margin: 0;
   max-width: 520px;
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1.45;
   text-align: right;
   color: var(--text-faint);

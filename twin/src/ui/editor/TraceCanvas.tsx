@@ -191,7 +191,7 @@ export function TraceCanvas({
     if (!canvas || !ctx) return;
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#050a0f';
+    ctx.fillStyle = '#0b080c';
     ctx.fillRect(0, 0, width, height);
 
     if (mode === 'calibrate' && backgroundImage) {
@@ -211,7 +211,7 @@ export function TraceCanvas({
     }
 
     if (boundary.length >= 2) {
-      drawPolygon(ctx, boundary.map(toScreen), { stroke: palette.holo, fill: 'rgba(88,216,230,0.05)', width: 1.5 });
+      drawPolygon(ctx, boundary.map(toScreen), { stroke: palette.holo, fill: 'rgba(172, 141, 177,0.05)', width: 1.5 });
     }
 
     for (const shape of shapes) {
@@ -668,7 +668,7 @@ function drawVertexHandles(ctx: CanvasRenderingContext2D, polygon: { x: number; 
     if (Math.hypot(b.x - a.x, b.y - a.y) > VERTEX_HIT_PX * 4) {
       ctx.beginPath();
       ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3.5, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(216, 233, 242, 0.55)';
+      ctx.strokeStyle = 'rgba(233, 224, 234, 0.55)';
       ctx.lineWidth = 1.2;
       ctx.stroke();
     }
@@ -679,7 +679,7 @@ function drawVertexHandles(ctx: CanvasRenderingContext2D, polygon: { x: number; 
     ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
     ctx.fillStyle = palette.select;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(4, 9, 14, 0.9)';
+    ctx.strokeStyle = 'rgba(10, 7, 11, 0.9)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
@@ -698,8 +698,8 @@ function drawScaleBar(
   const y = height - 20;
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(216, 233, 242, 0.75)';
-  ctx.fillStyle = 'rgba(216, 233, 242, 0.85)';
+  ctx.strokeStyle = 'rgba(233, 224, 234, 0.75)';
+  ctx.fillStyle = 'rgba(233, 224, 234, 0.85)';
   ctx.lineWidth = 1.5;
 
   ctx.beginPath();
@@ -720,7 +720,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: ViewTransform, width: num
   const pixelSpacing = spacing / view.metresPerPixel;
   if (pixelSpacing < 8) return;
 
-  ctx.strokeStyle = 'rgba(88,216,230,0.07)';
+  ctx.strokeStyle = 'rgba(172, 141, 177,0.07)';
   ctx.lineWidth = 1;
   ctx.beginPath();
 
@@ -735,7 +735,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: ViewTransform, width: num
   }
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(88,216,230,0.35)';
+  ctx.strokeStyle = 'rgba(172, 141, 177,0.35)';
   ctx.beginPath();
   ctx.moveTo(originScreen.x - 8, originScreen.y);
   ctx.lineTo(originScreen.x + 8, originScreen.y);

@@ -12,7 +12,7 @@
   gap: 1px;
   padding: 4px 8px 5px;
   border-left: 2px solid currentColor;
-  background: rgba(4, 9, 14, 0.82);
+  background: rgba(11, 9, 12, 0.82);
   backdrop-filter: blur(3px);
   font-family: var(--font-mono);
   line-height: 1.25;
@@ -25,7 +25,7 @@
 }
 
 .labelSelected {
-  background: rgba(8, 16, 22, 0.94);
+  background: rgba(18, 14, 20, 0.94);
   box-shadow: 0 0 0 1px currentColor;
 }
 
@@ -36,14 +36,14 @@
 }
 
 .labelMeta {
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.05em;
   color: var(--text-dim);
 }
 
 .labelThreat {
   margin-top: 2px;
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.11em;
 }

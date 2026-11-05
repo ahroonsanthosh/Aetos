@@ -11,7 +11,7 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(ellipse at 50% 42%, #0a1219 0%, var(--void) 58%, var(--abyss) 100%);
+  background: radial-gradient(ellipse at 50% 42%, #140f17 0%, var(--void) 58%, var(--abyss) 100%);
 }
 
 .stage {

@@ -16,7 +16,7 @@ const SiteEditor = dynamic(() => import('@/ui/editor/SiteEditor').then((m) => m.
         display: 'grid',
         placeItems: 'center',
         height: '100%',
-        color: '#2b6b78',
+        color: '#5d4261',
         fontFamily: 'var(--font-mono)',
         fontSize: 11,
         letterSpacing: '0.24em',
