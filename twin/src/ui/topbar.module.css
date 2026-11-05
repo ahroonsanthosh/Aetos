@@ -60,6 +60,11 @@
   font-size: 12px;
   letter-spacing: 0.1em;
   color: var(--text);
+  /* One line, always: a long site name must not stack the bar into several rows. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metrics {

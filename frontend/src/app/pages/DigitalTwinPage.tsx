@@ -19,7 +19,7 @@ export const TWIN_URL = '/twin/'
 
 export function DigitalTwinPage() {
   return (
-    <div className="page">
+    <div className="page twin-page">
       <PageHeader title="Digital Twin" subtitle="3-D site model · live tracks" />
       <div className="twin-page__bar">
         <span>

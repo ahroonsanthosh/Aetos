@@ -1,3 +1,8 @@
+/* The page scrolls when the window is shorter than the twin needs. */
+.twin-page {
+  overflow-y: auto;
+}
+
 .twin-page__bar {
   display: flex;
   flex-wrap: wrap;
@@ -13,7 +18,9 @@
    way the reference site frames its 3D world. */
 .twin-page__frame {
   flex: 1;
-  min-height: 0;
+  /* Tall enough for the twin's own top bar, side panels and bottom bar to sit beside the
+     scene rather than on top of it. On a short window the page scrolls instead. */
+  min-height: 680px;
   width: auto;
   margin: 0 var(--space-6) var(--space-6);
   border: 0;

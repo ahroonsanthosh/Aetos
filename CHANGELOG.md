@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**Fixed**: the digital twin inside the console no longer crowds itself on a short window. The
+frame keeps enough height (the page scrolls instead), the twin compacts its bars below 760 px
+tall, long site names stay on one line, the Live/Simulation switch stays on one row, and track
+labels pass behind the panels instead of over their controls.
+
 **Added**: the digital twin is fed by the console. It shows the real Aetos site (its zones and
 sensors, with the coverage the backend reports) and the console's tracks, updated every second,
 with Aetos's own risk scores, reasons and recommendations. A Live/Simulation switch keeps the

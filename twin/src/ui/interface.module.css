@@ -22,6 +22,9 @@
 .overlay {
   position: absolute;
   inset: 0;
+  /* Above the scene's floating labels (z-index up to 20), so a track's label can pass behind
+     a panel but never cover its controls. */
+  z-index: 30;
   display: grid;
   grid-template-rows: auto 1fr auto;
   padding: var(--edge);
@@ -58,5 +61,13 @@
 @media (max-width: 1100px) {
   .middle {
     grid-template-columns: 190px 1fr 260px;
+  }
+}
+
+/* Short windows (a laptop, or the twin framed inside the console): tighter edges so the scene
+   keeps most of the height. */
+@media (max-height: 760px) {
+  .overlay {
+    --edge: 8px;
   }
 }

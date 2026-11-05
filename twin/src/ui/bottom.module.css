@@ -97,7 +97,7 @@
 .simulation {
   justify-self: end;
   align-items: flex-end;
-  max-width: 560px;
+  max-width: 760px;
 }
 
 .simTag {
@@ -111,8 +111,17 @@
 
 .simRow {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 6px;
+}
+
+/* The Live/Simulation switch stays one row; the scenario controls wrap after it if needed. */
+.simRow > .buttons {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  margin-right: 6px;
 }
 
 .select {
@@ -168,5 +177,18 @@
 
   .scenarioNote {
     max-width: 340px;
+  }
+}
+
+/* Short windows: the bar keeps every control but drops the explanatory line under the feed
+   controls, which is what pushed it up over the scene. */
+@media (max-height: 760px) {
+  .bar {
+    padding: 8px 14px;
+    gap: 18px;
+  }
+
+  .scenarioNote {
+    display: none;
   }
 }
