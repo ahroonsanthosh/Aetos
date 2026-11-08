@@ -36,6 +36,10 @@ Three screens: a front page, a sign-in card, and the console. The console's numb
 | **12 System Health** | Every subsystem's state and the sensor watchdog's verdict |
 | **13 Event Log** | The append-only log every view is rebuilt from |
 
+Numbers 06 to 08 (Sensor Fusion, Classification, Assessments) are in the menu but marked as not
+built yet. That work runs in the pipeline today, and its results show per track on Live Tracks.
+I list them instead of hiding them, so "not built yet" never looks like "doesn't exist".
+
 ### The digital twin
 
 ![The digital twin following a live track toward the protected area](docs/assets/twin.png)
@@ -43,8 +47,13 @@ Three screens: a front page, a sign-in card, and the console. The console's numb
 The twin draws the real site in 3D (its protected, restricted and monitored zones as volumes,
 its sensors with their coverage) and puts the console's own tracks over it, updated every
 second. Risk scores, reasons and recommendations are Aetos's own; the twin doesn't re-score
-anything. A Live/Simulation switch gives you the twin's built-in scenarios and its site editor
-when you want to plan rather than watch.
+anything. If you're signed out or the backend can't be reached, it falls back to simulation and
+says why.
+
+A Live/Simulation switch gives you the twin's built-in scenarios and its site editor when you
+want to plan rather than watch. In the editor you trace a site boundary and buildings over a
+map, place assets, generate sensors and zones, and preview the result in 3D. The twin keeps its
+layout on short windows and inside the console: the page scrolls rather than squeezing it.
 
 ## What it does
 
@@ -79,6 +88,8 @@ starts everything. You need Python 3.11+ and Node 20+. On Windows, run it from G
 ./start.sh --list              # the nine built-in scenarios
 ./start.sh h_track_crossing    # run one
 ./start.sh --live              # a real radar instead of the simulator
+./start.sh --no-scenario       # an idle system, no synthetic data
+./start.sh --port 9000         # serve somewhere else
 ```
 
 Out of the box, everything is synthetic. Live mode runs against a testbed radar, but I haven't
