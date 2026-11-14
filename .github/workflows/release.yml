@@ -131,9 +131,19 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # A release someone already made by hand (on the website, say) is filled in, not refused.
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" dist/* \
-            --target "$(git rev-parse HEAD)" \
-            --title "Aetos ${{ steps.version.outputs.version }}" \
-            --notes-file notes.md \
-            --latest=${{ steps.version.outputs.latest }}
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Aetos ${{ steps.version.outputs.version }}" \
+              --notes-file notes.md \
+              --latest=${{ steps.version.outputs.latest }}
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --target "$(git rev-parse HEAD)" \
+              --title "Aetos ${{ steps.version.outputs.version }}" \
+              --notes-file notes.md \
+              --latest=${{ steps.version.outputs.latest }}
+          fi
