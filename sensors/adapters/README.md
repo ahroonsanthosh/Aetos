@@ -73,3 +73,4 @@ radio-frequency one, so the adapter does not pretend to know it (FM-010).
 | `interface.py` | The contract |
 | `simulated/` | The simulated adapter, its sensor model, and the registry loader |
 | `uart_fmcw_radar/` | Testbed radar over a serial link. Isolated so it can be deleted whole |
+| `camera/` | The operator's device camera: motion found in the browser, bearing-only detections |

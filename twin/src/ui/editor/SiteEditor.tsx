@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import type { Asset, Ground, Site } from '@/types';
@@ -699,9 +700,9 @@ export function SiteEditor() {
           value={draft.name}
           onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
         />
-        <a className={styles.headerLink} href="/">
+        <Link className={styles.headerLink} href="/">
           ← Command view
-        </a>
+        </Link>
       </header>
 
       <div className={styles.body}>

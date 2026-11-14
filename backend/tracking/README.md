@@ -40,9 +40,8 @@ makes replay reproduce state rather than approximate it (ADR 0006).
 
 | Path | Responsibility |
 |---|---|
-| `filters/kalman.py` | Constant-velocity Kalman filter, ENU, position-only measurement model |
+| `filters/kalman.py` | Constant-velocity Kalman filter, ENU, position-only measurement model, and the forward prediction used for display |
 | `association/gnn.py` | Global nearest neighbour with chi-squared gating (ADR 0005) |
-| `prediction/` | Forward projection of a track for display and zone-crossing estimates |
 | `track_manager/manager.py` | The cycle above, the lifecycle state machine, and event emission |
 | `models.py` | `Track` and friends — the published, immutable shape |
 

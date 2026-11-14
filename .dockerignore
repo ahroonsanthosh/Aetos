@@ -1,0 +1,20 @@
+# Keep the build context to what the image actually copies. Without this, a local
+# node_modules, .venv or event log would be sent to the builder and copied in.
+.git
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/node_modules
+frontend/dist
+twin/.next
+twin/out
+/data
+/.tools
+tests
+docs
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*

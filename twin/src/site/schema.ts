@@ -152,8 +152,6 @@ export const siteSchema = z.object({
   arrays: z.array(solarArrayBlockSchema).default([]),
 });
 
-export type SiteFile = z.infer<typeof siteSchema>;
-
 /**
  * The same shape, with the boundary allowed to be incomplete.
  *

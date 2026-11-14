@@ -14,6 +14,9 @@ import { API_PREFIX } from '../models/api'
 import type {
   AlertListResponse,
   AlertView,
+  CameraFrameIn,
+  CameraSessionRequest,
+  CameraStatusView,
   ModeView,
   ScenarioListResponse,
   SensorListResponse,
@@ -41,9 +44,8 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return request<T>('GET', path, signal)
 }
 
-/** The only non-GET call the interface makes. Kept alongside `get` rather than given its own
- *  helper, because the error handling is the part that matters and duplicating it is how the
- *  two drift into reporting the same failure differently. */
+/** Writes share `request`, because the error handling is the part that matters and
+ *  duplicating it is how two helpers drift into reporting the same failure differently. */
 async function post<T>(path: string, signal?: AbortSignal, body?: unknown): Promise<T> {
   return request<T>('POST', path, signal, body)
 }
@@ -125,4 +127,12 @@ export const api = {
   scenarios: (signal?: AbortSignal) => get<ScenarioListResponse>('/scenarios', signal),
   mode: (signal?: AbortSignal) => get<ModeView>('/system/mode', signal),
   health: (signal?: AbortSignal) => get<SystemHealthView>('/system/health', signal),
+
+  camera: (signal?: AbortSignal) => get<CameraStatusView>('/camera', signal),
+  startCamera: (body: CameraSessionRequest, signal?: AbortSignal) =>
+    request<CameraStatusView>('PUT', '/camera/session', signal, body),
+  stopCamera: (signal?: AbortSignal) =>
+    request<CameraStatusView>('DELETE', '/camera/session', signal),
+  sendCameraFrame: (frame: CameraFrameIn, signal?: AbortSignal) =>
+    post<{ regions: number }>('/camera/frames', signal, frame),
 }

@@ -2,9 +2,8 @@
  * Where snapshots come from.
  *
  * This interface is the whole point of the architecture. The scene and the interface
- * consume `Snapshot`s and never learn which implementation produced them. Replacing the
- * simulator with Aetos Core is a matter of constructing a different `DataSource` — no
- * component changes, no store changes, no shader changes.
+ * consume `Snapshot`s and never learn which implementation produced them: `SimulationSource`
+ * here, or `LiveSource` (`src/live/`) for the Aetos console's own tracks.
  */
 
 import type { Site, Snapshot } from '@/types';
@@ -75,63 +74,5 @@ export class SimulationSource implements DataSource {
     // interface indistinguishable from a stalled data source, which is the one thing a
     // command display must never be ambiguous about.
     this.listener(this.engine.tick(this.paused ? 0 : dt * this.rate));
-  }
-}
-
-// ---------------------------------------------------------------------------
-
-/**
- * The live implementation, written now so the seam is real rather than asserted.
- *
- * Untested against a server — Aetos Core does not yet publish this feed. It is here to
- * keep `DataSource` honest: if the interface could not be satisfied by a socket, the
- * abstraction would be decoration.
- */
-export class WebSocketSource implements DataSource {
-  readonly kind = 'live' as const;
-
-  private socket: WebSocket | null = null;
-  private listener?: (snapshot: Snapshot) => void;
-  private reconnectDelay = 1000;
-  private closed = false;
-
-  constructor(private readonly url: string) {}
-
-  start(onSnapshot: (snapshot: Snapshot) => void): void {
-    this.listener = onSnapshot;
-    this.closed = false;
-    this.connect();
-  }
-
-  stop(): void {
-    this.closed = true;
-    this.socket?.close();
-    this.socket = null;
-    this.listener = undefined;
-  }
-
-  private connect(): void {
-    if (this.closed) return;
-    const socket = new WebSocket(this.url);
-    this.socket = socket;
-
-    socket.onmessage = (event) => {
-      try {
-        this.listener?.(JSON.parse(event.data as string) as Snapshot);
-      } catch {
-        // A malformed frame is dropped rather than allowed to tear down the feed. The
-        // sequence gap in the next good snapshot is what tells the interface it happened.
-      }
-    };
-
-    socket.onopen = () => {
-      this.reconnectDelay = 1000;
-    };
-
-    socket.onclose = () => {
-      if (this.closed) return;
-      setTimeout(() => this.connect(), this.reconnectDelay);
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 15000);
-    };
   }
 }

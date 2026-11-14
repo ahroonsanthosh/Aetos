@@ -19,6 +19,42 @@ So I built Aetos.
 <sub>One drone, seen by three sensors, fused into one track. The amber SIMULATION badge comes
 from the backend, based on which sensors are actually attached, not from the interface.</sub>
 
+## What you get
+
+Three screens: a front page, a sign-in card, and the console. The console's numbered menu has:
+
+| Page | What it's for |
+|---|---|
+| **01 Overview** | The radar picture: tracks with trails and predicted paths, zones, sensors, range rings, and the selected track's details |
+| **02 Live Tracks** | Every track in a table, with state, position, class and risk |
+| **03 Alerts** | Risk that has crossed the alert threshold, with its reasons, to acknowledge |
+| **04 Digital Twin** | The site in 3D with the live tracks over it (see below) |
+| **05 Track History** | The recorded path of any track, including ones already lost |
+| **09 Sensors** | Where each sensor is, what kind it is, and whether it's enabled |
+| **10 Camera** | Your phone or laptop camera as a sensor: motion found in the browser, bearings sent to Aetos |
+| **11 Response Systems** | Deliberately empty: Aetos recommends, it never acts |
+| **12 System Health** | Every subsystem's state and the sensor watchdog's verdict |
+| **13 Event Log** | The append-only log every view is rebuilt from |
+
+Numbers 06 to 08 (Sensor Fusion, Classification, Assessments) are in the menu but marked as not
+built yet. That work runs in the pipeline today, and its results show per track on Live Tracks.
+I list them instead of hiding them, so "not built yet" never looks like "doesn't exist".
+
+### The digital twin
+
+![The digital twin following a live track toward the protected area](docs/assets/twin.png)
+
+The twin draws the real site in 3D (its protected, restricted and monitored zones as volumes,
+its sensors with their coverage) and puts the console's own tracks over it, updated every
+second. Risk scores, reasons and recommendations are Aetos's own; the twin doesn't re-score
+anything. If you're signed out or the backend can't be reached, it falls back to simulation and
+says why.
+
+A Live/Simulation switch gives you the twin's built-in scenarios and its site editor when you
+want to plan rather than watch. In the editor you trace a site boundary and buildings over a
+map, place assets, generate sensors and zones, and preview the result in 3D. The twin keeps its
+layout on short windows and inside the console: the page scrolls rather than squeezing it.
+
 ## What it does
 
 Aetos takes raw detections, turns them into tracks, classifies them, scores the risk, and gives
@@ -52,13 +88,16 @@ starts everything. You need Python 3.11+ and Node 20+. On Windows, run it from G
 ./start.sh --list              # the nine built-in scenarios
 ./start.sh h_track_crossing    # run one
 ./start.sh --live              # a real radar instead of the simulator
+./start.sh --no-scenario       # an idle system, no synthetic data
+./start.sh --port 9000         # serve somewhere else
 ```
 
 Out of the box, everything is synthetic. Live mode runs against a testbed radar, but I haven't
 measured its detection performance yet, so for now it proves the pipeline, not the sensor. More
 in [docs/live_mode.md](docs/live_mode.md).
 
-Tests: `pytest -q` for the backend, `cd frontend && npm test` for the console.
+Tests: `pytest -q` for the backend, `cd frontend && npm test` for the console, and
+`cd twin && npm test` for the digital twin.
 
 ## Running it for real
 
@@ -70,14 +109,37 @@ behind a TLS reverse proxy and pass `--behind-proxy`. Create the first account w
 .venv/bin/python -m backend.auth.admin add --username alice --role admin
 ```
 
-The full checklist is in [docs/deployment.md](docs/deployment.md). Please read
+The full checklist is in [docs/deployment.md](docs/deployment.md).
+
+## Put it online
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ahroonsanthosh/Aetos)
+
+No terminal needed. Click the button, sign in to Render with GitHub, and press Apply. A few
+minutes later you get an `https://aetos-xxxx.onrender.com` address with the sign-in screen and
+the simulated approach on a loop. Sign in as `admin`, with the password Render generated: it is
+`AETOS_ADMIN_PASSWORD` in the service's Environment tab. To share a read-only account, add
+`AETOS_VIEWER_USERNAME` and `AETOS_VIEWER_PASSWORD` (12+ characters) there.
+
+It runs on Render's free plan, which sleeps after 15 minutes without visitors and takes about a
+minute to wake. Each wake starts a fresh event log.
+
+**If the site doesn't update after a change lands on `main`:** open the service in the Render
+dashboard and press **Manual Deploy**, then **Deploy latest commit**. To make it automatic,
+check **Settings → Build & Deploy → Auto-Deploy** is on and the branch is `main`.
+
+The same image runs on any host that terminates TLS in front of it; see
+[docs/deployment.md](docs/deployment.md#hosted-render-fly-railway). Please read
 [docs/failure_modes.md](docs/failure_modes.md) before you rely on it anywhere that matters.
 I write down every way I've found it can go wrong, including the ones I haven't fixed.
 
 ## What it can't do yet
 
 - The radar in live mode is a testbed unit with unmeasured detection performance.
-- The 3D digital twin in `twin/` is a standalone prototype. It isn't wired to the backend yet.
+- The 3D digital twin (Digital Twin in the console's menu) shows the live site as airspace and
+  zones only: Aetos has no building models of a real site yet.
+- The camera (Camera in the menu) uses your device's camera and measures direction only. It
+  places what it sees at a range you choose, so treat its tracks as bearings, not positions.
 - One drone sometimes still shows as more than one track for a moment, while the evidence that
   two tracks are the same object builds up. It's one row about 94 % of the time now, up from 43 %.
 
@@ -89,15 +151,16 @@ problem? See [SECURITY.md](SECURITY.md).
 | Path        | What's there                                                                  |
 | ----------- | ----------------------------------------------------------------------------- |
 | `backend/`  | Ingestion, tracking, fusion, classification, zones, risk, decision, event log |
-| `sensors/`  | The sensor adapter contract, the simulator and the testbed radar driver       |
+| `sensors/`  | The sensor adapter contract, the simulator, the testbed radar and the camera  |
 | `frontend/` | The operator console                                                          |
-| `twin/`     | The 3D digital twin prototype                                                 |
+| `twin/`     | The 3D digital twin, served by the backend at `/twin/`                        |
 | `docs/`     | Architecture, schema, failure modes and design decisions (`docs/adr/`)        |
 
 ## Where it's going
 
 It's just me working on this, and it's in active development. Next up: fusion across more
-sensors, a digital twin of the site, distributed nodes and coordination across sites. The longer
+sensors, real building models in the digital twin, distributed nodes and coordination across
+sites. The longer
 version is in [docs/vision.md](docs/vision.md), and where each module stands today is in
 [docs/architecture.md](docs/architecture.md). Changes are in [CHANGELOG.md](CHANGELOG.md).
 

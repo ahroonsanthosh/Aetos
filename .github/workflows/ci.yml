@@ -1,6 +1,6 @@
 # Lint and test on every push and pull request.
 # `backend` runs ruff and the full pytest suite on the oldest supported Python and a current one.
-# `frontend` and `twin` run their unit tests, and the console also has to build.
+# `frontend` and `twin` run their unit tests and both have to build, since both ship with the site.
 name: CI
 
 on:
@@ -53,3 +53,5 @@ jobs:
           cache-dependency-path: twin/package-lock.json
       - run: npm ci
       - run: npm test
+      - run: npm run typecheck
+      - run: npm run build

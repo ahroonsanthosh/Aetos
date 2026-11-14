@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.9.0 (2026-11-14)
+
+**Added**: releases. Pushing a version tag publishes a GitHub release with the changelog
+section as its notes, the Python wheel and source archive attached, and the Docker image at
+`ghcr.io/ahroonsanthosh/aetos`.
+
+**Docs**: the README explains the unbuilt menu entries 06 to 08, the twin's fallback to
+simulation and its site editor, and more `start.sh` options.
+
+**Fixed**: the digital twin inside the console no longer crowds itself on a short window. The
+frame keeps enough height (the page scrolls instead), the twin compacts its bars below 760 px
+tall, long site names stay on one line, the Live/Simulation switch stays on one row, and track
+labels pass behind the panels instead of over their controls.
+
+**Added**: the digital twin is fed by the console. It shows the real Aetos site (its zones and
+sensors, with the coverage the backend reports) and the console's tracks, updated every second,
+with Aetos's own risk scores, reasons and recommendations. A Live/Simulation switch keeps the
+built-in scenarios one click away. Signed out or unreachable, it falls back to simulation and
+says why. Readiness counts only what Aetos reports.
+
+**Changed**: the digital twin matches the console: Barlow, Barlow Condensed and JetBrains Mono,
+the dark plum palette in the 3D scene and the panels, and readable 11px labels in place of tiny
+wide-spaced ones. Bloom and vignette post-processing are gone (and their packages). The feed
+readout now says SIMULATED, which it is, instead of LIVE. Every view, layer, scenario control
+and the site editor work as before.
+
+**Changed**: a new look for the whole site. Dark surfaces with the brand plum; Barlow,
+Barlow Condensed and JetBrains Mono (free, bundled, nothing fetched at runtime); numbered side
+navigation, which becomes a scrollable strip on phones; rounded cards and pill buttons. The site
+is three screens: a plain front page, the sign-in card, and the console. The launch and boot
+animations, film grain, text reveals and other decoration are gone. Status colours clear WCAG AA
+on every surface, checked by a test.
+
+**Added**: `GET /sensors` reports each simulated sensor's coverage envelope and type.
+
+**Added**: the 3-D digital twin is part of the site. The backend serves it at `/twin/` and the
+console shows it under **Digital Twin**. Its pages allow only their own inline scripts, by hash.
+
+**Added**: **Camera** in the console menu. The operator's device camera becomes a bearing-only
+sensor: motion is found in the browser, only the boxes are sent, and the camera adapter turns
+them into detections. The mode badge now counts sensors as they attach and detach, and reads
+HYBRID when real and simulated sensors are both feeding the picture.
+
+**Changed**: the `Dockerfile` also builds the digital twin, and stays what Render deploys.
+`scripts/render-build.sh` does the same build for a host without containers.
+
+**Fixed**: scripted sensor faults never reached the sensors. Scenarios E, F and G declared
+radar and RF degradation that was parsed and then never applied, and named sensors
+(`SIM-RADAR-01`) the shipped site does not have. Both are fixed, and a scenario that scripts an
+unknown sensor is now refused.
+
+**Fixed**: expired login sessions are swept from the account database every ten minutes
+instead of accumulating for as long as the server runs.
+
+**Removed**: dead files and code: an empty prediction package and test directories, an unused
+lockup component and its stylesheet, an unserved logo file, two unreferenced screenshots, a
+stale duplicate of the design-token guide, a vendored copy of the landing page's source
+component (credited in `AetosHero.tsx`), a throwaway browser script, and unused twin helpers.
+
+**Added**: one-click hosting. A Render blueprint (`render.yaml`) puts Aetos online with no
+terminal. Accounts can be declared with
+`AETOS_ADMIN_USERNAME`/`AETOS_ADMIN_PASSWORD`, plus an optional read-only
+`AETOS_VIEWER_USERNAME`/`AETOS_VIEWER_PASSWORD`, for hosts with no shell. `--loop` replays a
+scenario forever with an empty sky between runs, so a hosted console is never left empty.
+
+**Fixed**: the hosting files no longer sit in the wrong directory or refuse to start (FM-040).
+
+**Fixed**: the image refused to start on Render with `Permission denied` on
+`/app/data/deployment.json`, because the data directory stayed root-owned. The `VOLUME`
+instruction is gone and the directory is created and handed to the app user in one step.
+
+**Changed**: the Render blueprint no longer asks for any values. The admin username is `admin`
+and Render generates its password, readable in the service's Environment tab. A blank or short
+typed password refused the start by design, which Render showed as a deploy that kept failing.
+
 ## 0.8.3 (2026-11-01)
 
 **Docs**: the README is rewritten in my own voice, with a list of what Aetos can't do yet.

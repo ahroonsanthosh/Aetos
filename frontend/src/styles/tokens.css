@@ -5,133 +5,118 @@
  * writes a literal colour is a bug — see docs/design_tokens.md.
  *
  * ---------------------------------------------------------------------------------------
- * The palette, and the one rule that governs it
+ * The look
  * ---------------------------------------------------------------------------------------
  *
- * Two families, and they are not interchangeable:
+ * Near-black warmed toward the eagle's plum, with light type. Condensed uppercase headings,
+ * a plain grotesk for reading and a monospace for every changing number. Pills and generous
+ * rounding instead of hairline boxes; slow, eased motion instead of snaps.
  *
- *   BRAND — the eggplant purples, taken from the Aetos mark itself. These carry *identity and
- *   structure*: the logo, the active navigation item, focus rings, panel headers, the radial
- *   wash behind the shell. They say where you are. They never say how bad something is.
+ * The one rule that survives the change of look is the one that matters on a console:
  *
- *   STATUS — amber and red, and nothing else saturated. These carry *judgement*. If one is on
- *   screen, something has been assessed and found to warrant attention.
+ *   BRAND — plum. Identity and structure: the mark, the active navigation item, focus rings.
+ *   It says where you are. It never says how bad something is.
  *
- * Keeping them apart is the whole design. An interface that uses colour freely for emphasis
- * destroys the reflex that makes a warning colour work: an operator who sees colour everywhere
- * stops reading it anywhere. Purple is therefore permitted to be decorative and is *never*
- * permitted to mean "alarming"; amber and red are never permitted to be decorative.
- *
- * Blue is gone from the system. It used to carry informational and nominal states, and against
- * an eggplant ground it read as a third meaning nobody had assigned. Those states are now
- * purple, which is the correct statement: they are structure, not judgement.
- *
- * Aetos is a dark-only interface, deliberately. A light theme is not a missing feature — the
- * display is designed for low-light operations rooms and the status contrast relationships are
- * calibrated against a near-black ground. Re-deriving them for a light background would be a
- * separate design pass, not a token swap.
+ *   STATUS — green, amber, orange and red, and nothing else saturated. These carry judgement.
+ *   Each clears WCAG AA (4.5:1) against every surface it lands on, which
+ *   `tests/unit/tokens.test.ts` measures rather than trusts.
  */
 
 :root {
-  /* ---- Brand. The mark's own colours. Identity and structure, never severity. ---- */
-  --brand-deep: #3d1f3d;        /* gradients, borders, the launch wipe */
-  --brand-mid: #6b4a6b;         /* the mark itself, at rest */
-  --brand-accent: #b892c4;      /* highlight: active nav, focus, hover, live values */
-  --brand-accent-dim: #b892c433;
-  --brand-accent-veil: #b892c41f;   /* the faintest readable tint; active-row gradients */
-  --brand-wash: #3d1f3d40;      /* the radial ground behind the shell */
+  /* ---- Brand. The eagle's plum. Identity and structure, never severity. ---- */
+  --brand-deep: #3d1f3d;        /* gradients, the launch curtain */
+  --brand-mid: #8a6290;         /* the mark, at rest */
+  --brand-accent: #c39bd3;      /* active nav, focus, hover, live values */
+  --brand-accent-dim: #c39bd333;
+  --brand-accent-veil: #c39bd314;   /* the faintest readable tint */
+  --brand-wash: #3d1f3d2e;      /* a faint plum falloff at the top of the shell */
 
-  /* ---- Surfaces. Near-black through to panel, warmed very slightly toward the brand. ---- */
-  --surface-void: #050406;      /* behind everything; the map's ground */
-  --surface-base: #0a0709;      /* application background */
-  --surface-panel: #141016;     /* panels and cards */
-  --surface-raised: #1e1822;    /* headers within panels, hover states */
-  --surface-inset: #080609;     /* wells, code, log rows */
+  /* ---- Surfaces. Near-black, warmed very slightly toward the plum. ---- */
+  --surface-void: #060507;      /* behind the map */
+  --surface-base: #0b090c;      /* application background */
+  --surface-panel: #121014;     /* cards */
+  --surface-raised: #1b171e;    /* headers within cards, hover states, pills */
+  --surface-inset: #0e0c10;     /* wells, code, log rows */
+  --surface-ink: #ede6ef;       /* the inverted pill: light on dark, for primary actions */
 
-  /* ---- Lines. Structure comes from hairlines, not shadows or rounding. ---- */
-  --line-subtle: #1d1720;
-  --line: #2a2130;
-  --line-strong: #453349;
+  /* ---- Lines. Quiet hairlines; structure comes mostly from rounding and space. ---- */
+  --line-subtle: #211c25;
+  --line: #2e2734;
+  --line-strong: #4a3f51;
 
-  /* ---- Type. ---- */
-  /* Every value below clears WCAG AA against `--surface-base` at the size it is used, and
-     that is a constraint on the palette rather than a nicety. `--text-muted` carries `.label`,
-     which is 10px uppercase — the smallest type in the interface and the least forgiving.
-
-     Ratios are computed against the *lightest* surface each colour lands on (`--surface-raised`),
-     not against the page ground. Solving against the ground alone is how the second cut of this
-     palette still failed: 4.54:1 on `--surface-base` is 4.26:1 on a panel header, and panel
-     headers are exactly where labels live.
-
-     The first cut had `--text-muted` at #5c4f60 — 2.62:1, unreadable in a lit room. Both were
-     caught by measuring rather than by looking. Hue and saturation are the originals throughout;
-     only lightness moved. */
-  --text-primary: #cfc6d1;
-  --text-secondary: #8c7d92;
-  --text-muted: #8e7c93;
-  --text-disabled: #706077;     /* inactive controls only, never live content */
+  /* ---- Type. Every value clears AA on every surface above. ---- */
+  --text-primary: #ede6ef;
+  --text-secondary: #b9adbd;
+  --text-muted: #978a9c;
+  --text-disabled: #6a5f6f;     /* inactive controls only, never live content */
+  --text-on-ink: #0b090c;
 
   /* ---- Status. The only saturated colours in the system, and they mean something. ---- */
-  --status-nominal: #7fae9b;    /* healthy, connected — desaturated so it recedes */
-  --status-info: #b892c4;       /* informational; the brand accent, deliberately */
-  --status-notice: #c9a9d2;
-  --status-warning: #d99b3f;    /* attention required */
-  --status-elevated: #e07a3f;
-  --status-critical: #da5753;   /* severe — nudged up from #d9534f, which sat at 4.38:1 on a
-                                   panel header. The most important colour in the system to be
-                                   readable was the one that failed. */
-  --status-inert: #8e7c93;      /* not built, not connected — deliberately colourless */
+  --status-nominal: #7fbf9f;
+  --status-info: #c39bd3;       /* informational; the brand accent, deliberately */
+  --status-notice: #d4b4e0;
+  --status-warning: #e8ad52;
+  --status-elevated: #f0905a;
+  --status-critical: #f26d66;
+  --status-inert: #978a9c;      /* not built, not connected — deliberately colourless */
 
-  /* Dimmed variants, for fills and trails behind their solid counterparts. */
-  --status-nominal-dim: #7fae9b26;
-  --status-info-dim: #b892c426;
-  --status-warning-dim: #d99b3f26;
-  --status-critical-dim: #da575326;
+  --status-nominal-dim: #7fbf9f1f;
+  --status-info-dim: #c39bd31f;
+  --status-warning-dim: #e8ad521f;
+  --status-critical-dim: #f26d661f;
 
   /* ---- Track and instrument colours. ---- */
-  --track-default: #b892c4;
-  --track-selected: #f2e9f5;
-  --track-stale: #7d6f83;
-  --track-lost: #504654;
-  --track-trail: #b892c466;
-  --track-prediction: #b892c44d;
+  --track-default: #c39bd3;
+  --track-selected: #ffffff;
+  --track-stale: #7d7083;
+  --track-lost: #4d4452;
+  --track-trail: #c39bd366;
+  --track-prediction: #c39bd34d;
 
-  --grid-line: #1c1620;
-  --grid-line-major: #33253a;
-  --grid-label: #6b5c71;
+  --grid-line: #1d1822;
+  --grid-line-major: #352c3b;
+  --grid-label: #8c7f91;
 
-  /* The scope face. A shallow radial fall-off from centre to rim, so the area the display
-     actually covers reads as a lit surface against the void rather than being distinguished
-     from it only by the outer ring. Kept very dark — this sits behind live tracks, and
-     contrast belongs to them. */
-  --scope-face-inner: #150f19;
-  --scope-face-mid: #0f0a12;
-  --scope-face-outer: #08060a;
-  --sensor-marker: #7fae9b;
-  --sensor-coverage: #7fae9b14;
+  /* The scope face: a faint lit disc against the void. */
+  --scope-face-inner: #17121a;
+  --scope-face-mid: #100d12;
+  --scope-face-outer: #08070a;
+  --sensor-marker: #7fbf9f;
+  --sensor-coverage: #7fbf9f14;
 
-  --zone-protected: #da5753;
-  --zone-restricted: #d99b3f;
-  --zone-monitored: #b892c4;
+  /* The front page's night sky. */
+  --sky-top: #050407;
+  --sky-horizon: #140d17;
+  --sky-low: #1d1121;
+  --orb: #f3e8f7;
+  --orb-rim: #8a6290;
+  --orb-shade: #00000099;
+
+  --zone-protected: #f26d66;
+  --zone-restricted: #e8ad52;
+  --zone-monitored: #c39bd3;
 
   /* ---- Type families. ----
-     Both are vendored under public/fonts and declared in global.css. They are not linked from
-     a font CDN: a console for a defence site should not make a third-party request on load,
-     and it has to render correctly with no outbound network at all. */
-  --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-sans: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+     Barlow for reading, Barlow Condensed for headings and labels, JetBrains Mono for every
+     number that changes. All open-source (SIL OFL), bundled from their @fontsource packages;
+     nothing is fetched from a font CDN, so the console renders with no outbound network. */
+  --font-sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* ---- Type scale. Small and dense: this is an instrument, not a landing page. ---- */
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
-  --text-md: 15px;
-  --text-lg: 18px;
-  --text-xl: 22px;
+  /* ---- Type scale. ---- */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+  --text-display: clamp(34px, 4.2vw, 64px);
+  --text-hero: clamp(56px, 9vw, 148px);
 
-  --tracking-wide: 0.08em;   /* labels and headers are letterspaced, not bolded */
+  --tracking-tight: -0.02em;    /* large type */
+  --tracking-wide: 0.04em;      /* small caps labels */
   --tracking-wider: 0.14em;
 
   /* ---- Spacing. 4px base. ---- */
@@ -143,21 +128,27 @@
   --space-6: 32px;
   --space-8: 48px;
 
-  /* ---- Geometry. Corners are square or nearly so; rounding reads as consumer software. ---- */
+  /* ---- Geometry. Rounded cards, pill controls. ---- */
   --radius-none: 0;
-  --radius-sm: 2px;
-  --radius: 3px;
+  --radius-sm: 10px;
+  --radius: 18px;
+  --radius-lg: 28px;
+  --radius-pill: 999px;
+  --shadow-soft: 0 0 0 1px #ffffff0d, 0 16px 36px -18px #000000e6;
 
   /* ---- Layout. ---- */
-  --topbar-height: 48px;
-  --sidebar-width: 216px;
+  --topbar-height: 64px;
+  --sidebar-width: 228px;
   --sidebar-width-collapsed: 56px;
   --details-width: 380px;
   --bottom-height: 216px;
 
-  /* ---- Motion. Enough to track a change, never enough to draw attention. ---- */
-  --transition-fast: 90ms ease-out;
-  --transition: 160ms ease-out;
+  /* ---- Motion. Slow, eased, and never in the way. ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --transition-fast: 200ms var(--ease-out);
+  --transition: 420ms var(--ease-out);
+  --duration-reveal: 1000ms;
 }
 
 /*
@@ -170,5 +161,6 @@
   :root {
     --transition-fast: 0ms;
     --transition: 0ms;
+    --duration-reveal: 0ms;
   }
 }

@@ -82,10 +82,12 @@
   grid-template-columns: 180px 130px 1fr;
   gap: var(--space-3);
   align-items: baseline;
-  padding: var(--space-3);
+  padding: var(--space-4) var(--space-5);
   margin-bottom: var(--space-4);
-  border: 1px solid var(--line-subtle);
-  border-left-width: 3px;
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  border-left: 4px solid var(--line-subtle);
 }
 
 .health__posture-label {

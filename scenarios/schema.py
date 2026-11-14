@@ -265,9 +265,3 @@ class Scenario(BaseModel):
                     f"{window.from_s}s, at or after the scenario ends"
                 )
         return self
-
-    def object(self, object_id: str) -> SimulatedObject:
-        for obj in self.objects:
-            if obj.object_id == object_id:
-                return obj
-        raise KeyError(f"no object {object_id!r} in scenario {self.scenario_id}")

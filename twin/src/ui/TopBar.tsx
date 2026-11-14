@@ -18,6 +18,8 @@ export function TopBar() {
   const health = useAetos((s) => s.snapshot?.health ?? null);
   const weather = useAetos((s) => s.snapshot?.weather ?? null);
   const connected = useAetos((s) => s.connected);
+  const feed = useAetos((s) => s.feed);
+  const liveStatus = useAetos((s) => s.liveStatus);
   const counts = useThreatCounts();
 
   const readiness = health ? Math.round(health.readiness * 100) : null;
@@ -34,7 +36,7 @@ export function TopBar() {
     <header className={`${styles.bar} panel`}>
       <div className={styles.identity}>
         <div className={styles.wordmark}>
-          AETOS<span className={styles.wordmarkThin}> COMMAND</span>
+          AETOS<span className={styles.wordmarkThin}> TWIN</span>
         </div>
         <div className={styles.site}>
           <span className={styles.siteId}>{site.id}</span>
@@ -54,8 +56,24 @@ export function TopBar() {
         <Metric label="Conditions" value={weather?.label ?? '—'} />
         <Metric
           label="Feed"
-          value={connected ? 'LIVE' : 'WAITING'}
-          colour={connected ? palette.nominal : palette.caution}
+          value={
+            feed === 'live'
+              ? liveStatus?.state === 'live'
+                ? 'LIVE'
+                : liveStatus?.state === 'interrupted'
+                  ? 'INTERRUPTED'
+                  : 'CONNECTING'
+              : connected
+                ? 'SIMULATED'
+                : 'WAITING'
+          }
+          colour={
+            feed === 'live' && liveStatus?.state === 'live'
+              ? palette.nominal
+              : feed === 'live' && liveStatus?.state === 'interrupted'
+                ? palette.danger
+                : palette.caution
+          }
         />
       </div>
 

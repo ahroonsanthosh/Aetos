@@ -12,7 +12,7 @@
   height: 100%;
   background: var(--void);
   color: var(--text);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 12px;
 }
 
@@ -26,10 +26,11 @@
 }
 
 .wordmark {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  color: var(--holo);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  color: var(--text);
   white-space: nowrap;
 }
 
@@ -144,7 +145,7 @@
 
 .toolActive {
   border-color: var(--holo);
-  background: rgba(88, 216, 230, 0.12);
+  background: rgba(195, 155, 211, 0.12);
   color: var(--holo);
 }
 
@@ -248,22 +249,22 @@
 
 .primaryButton {
   border-color: var(--holo);
-  background: rgba(88, 216, 230, 0.12);
+  background: rgba(195, 155, 211, 0.12);
   color: var(--holo);
   font-weight: 600;
 }
 
 .primaryButton:hover {
-  background: rgba(88, 216, 230, 0.2);
+  background: rgba(195, 155, 211, 0.2);
 }
 
 .dangerButton {
-  border-color: rgba(255, 77, 94, 0.4);
+  border-color: rgba(242, 109, 102, 0.4);
   color: var(--danger);
 }
 
 .dangerButton:hover {
-  background: rgba(255, 77, 94, 0.1);
+  background: rgba(242, 109, 102, 0.1);
 }
 
 .linkButton {
@@ -368,7 +369,7 @@
   margin: 0;
   padding: 7px 9px;
   border-left: 2px solid var(--holo);
-  background: rgba(88, 216, 230, 0.07);
+  background: rgba(195, 155, 211, 0.07);
   font-size: 10.5px;
   line-height: 1.5;
   color: var(--text);
@@ -389,7 +390,7 @@
 
 .zoomHint {
   margin-right: 8px;
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -429,7 +430,7 @@
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--panel-edge-strong);
-  background: rgba(88, 216, 230, 0.06);
+  background: rgba(195, 155, 211, 0.06);
 }
 
 .bulkBar input,
@@ -459,5 +460,5 @@
 
 .assetRowSelected {
   border-color: var(--holo);
-  background: rgba(88, 216, 230, 0.1);
+  background: rgba(195, 155, 211, 0.1);
 }

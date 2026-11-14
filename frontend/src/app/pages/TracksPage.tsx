@@ -31,11 +31,12 @@ export function TracksPage({ picture, selectedTrackId, onSelectTrack }: Props) {
   )
 }
 
+/** A page's title, with a small label above it when there is something to count. */
 export function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <header className="page__header">
-      <h1 className="page__title">{title}</h1>
       {subtitle && <span className="page__subtitle label">{subtitle}</span>}
+      <h1 className="page__title">{title}</h1>
     </header>
   )
 }

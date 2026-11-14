@@ -116,16 +116,18 @@ class ModeView(BaseModel):
     """Whether everything on screen is synthetic. True whenever no real adapter is feeding
     the pipeline, regardless of what the configuration declares."""
 
+    simulated_adapters_connected: int = Field(default=0, ge=0)
+    """How many simulated adapters are feeding the pipeline. With real ones too, the picture is
+    a mixture, and the interface says HYBRID rather than letting LIVE cover synthetic tracks."""
+
 
 @router.get("/system/mode", response_model=ModeView, tags=["system"])
 async def get_mode(services: ServicesDep) -> ModeView:
     """The run mode, as a fact rather than a frontend constant.
 
-    No real sensor adapter is wired into this build — the testbed radar driver of ADR 0017 is
-    constructed by nothing — so `real_adapters_connected` is structurally zero and `simulated`
-    is structurally true. Both are computed rather than
-    hardcoded, so they will start telling the truth on their own the day an adapter registry
-    is wired in.
+    Counted from the adapters attached at the moment of asking, so a fitted radar or a browser
+    camera that joins while the server runs changes the answer, and one that leaves changes it
+    back.
     """
     real_adapters = services.real_adapter_count()
 
@@ -133,6 +135,7 @@ async def get_mode(services: ServicesDep) -> ModeView:
         mode=services.run_mode,
         real_adapters_connected=real_adapters,
         simulated=real_adapters == 0,
+        simulated_adapters_connected=services.simulated_adapter_count(),
     )
 
 

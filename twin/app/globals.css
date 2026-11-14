@@ -3,37 +3,39 @@
  *
  * The interface is chrome around a 3D scene, so it is built to take up as little of the
  * screen as it can while still answering the operator's questions. Panels are dark,
- * translucent and edge-anchored; the hologram is what the eye should land on.
+ * translucent and edge-anchored; the scene is what the eye should land on.
  *
- * Type is monospace throughout for data and near-monospace for headings. That is not a
- * stylistic tic: figures that change ten times a second must not reflow, and a
- * proportional font makes a live readout jitter horizontally on every update.
+ * Barlow to read, Barlow Condensed for headings, JetBrains Mono for figures (`.value`).
+ * Figures are tabular everywhere: a value that changes ten times a second must not reflow.
  */
 
 :root {
-  --void: #04070b;
-  --abyss: #020407;
-  --panel: rgba(6, 12, 17, 0.82);
-  --panel-solid: #070d13;
-  --panel-edge: rgba(88, 216, 230, 0.14);
-  --panel-edge-strong: rgba(88, 216, 230, 0.3);
+  --void: #0b090c;
+  --abyss: #060507;
+  --panel: rgba(14, 11, 16, 0.82);
+  --panel-solid: #121014;
+  --panel-edge: rgba(195, 155, 211, 0.14);
+  --panel-edge-strong: rgba(195, 155, 211, 0.3);
 
-  --holo: #58d8e6;
-  --holo-dim: #2b6b78;
-  --holo-deep: #123138;
+  --holo: #c39bd3;
+  --holo-dim: #6e4f75;
+  --holo-deep: #2a1c2e;
 
-  --text: #d8e9f2;
-  --text-dim: #8ba4b4;
-  --text-faint: #54697a;
+  --text: #ede6ef;
+  --text-dim: #b9adbd;
+  --text-faint: #978a9c;
 
-  --nominal: #3fd39b;
-  --caution: #e9b24c;
-  --warning: #ff7a45;
-  --danger: #ff4d5e;
-  --offline: #5d4550;
+  --nominal: #7fbf9f;
+  --caution: #e8ad52;
+  --warning: #f0905a;
+  --danger: #f26d66;
+  --offline: #5a4a5f;
 
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Roboto Mono', Menlo, Consolas,
-    monospace;
+  /* The console's three faces: Barlow to read, Barlow Condensed for headings and labels,
+     JetBrains Mono for figures. Bundled from @fontsource; nothing is fetched at runtime. */
+  --font-sans: 'Barlow', system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 
   --edge: 12px;
 }
@@ -50,8 +52,9 @@ body {
   overflow: hidden;
   background: var(--void);
   color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -75,38 +78,23 @@ button {
 
 .panel {
   background: var(--panel);
-  backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--panel-edge);
-  /* Square corners. Rounded panels read as consumer software. */
   border-radius: 0;
-}
-
-/* A single hairline accent along the panel's anchored edge, so panels read as attached to
-   the frame rather than floating over the scene. */
-.panel::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 1px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    var(--panel-edge-strong) 20%,
-    var(--panel-edge-strong) 80%,
-    transparent
-  );
 }
 
 .heading {
   margin: 0;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
 
 .value {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
@@ -123,11 +111,11 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(88, 216, 230, 0.18);
+  background: rgba(195, 155, 211, 0.18);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(88, 216, 230, 0.32);
+  background: rgba(195, 155, 211, 0.32);
 }
 
 /* --- Motion --------------------------------------------------------------- */

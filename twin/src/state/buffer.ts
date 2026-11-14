@@ -9,12 +9,13 @@
  * positions from here every frame at zero allocation cost, and React only re-renders when
  * something an operator would actually read has changed.
  *
- * The buffer renders one tick in the past, so it is always interpolating between two
- * known positions rather than extrapolating past the newest one. That costs 100 ms of
- * latency and buys motion that never overshoots and never stutters on a late packet.
+ * The buffer renders one interval in the past, so it is always interpolating between two
+ * known positions rather than extrapolating past the newest one. That costs one interval of
+ * latency (100 ms simulated, about a second live) and buys motion that never overshoots and
+ * never stutters on a late packet.
  */
 
-import type { Enu, Snapshot, Track } from '@/types';
+import type { Enu, Snapshot } from '@/types';
 import { lerpEnu } from '@/lib/geometry';
 
 interface Frame {
@@ -26,8 +27,8 @@ interface Frame {
 let previous: Frame | null = null;
 let current: Frame | null = null;
 
-/** Playback delay, milliseconds. One snapshot interval at 10 Hz. */
-const DELAY_MS = 100;
+/** Smallest playback delay, milliseconds. The delay is otherwise one measured interval. */
+const MIN_DELAY_MS = 100;
 
 export function pushSnapshot(snapshot: Snapshot): void {
   const frame: Frame = { snapshot, receivedAt: performance.now() };
@@ -40,11 +41,6 @@ export function resetBuffer(): void {
   current = null;
 }
 
-/** The newest snapshot, for anything that does not need smoothing. */
-export function latestSnapshot(): Snapshot | null {
-  return current?.snapshot ?? null;
-}
-
 /**
  * Interpolation factor and the two frames straddling the render clock.
  *
@@ -55,10 +51,13 @@ function sample(): { a: Snapshot; b: Snapshot; t: number } | undefined {
   if (!current) return undefined;
   if (!previous) return { a: current.snapshot, b: current.snapshot, t: 0 };
 
-  const renderTime = performance.now() - DELAY_MS;
   const span = current.receivedAt - previous.receivedAt;
   if (span <= 0) return { a: current.snapshot, b: current.snapshot, t: 0 };
 
+  // One measured interval behind, not a fixed 100 ms: the simulator publishes at 10 Hz but the
+  // live Aetos feed about once a second, and a fixed delay would make live tracks jump most of
+  // the way to each new position the moment it arrived. At 10 Hz this is the same 100 ms.
+  const renderTime = performance.now() - Math.max(span, MIN_DELAY_MS);
   const t = (renderTime - previous.receivedAt) / span;
   return {
     a: previous.snapshot,
@@ -93,25 +92,4 @@ export function interpolatedPosition(trackId: string): Enu | null {
   scratch.n = p.n;
   scratch.u = p.u;
   return scratch;
-}
-
-/** Smoothed heading, taking the shorter way round the circle. */
-export function interpolatedHeading(trackId: string): number | null {
-  const s = sample();
-  if (!s) return null;
-
-  const from = s.a.tracks.find((t) => t.trackId === trackId);
-  const to = s.b.tracks.find((t) => t.trackId === trackId);
-  if (!to) return null;
-  if (!from) return to.heading;
-
-  let delta = to.heading - from.heading;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  while (delta < -Math.PI) delta += Math.PI * 2;
-  return from.heading + delta * s.t;
-}
-
-/** Tracks in the newest snapshot. Identity and threat do not need interpolating. */
-export function currentTracks(): Track[] {
-  return current?.snapshot.tracks ?? [];
 }

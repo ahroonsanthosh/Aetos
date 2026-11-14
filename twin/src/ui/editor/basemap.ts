@@ -60,17 +60,3 @@ export function getTile(tile: TileRef, onLoad: () => void): HTMLImageElement | n
   image.src = osmTileUrl(tile);
   return null;
 }
-
-/** How many of the given tiles are loaded, for a "map still loading" indicator. */
-export function readyCount(tiles: TileRef[]): number {
-  let ready = 0;
-  for (const tile of tiles) {
-    if (cache.get(keyOf(tile))?.status === 'ready') ready += 1;
-  }
-  return ready;
-}
-
-/** Test seam / memory escape hatch. */
-export function clearTileCache(): void {
-  cache.clear();
-}

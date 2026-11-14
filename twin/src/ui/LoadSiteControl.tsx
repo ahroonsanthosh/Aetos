@@ -8,6 +8,7 @@
  */
 
 import { useRef, useState } from 'react';
+import Link from 'next/link';
 
 import { parseSiteFileText, SiteFileError } from '@/site/schema';
 import { useAetos } from '@/state/store';
@@ -33,9 +34,9 @@ export function LoadSiteControl() {
       <button type="button" className={styles.button} onClick={() => inputRef.current?.click()}>
         Load site…
       </button>
-      <a className={styles.button} href="/editor">
+      <Link className={styles.button} href="/editor">
         Site editor
-      </a>
+      </Link>
       <input
         ref={inputRef}
         type="file"

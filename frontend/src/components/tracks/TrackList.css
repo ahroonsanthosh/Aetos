@@ -27,10 +27,10 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   text-align: left;
-  background: var(--surface-raised);
-  border-bottom: 1px solid var(--line);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-subtle);
   white-space: nowrap;
 }
 
@@ -46,11 +46,11 @@
 
 .track-list tbody tr.is-selected {
   background: var(--surface-raised);
-  box-shadow: inset 2px 0 0 var(--status-info);
+  box-shadow: inset 3px 0 0 var(--brand-accent);
 }
 
 .track-list td {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   color: var(--text-secondary);
   white-space: nowrap;
 }

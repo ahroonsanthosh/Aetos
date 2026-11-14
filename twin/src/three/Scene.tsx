@@ -72,10 +72,10 @@ export function Scene() {
           post-processing chain, not the renderer, owns the final tone curve here, so
           brightness has to be authored into the lighting rather than dialled in with
           exposure afterwards. */}
-      <ambientLight intensity={1.9} color="#54809a" />
-      <directionalLight position={[400, 600, 300]} intensity={2.1} color="#9ecfe2" />
-      <directionalLight position={[-500, 300, -400]} intensity={1.05} color="#4a90ad" />
-      <hemisphereLight args={['#2f6f88', '#060d14', 1.2]} />
+      <ambientLight intensity={1.9} color="#85648a" />
+      <directionalLight position={[400, 600, 300]} intensity={2.1} color="#c9b4cc" />
+      <directionalLight position={[-500, 300, -400]} intensity={1.05} color="#8d6493" />
+      <hemisphereLight args={['#684a6d', '#0f0a10', 1.2]} />
 
       <group>
         <Terrain site={site} />

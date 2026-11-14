@@ -4,7 +4,8 @@
 composited onto a `#1a171b` rectangle. It is kept here as the source of record. It is *not*
 served: this directory sits outside `public/`, so Vite never copies it into a build.
 
-`public/aetos-mark.svg` is the eagle traced from it, and is what the interface actually uses.
+The eagle traced from it is inlined in `src/components/brand/AetosMark.tsx`, and is what the
+interface actually uses.
 
 ## Why it was traced rather than used directly
 

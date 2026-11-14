@@ -48,22 +48,23 @@
   position: absolute;
   display: flex;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
-  border: 1px solid var(--line-subtle);
-  backdrop-filter: blur(6px);
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface-raised) 78%, transparent);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px) saturate(1.2);
   pointer-events: auto;
 }
 
 .map__controls {
-  bottom: var(--space-3);
-  left: var(--space-3);
+  bottom: var(--space-4);
+  left: var(--space-4);
   align-items: center;
 }
 
 .map__zoom {
   display: flex;
-  gap: 1px;
+  gap: 2px;
 }
 
 .map__zoom-button {
@@ -75,14 +76,13 @@
   font-size: var(--text-sm);
   line-height: 1;
   color: var(--text-secondary);
-  background: var(--surface-inset);
-  border: 1px solid var(--line-subtle);
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  border-radius: 50%;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .map__zoom-button:hover:not(:disabled) {
-  color: var(--status-info);
-  border-color: var(--status-info);
+  color: var(--text-on-ink);
+  background: var(--surface-ink);
 }
 
 .map__zoom-button:disabled {
@@ -103,8 +103,9 @@
 /* Range and bearing under the pointer. Reserves its width whether or not a figure is
    present, so the panel does not twitch as the cursor enters and leaves the map. */
 .map__cursor {
-  top: var(--space-3);
-  right: var(--space-3);
+  top: var(--space-4);
+  right: var(--space-4);
+  padding: var(--space-2) var(--space-4);
   align-items: center;
   font-size: var(--text-xs);
   color: var(--text-disabled);
@@ -120,17 +121,23 @@
   text-align: right;
 }
 
+/* Under the cursor readout, top right, so it never collides with the range bar along the
+   bottom however narrow the map gets. */
 .map__display-options {
-  bottom: var(--space-3);
-  right: var(--space-3);
+  top: calc(var(--space-4) + 52px);
+  right: var(--space-4);
   align-items: center;
+  padding-left: var(--space-4);
 }
 
+/* The legend is a small card rather than a pill: it is several lines. */
 .map__legend {
-  top: var(--space-3);
-  left: var(--space-3);
+  top: var(--space-4);
+  left: var(--space-4);
   flex-direction: column;
   gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
 }
 
 .map__legend-warning {
@@ -140,30 +147,29 @@
 .map__scale-buttons,
 .map__display-buttons {
   display: flex;
-  gap: 1px;
+  gap: 2px;
 }
 
 .map__scale-button,
 .map__display-button {
-  padding: var(--space-1) var(--space-2);
+  padding: 6px var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-muted);
-  background: var(--surface-inset);
-  border: 1px solid var(--line-subtle);
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  border-radius: var(--radius-pill);
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .map__scale-button:hover,
 .map__display-button:hover {
-  color: var(--text-secondary);
-  border-color: var(--line);
+  color: var(--text-primary);
+  background: var(--surface-panel);
 }
 
 .map__scale-button.is-active,
 .map__display-button.is-active {
-  color: var(--status-info);
-  border-color: var(--status-info);
+  color: var(--text-on-ink);
+  background: var(--surface-ink);
 }
 
 .track-marker text {
@@ -186,5 +192,46 @@
   }
   50% {
     opacity: 0.85;
+  }
+}
+
+/* Narrow maps: no hover on touch, so the cursor readout goes; the data block options stack
+   above the range bar; the range bar scrolls sideways rather than overflowing the map. */
+@media (max-width: 700px) {
+  .map__cursor {
+    display: none;
+  }
+
+  .map__legend {
+    top: var(--space-3);
+    left: var(--space-3);
+    right: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-2xs);
+  }
+
+  .map__display-options {
+    top: auto;
+    bottom: calc(var(--space-3) + 54px);
+    left: var(--space-3);
+    right: auto;
+  }
+
+  .map__controls {
+    bottom: var(--space-3);
+    left: var(--space-3);
+    right: var(--space-3);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .map__controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  .map__zoom-button,
+  .map__scale-button,
+  .map__display-button {
+    flex-shrink: 0;
   }
 }

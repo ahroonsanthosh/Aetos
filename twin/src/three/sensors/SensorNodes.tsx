@@ -114,7 +114,7 @@ function SensorHead({ sensor, colour }: { sensor: Sensor; colour: string }) {
           {/* Dome — the universal PTZ camera cue. */}
           <mesh position={[0, 0.05, 0]}>
             <sphereGeometry args={[0.62, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2]} />
-            <meshStandardMaterial color="#16222e" roughness={0.3} metalness={0.25} />
+            <meshStandardMaterial color="#271b29" roughness={0.3} metalness={0.25} />
           </mesh>
         </group>
       );
@@ -130,7 +130,7 @@ function SensorHead({ sensor, colour }: { sensor: Sensor; colour: string }) {
           {/* Germanium lens barrel. */}
           <mesh position={[0, 0.3, 0.6]} rotation={[Math.PI / 2, 0, 0]}>
             <cylinderGeometry args={[0.26, 0.26, 0.5, 12]} />
-            <meshStandardMaterial color="#1e2833" roughness={0.28} metalness={0.3} />
+            <meshStandardMaterial color="#2d232e" roughness={0.28} metalness={0.3} />
           </mesh>
         </group>
       );

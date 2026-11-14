@@ -8,9 +8,8 @@
  * interface and the UI exists around it, so nothing here is allowed to become a dashboard
  * that the scene is embedded in.
  *
- * This component also owns the data source lifecycle. It is the only place in the
- * application that names `SimulationSource`, which is what makes swapping it for
- * `WebSocketSource` a one-line change.
+ * This component also owns the data source lifecycle: `SimulationSource` for the built-in
+ * scenarios, `LiveSource` for the Aetos console's own tracks. Nothing else names either.
  */
 
 import { useEffect } from 'react';
@@ -19,6 +18,7 @@ import { parseSiteFileText } from '@/site/schema';
 import { takeHandedOffSite } from '@/site/handoff';
 import { attachSource, useAetos } from '@/state/store';
 import { SimulationSource } from '@/state/source';
+import { LiveSource } from '@/live/LiveSource';
 import { Stage } from '@/three/Stage';
 import { BottomBar } from './BottomBar';
 import { ContextPanel } from './ContextPanel';
@@ -30,37 +30,44 @@ export function CommandInterface() {
   const site = useAetos((s) => s.site);
   const setSite = useAetos((s) => s.setSite);
   const scenarioId = useAetos((s) => s.scenarioId);
+  const feed = useAetos((s) => s.feed);
+  const setFeed = useAetos((s) => s.setFeed);
 
   // Once, on mount: pick up a site the site editor handed off just before navigating here.
   // Deliberately not keyed on anything — this is a one-shot pickup, not a poll — so it runs
   // exactly once regardless of how many times the site changes afterwards.
+  // Once, on mount: pick up a site the site editor handed off just before navigating here
+  // (which means the simulation), otherwise decide the feed. Live when this page is served by
+  // Aetos at /twin/, simulation when the twin runs on its own.
   useEffect(() => {
     const handoff = takeHandedOffSite();
-    if (!handoff) return;
-    try {
-      setSite(parseSiteFileText(handoff));
-    } catch {
-      // A malformed handoff is dropped silently rather than surfaced as an error before
-      // the interface has even rendered — the demo site it falls back to is still a
-      // working command view, which is the better failure mode here.
+    if (handoff) {
+      try {
+        setSite(parseSiteFileText(handoff));
+        return;
+      } catch {
+        // A malformed handoff is dropped; the feed is decided as if there were none.
+      }
     }
-  }, [setSite]);
+    setFeed(window.location.pathname.startsWith('/twin') ? 'live' : 'simulation');
+  }, [setSite, setFeed]);
 
+  // The simulation source, for whichever site the simulation is on. Seeded from the store's
+  // `scenarioId`, not the module default: `setSite` resets that to 'idle'. Switching scenario is
+  // handled by the running source via `loadScenario`, so `scenarioId` is deliberately absent.
   useEffect(() => {
-    // Swap this line for `new WebSocketSource(url)` when Aetos Core publishes the feed.
-    // Nothing else in the application changes. Re-runs whenever `site` changes — a fresh
-    // simulation source for whichever site is currently loaded, demo or otherwise.
-    //
-    // Seeded from the store's `scenarioId`, not the module default: `setSite` resets that
-    // to 'idle', and constructing the engine with the default instead would leave the
-    // scenario control reading "Reset" while a UAV ran a scripted approach behind it —
-    // a command display disagreeing with itself about what it is showing.
+    if (feed !== 'simulation') return;
     return attachSource(new SimulationSource(site, scenarioId));
-    // `scenarioId` is deliberately absent: switching scenario is handled by the running
-    // source via `loadScenario`, and rebuilding the whole engine for it would discard
-    // track history and restart the clock on every dropdown change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site]);
+  }, [site, feed]);
+
+  // The live source. It sets the site itself (the real Aetos site), which must not restart it,
+  // so it depends on the feed alone.
+  useEffect(() => {
+    if (feed !== 'live') return;
+    const { setLiveSite, setLiveStatus } = useAetos.getState();
+    return attachSource(new LiveSource({ onSite: setLiveSite, onStatus: setLiveStatus }));
+  }, [feed]);
 
   return (
     <main className={styles.root}>

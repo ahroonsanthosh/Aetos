@@ -7,19 +7,25 @@
 
 .sensor-table th,
 .event-table th {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   text-align: left;
   background: var(--surface-raised);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-subtle);
   white-space: nowrap;
 }
 
 .sensor-table td,
 .event-table td {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--line-subtle);
   white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+
+.sensor-table tbody tr:hover td,
+.event-table tbody tr:hover td {
+  background: var(--surface-panel);
 }
 
 .sensor-table .is-enabled  { color: var(--status-nominal); }
@@ -31,18 +37,20 @@
   width: 100%;
   max-width: 420px;
   margin-bottom: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text-primary);
-  background: var(--surface-inset);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-soft);
+  transition: border-color var(--transition-fast);
 }
 
 .event-filter:focus {
   outline: none;
-  border-color: var(--status-info);
+  border-color: var(--brand-accent);
 }
 
 /* One alert. A card rather than a table row because the reasons underneath it are the
@@ -104,22 +112,23 @@
 }
 
 .alert-card__ack-button {
-  padding: var(--space-1) var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  background: var(--surface-inset);
-  border: 1px solid var(--line-subtle);
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-on-ink);
+  background: var(--surface-ink);
+  border: 1px solid var(--surface-ink);
+  border-radius: var(--radius-pill);
+  transition: background var(--transition-fast);
 }
 
 .alert-card__ack-button:hover:not(:disabled) {
-  color: var(--status-info);
-  border-color: var(--status-info);
+  background: var(--brand-accent);
 }
 
 .alert-card__ack-button:disabled {
   color: var(--text-disabled);
+  background: transparent;
+  border-color: var(--line);
   cursor: default;
 }
 

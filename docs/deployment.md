@@ -8,6 +8,56 @@ Read `docs/failure_modes.md` before deploying. It is the honest list of what thi
 not do, and several entries matter more once the system is on a network than they did on a
 laptop.
 
+## Hosted (Render, Fly, Railway)
+
+The quickest way online, with no shell anywhere. The `Dockerfile` at the repository root
+builds the console, the digital twin and the backend into one image meant for a host that
+terminates TLS in front of it, which is what makes the `--behind-proxy` baked into its
+entrypoint true. It binds `0.0.0.0:$PORT` (8000 if the host sets none) and runs
+`b_approaching_threat` with `--loop`, so the picture is not empty for whoever opens it hours
+later.
+
+**Accounts come from the environment**, because these hosts usually give no shell to run
+`backend.auth.admin` in, and a free tier's disk forgets anything made by hand at the next
+restart. Set these as secrets in the host's dashboard:
+
+| Variable | |
+|---|---|
+| `AETOS_ADMIN_USERNAME`, `AETOS_ADMIN_PASSWORD` | Required. An admin account. Password 12+ characters |
+| `AETOS_VIEWER_USERNAME`, `AETOS_VIEWER_PASSWORD` | Optional. A read-only account to share |
+
+Every start makes those accounts match the environment: created if missing, password and role
+reset if they differ. Change the password in the dashboard and redeploy to rotate it. A
+username without a password, a short password, or the same name for both refuses the start
+with a message saying which. With nothing set there are no accounts, and the guard refuses to
+start, as it would anywhere else. Accounts made with the CLI on a persistent disk are left
+alone.
+
+**Render.** `render.yaml` is a blueprint for exactly this. Use the button in the README, or
+New > Blueprint in the dashboard. It sets the admin username to `admin` and has Render generate
+the password, so there is nothing to type and nothing to get wrong; read it from
+`AETOS_ADMIN_PASSWORD` in the service's Environment tab. If a deploy keeps failing, the last
+lines of its log name the reason, and on a first deploy that is almost always one of these
+variables. The free plan sleeps after 15 minutes idle (about a minute to
+wake) and has no persistent disk, so every wake starts with an empty event log. To keep history,
+move to a paid plan and attach a disk at `/app/data`. Size that disk deliberately: nothing
+rotates the event log (FM-003), and the looped scenario writes it at roughly 1 MB a minute.
+
+**Anywhere else.** Point the host at the root `Dockerfile`, set the variables above, and make
+sure only its TLS proxy can reach the container port. To run a different scenario, override the
+command with any `backend.main` arguments, for example `--scenario h_track_crossing --loop`.
+
+**Without a container.** On a host that runs Python 3.11+ and has Node 20+ at build time, build
+with `./scripts/render-build.sh` and start with `python -m backend.main --host 0.0.0.0 --port
+$PORT --data-dir data/hosted --behind-proxy --scenario b_approaching_threat --loop`.
+
+**The camera needs https.** Browsers only open a camera on a secure origin (or `localhost`), so
+the Camera page works on a hosted instance behind TLS and on a laptop, but not over plain http
+on a LAN address.
+
+What the rest of this document says about rate limiting, backups and failure modes still holds
+for a hosted instance; a public URL is a network deployment like any other.
+
 ## 1. Create the first account
 
 ```bash
@@ -302,7 +352,7 @@ uses `setdefault`.
   `passwd`, then `disable` and `enable` to end that account's existing sessions.
 - **No rate limiting on anything except login.** A reverse proxy is the right place to add it,
   and both examples above are a natural home for that.
-- **The failure modes in `docs/failure_modes.md` that are still open** — sensor silence
-  (FM-010), backend restart recovery (FM-030), event store unavailability (FM-032), saturation
-  (FM-014) — are unaddressed. `tests/chaos/` is empty. None of them is a reason not to deploy,
+- **The failure modes in `docs/failure_modes.md` that are still open** — backend restart
+  recovery (FM-030), event store unavailability (FM-032), saturation (FM-014) — are
+  unaddressed, and there is no chaos test suite for them yet. None of them is a reason not to deploy,
   but all of them are things to know before an operator relies on the display.

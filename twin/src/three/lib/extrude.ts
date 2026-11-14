@@ -6,7 +6,7 @@
  * has to reason about which way an extrusion points.
  */
 
-import { BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, Shape, Vector3 } from 'three';
+import { BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, Shape } from 'three';
 import type { CompassDirection, Ground } from '@/types';
 import { angleDelta } from '@/lib/geometry';
 
@@ -90,50 +90,6 @@ export function polygonWalls(polygon: Ground[], height: number): BufferGeometry 
   geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
   geometry.setIndex(indices);
   return geometry;
-}
-
-/** Closed loop of world-space points at a fixed altitude. For outlines and fence lines. */
-export function polygonLoop(polygon: Ground[], u = 0): Vector3[] {
-  const points = polygon.map((p) => new Vector3(p.e, u, -p.n));
-  if (points.length > 0) points.push(points[0]!.clone());
-  return points;
-}
-
-/** Total perimeter length of a polygon, metres. */
-export function polygonPerimeter(polygon: Ground[]): number {
-  let total = 0;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const a = polygon[j]!;
-    const b = polygon[i]!;
-    total += Math.hypot(b.e - a.e, b.n - a.n);
-  }
-  return total;
-}
-
-/**
- * Evenly spaced points around a polygon's boundary, for fence posts and marker runs.
- * Returns ground coordinates so callers can choose their own altitude.
- */
-export function samplePerimeter(polygon: Ground[], spacing: number): Ground[] {
-  const out: Ground[] = [];
-  let carry = 0;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const a = polygon[j]!;
-    const b = polygon[i]!;
-    const length = Math.hypot(b.e - a.e, b.n - a.n);
-    if (length === 0) continue;
-
-    for (let d = carry; d < length; d += spacing) {
-      const t = d / length;
-      out.push({ e: a.e + (b.e - a.e) * t, n: a.n + (b.n - a.n) * t });
-    }
-    // Carry the remainder into the next edge so spacing does not reset at every corner.
-    carry = (carry - length) % spacing;
-    if (carry < 0) carry += spacing;
-  }
-
-  return out;
 }
 
 /** Signed area of a ground polygon (shoelace formula). Positive for counter-clockwise. */
