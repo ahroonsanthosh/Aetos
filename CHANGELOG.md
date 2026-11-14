@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-11-14)
+
+**Added**: releases. Pushing a version tag publishes a GitHub release with the changelog
+section as its notes, the Python wheel and source archive attached, and the Docker image at
+`ghcr.io/ahroonsanthosh/aetos`.
+
+**Docs**: the README explains the unbuilt menu entries 06 to 08, the twin's fallback to
+simulation and its site editor, and more `start.sh` options.
 
 **Fixed**: the digital twin inside the console no longer crowds itself on a short window. The
 frame keeps enough height (the page scrolls instead), the twin compacts its bars below 760 px
