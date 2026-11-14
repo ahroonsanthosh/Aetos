@@ -12,9 +12,10 @@
 # merge to main, then `git tag vX.Y.Z && git push origin vX.Y.Z`. Or run this workflow by hand
 # from the Actions tab with the tag name; it tags the head of main for you.
 #
-# Run by hand with a tag that already exists, it publishes that older version from the tagged
-# commit instead: notes and Python archives always, the Docker image only if that commit has a
-# Dockerfile, and never moving `latest` (the image tag or the release badge).
+# Run by hand for an older version, it publishes that version from its own commit: the existing
+# tag if there is one, otherwise the commit on main titled "Aetos X.Y.Z". Notes and Python
+# archives always, the Docker image only if that commit has a Dockerfile. Only the version in
+# main's pyproject.toml takes `latest` (the image tag and the release badge).
 name: Release
 
 on:
@@ -43,17 +44,21 @@ jobs:
         id: version
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          # An existing tag is published from its own commit. Only a new tag, made from the head
-          # of main, becomes the latest release.
+          VERSION="${TAG#v}"
+          CURRENT=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          # An older version is published from its own commit: its tag, or the commit on main
+          # titled "Aetos X.Y.Z". Anything else is released from the head of main.
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             git checkout -q "$TAG"
+          elif [ "$VERSION" != "$CURRENT" ]; then
+            COMMIT=$(git log --format=%H --fixed-strings --grep="Aetos $VERSION" main |
+              while read -r c; do
+                [ "$(git log -1 --format=%s "$c")" = "Aetos $VERSION" ] && echo "$c" && break
+              done)
+            if [ -n "$COMMIT" ]; then git checkout -q "$COMMIT"; fi
           fi
           LATEST=false
-          NEWEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          if [ -z "$NEWEST" ] || [ "$NEWEST" = "$TAG" ] || ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            LATEST=true
-          fi
-          VERSION="${TAG#v}"
+          if [ "$VERSION" = "$CURRENT" ]; then LATEST=true; fi
           PROJECT=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
           if [ "$VERSION" != "$PROJECT" ]; then
             echo "::error::Tag $TAG does not match pyproject.toml version $PROJECT"
