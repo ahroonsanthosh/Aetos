@@ -1,0 +1,129 @@
+# Credit every commit on main to the repository owner and drop the Claude co-author lines, so
+# Claude no longer appears under Contributors. Run by hand from the Actions tab.
+#
+# What it does:
+# - Commits authored or committed as "Claude <noreply@anthropic.com>" get the owner's name and
+#   email instead (taken from the owner's own commits on main, so neither is written here).
+# - "Co-Authored-By: Claude ..." and "Claude-Session: ..." lines are removed from every message.
+# - The rewrite starts at the first commit that involves Claude. Earlier commits keep their
+#   hashes and signatures; later ones lose any signature, including GitHub's on merge commits.
+# - Tags on rewritten commits (v0.9.0) are moved to the new commits, so the releases stay
+#   attached. Tags on older commits do not change.
+#
+# First run it with "push" unticked: it rewrites a copy and prints the result, changing nothing.
+# To apply it, turn off "Block force pushes" for main in Settings → Rules, run it again with
+# "push" ticked and the confirmation typed, then turn the rule back on. Every commit hash from
+# the first Claude commit onwards changes, so any local clone needs a fresh clone afterwards.
+name: Remove Claude from contributors
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Force-push the rewritten main and tags (untick for a dry run)"
+        type: boolean
+        default: false
+      confirm:
+        description: 'To push, type REWRITE MAIN'
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Refuse a push without the confirmation
+        if: inputs.push
+        run: |
+          if [ "${{ inputs.confirm }}" != "REWRITE MAIN" ]; then
+            echo "::error::Type REWRITE MAIN in the confirmation box to push"
+            exit 1
+          fi
+
+      - name: Find the owner's name and email
+        id: owner
+        run: |
+          LINE=$(git log main --author="${{ github.repository_owner }}" --format='%an|%ae' -1)
+          if [ -z "$LINE" ]; then
+            LINE=$(git log main --format='%an|%ae' | grep -viE 'claude|noreply@anthropic\.com|noreply@github\.com' | head -1)
+          fi
+          [ -n "$LINE" ] || { echo "::error::No commit by the owner found on main"; exit 1; }
+          echo "::add-mask::${LINE#*|}"
+          echo "name=${LINE%%|*}" >> "$GITHUB_OUTPUT"
+          echo "email=${LINE#*|}" >> "$GITHUB_OUTPUT"
+
+      - name: Before
+        run: git shortlog -sn main
+
+      - name: Rewrite main
+        env:
+          FILTER_BRANCH_SQUELCH_WARNING: "1"
+          OWNER_NAME: ${{ steps.owner.outputs.name }}
+          OWNER_EMAIL: ${{ steps.owner.outputs.email }}
+        run: |
+          git config user.name "$OWNER_NAME"
+          git config user.email "$OWNER_EMAIL"
+          # Tags pointing into main are rewritten along with it; the rest are left alone.
+          TAGS=$(git tag --merged main)
+          for t in $TAGS; do echo "$t $(git rev-parse "$t^{commit}")"; done > "$RUNNER_TEMP/tags-before"
+          # Start at the first commit that involves Claude. Everything before it keeps its hash and
+          # its signature (rewriting drops signatures).
+          FIRST=$(git log main --reverse --format='%H %ae %ce' | awk '/noreply@anthropic\.com/{print $1; exit}')
+          FIRST_MSG=$(git log main --reverse --format=%H -i -E --grep='^(co-authored-by: *claude|claude-session:)' | head -1)
+          if [ -n "$FIRST_MSG" ] && { [ -z "$FIRST" ] || git merge-base --is-ancestor "$FIRST_MSG" "$FIRST"; }; then
+            FIRST=$FIRST_MSG
+          fi
+          [ -n "$FIRST" ] || { echo "Nothing to rewrite"; exit 0; }
+          echo "Rewriting from $(git log -1 --format='%h %s' "$FIRST")"
+          BASE=$(git rev-parse -q --verify "$FIRST^" || true)
+          git filter-branch -f \
+            --env-filter '
+              if [ "$GIT_AUTHOR_EMAIL" = "noreply@anthropic.com" ]; then
+                export GIT_AUTHOR_NAME="$OWNER_NAME" GIT_AUTHOR_EMAIL="$OWNER_EMAIL"
+              fi
+              if [ "$GIT_COMMITTER_EMAIL" = "noreply@anthropic.com" ]; then
+                export GIT_COMMITTER_NAME="$OWNER_NAME" GIT_COMMITTER_EMAIL="$OWNER_EMAIL"
+              fi' \
+            --msg-filter '
+              perl -0pe "if (/^(co-authored-by: *claude|claude-session:)/mi) {
+                s/^(co-authored-by: *claude|claude-session:).*\n?//mgi; s/\n+\z/\n/ }"' \
+            --tag-name-filter cat \
+            -- main $TAGS ${BASE:+^$BASE}
+
+      - name: After
+        run: |
+          git shortlog -sn main
+          if git log main --format='%an %ae %cn %ce%n%B' | grep -qiE 'noreply@anthropic\.com|^co-authored-by: *claude|^claude-session:'; then
+            echo "::error::Claude still appears in the rewritten history"
+            exit 1
+          fi
+          echo "Commits that changed: $(git rev-list --count origin/main ^$(git merge-base main origin/main))"
+          while read -r t old; do
+            [ "$(git rev-parse "$t^{commit}")" = "$old" ] || echo "$t"
+          done < "$RUNNER_TEMP/tags-before" > "$RUNNER_TEMP/tags-moved"
+          echo "Tags that moved: $(tr '\n' ' ' < "$RUNNER_TEMP/tags-moved")"
+
+      # A dry run also checks that GitHub will accept the push (it can refuse rewritten commits
+      # that touch workflow files), using a throwaway branch it deletes again.
+      - name: Check GitHub accepts the rewritten history
+        if: ${{ !inputs.push }}
+        run: |
+          git push --force origin main:refs/heads/rewrite-preview
+          git push origin --delete rewrite-preview
+          echo "GitHub accepted the rewritten history. Run again with push ticked to apply it."
+
+      - name: Force-push main and the moved tags
+        if: inputs.push
+        run: |
+          git push --force origin main
+          for t in $(cat "$RUNNER_TEMP/tags-moved"); do
+            git push --force origin "refs/tags/$t"
+          done
+          echo "Done. Contributors can take a while to update on GitHub."
