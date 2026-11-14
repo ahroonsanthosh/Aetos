@@ -1,0 +1,76 @@
+# Delete releases, tags and branches that are no longer wanted. Run by hand from the Actions tab.
+#
+# The defaults remove the duplicate 0.8.2 and 0.8.3 releases (the real ones are v0.8.2 and
+# v0.8.3) with their tags, and the branches that are already merged into main. The seven old
+# claude/* branches from before main was rebuilt are kept unless you tick the last box: none of
+# their commits are in main, so deleting them loses that history for good.
+#
+# main and anything that looks like a version tag starting with "v" are never deleted. Every
+# deletion is printed in the run log; one that GitHub refuses is reported and the rest go on.
+name: Clean up
+
+on:
+  workflow_dispatch:
+    inputs:
+      releases:
+        description: "Releases to delete, with their tags (space separated)"
+        default: "0.8.2 0.8.3"
+      branches:
+        description: "Branches to delete (space separated)"
+        default: "0.8.2 0.8.3 release-0.8.2 release-0.8.3 ccr-3e58b98a-ux58gz claude/dreamy-dirac-bv5kdb ccr-01e76b18-novhoh ccr-d31924b1-g63p0o"
+      old_claude_branches:
+        description: "Also delete the seven old claude/* branches (their commits are not in main)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASES: ${{ inputs.releases }}
+      BRANCHES: ${{ inputs.branches }}
+      OLD: ${{ inputs.old_claude_branches }}
+    steps:
+      - name: Delete releases and their tags
+        run: |
+          failed=0
+          for tag in $RELEASES; do
+            case "$tag" in v*) echo "Keeping $tag: version tags are never deleted here"; continue ;; esac
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release delete "$tag" --yes && echo "Deleted release $tag" || { echo "::warning::Could not delete release $tag"; failed=1; }
+            else
+              echo "No release $tag"
+            fi
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+              gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$tag" && echo "Deleted tag $tag" || { echo "::warning::Could not delete tag $tag"; failed=1; }
+            else
+              echo "No tag $tag"
+            fi
+          done
+          exit $failed
+
+      - name: Delete branches
+        if: always()
+        run: |
+          list="$BRANCHES"
+          if [ "$OLD" = "true" ]; then
+            list="$list claude/aetos-platform-overview-l1cjpa claude/examine-codebase-g5ekp6
+              claude/examine-codebase-sck2hv claude/radar-sensor-integration-efhzhy
+              claude/radar-sensor-integration-wc4mpe claude/repo-state-review-7pyqgv
+              claude/sensor-ingestion-layer-5n19kz"
+          fi
+          failed=0
+          for branch in $list; do
+            if [ "$branch" = "main" ]; then echo "Keeping main"; continue; fi
+            if gh api "repos/$GH_REPO/git/ref/heads/$branch" >/dev/null 2>&1; then
+              gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch" && echo "Deleted branch $branch" || { echo "::warning::Could not delete branch $branch"; failed=1; }
+            else
+              echo "No branch $branch"
+            fi
+          done
+          exit $failed
