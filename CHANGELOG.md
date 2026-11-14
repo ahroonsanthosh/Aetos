@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.1 (2026-11-14)
+
+**Changed**: the basemap installer moved to `scripts/install-basemap.sh`; run it as
+`./scripts/install-basemap.sh`.
+
+**Changed**: the history on `main` is one commit per version, each named for its version.
+
+**Changed**: the console and the twin carry the project version instead of 0.1.0.
+
+**Added**: the release workflow can publish an older version from its own commit (its tag, or
+the commit on main named for that version), so every version since 0.1.0 has a GitHub release.
+
 ## 0.9.0 (2026-11-14)
 
 **Added**: releases. Pushing a version tag publishes a GitHub release with the changelog

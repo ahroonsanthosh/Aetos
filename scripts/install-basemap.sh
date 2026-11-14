@@ -2,11 +2,11 @@
 #
 # Install the optional geographic basemap.
 #
-#   ./install-basemap.sh                 the default site, 50 km around it
-#   ./install-basemap.sh --site NAME     a different site from config/sites/
-#   ./install-basemap.sh --radius 20     smaller area, smaller download
-#   ./install-basemap.sh --no-fonts      terrain without map labels
-#   ./install-basemap.sh --check         report what is installed and stop
+#   ./scripts/install-basemap.sh                 the default site, 50 km around it
+#   ./scripts/install-basemap.sh --site NAME     a different site from config/sites/
+#   ./scripts/install-basemap.sh --radius 20     smaller area, smaller download
+#   ./scripts/install-basemap.sh --no-fonts      terrain without map labels
+#   ./scripts/install-basemap.sh --check         report what is installed and stop
 #
 # Everything the manual instructions asked you to work out — where your site is, what bounding
 # box covers the display's range, which build of the planet to cut it from, where the files go
@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 say()  { printf '\033[36m▸\033[0m %s\n' "$1"; }

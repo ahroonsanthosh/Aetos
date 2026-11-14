@@ -1,6 +1,6 @@
 [project]
 name = "aetos"
-version = "0.9.0"
+version = "0.9.1"
 description = "Command and control software for counter-drone teams. Software only: it recommends, it never acts."
 readme = "README.md"
 license = "GPL-3.0-or-later"

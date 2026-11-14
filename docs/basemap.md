@@ -10,7 +10,7 @@ and explains why, and the display is exactly as it would be otherwise.
 ## The short way
 
 ```bash
-./install-basemap.sh
+./scripts/install-basemap.sh
 ```
 
 That works out where your site is from `config/sites/`, cuts a 50 km box around it out of the
@@ -18,9 +18,9 @@ current Protomaps planet build, fetches the extract tool if you do not have it, 
 label fonts, and verifies the result. Then `./start.sh` and click **Terrain**.
 
 ```bash
-./install-basemap.sh --radius 20     # smaller area, smaller download
-./install-basemap.sh --site NAME     # a site other than the default
-./install-basemap.sh --check         # what is installed right now
+./scripts/install-basemap.sh --radius 20     # smaller area, smaller download
+./scripts/install-basemap.sh --site NAME     # a site other than the default
+./scripts/install-basemap.sh --check         # what is installed right now
 ```
 
 It needs a working internet connection *once*. After that the map is a local file and the

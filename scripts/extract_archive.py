@@ -1,6 +1,6 @@
 """Unpack selected members of a .zip or .tar.gz.
 
-Used by `install-basemap.sh` instead of `unzip` and `tar`, because **Git Bash ships neither
+Used by `scripts/install-basemap.sh` instead of `unzip` and `tar`, because **Git Bash ships neither
 reliably** — and Git Bash is the shell every Windows user of this repository is in, since
 `start.sh` requires it. Python is already a hard requirement for running Aetos at all, so
 leaning on its standard library here costs nothing and closes two platform gaps that would

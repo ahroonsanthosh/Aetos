@@ -2,7 +2,7 @@
   "name": "aetos-command-twin",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "0.1.0",
+  "version": "0.9.1",
   "description": "Aetos Command — holographic digital twin interface. Standalone prototype.",
   "scripts": {
     "dev": "next dev",

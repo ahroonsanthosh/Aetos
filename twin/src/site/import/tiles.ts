@@ -121,7 +121,7 @@ export function tileBoundsEnu(tile: TileRef, datum: LatLon): { min: Ground; max:
  * for what is actually on screen, which is the light, interactive use the policy permits.
  * Anything approaching production traffic should move to a paid tile host or self-hosted
  * tiles — the existing Aetos frontend already vendors Protomaps basemaps for exactly that
- * reason (`install-basemap.sh`).
+ * reason (`scripts/install-basemap.sh`).
  */
 export function osmTileUrl(tile: TileRef): string {
   return `https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`;

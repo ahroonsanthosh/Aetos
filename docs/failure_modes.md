@@ -598,7 +598,7 @@ reconstructed or defended afterwards.
 ### FM-041 — The basemap installer's download path is unverified
 **Status:** Open · **Severity:** Low — affects an optional feature's setup, not runtime behaviour
 
-`install-basemap.sh` was written and tested in an environment whose network policy blocks
+`scripts/install-basemap.sh` was written and tested in an environment whose network policy blocks
 `api.github.com`, `build.protomaps.com` and `github.com`. Everything that does not require the
 network is verified: site lookup, bounding-box derivation (checked at four latitudes, each
 producing exactly the requested span), platform detection, argument handling, archive
