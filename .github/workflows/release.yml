@@ -76,7 +76,7 @@ jobs:
             $0 ~ "^## " v "( |$)" { found = 1; next }
             found && /^## / { exit }
             found { print }
-          ' > notes.md
+          ' | sed '/./,$!d' > notes.md
           if ! grep -q '[^[:space:]]' notes.md; then
             echo "::error::CHANGELOG.md has no section for ${{ steps.version.outputs.version }}"
             exit 1

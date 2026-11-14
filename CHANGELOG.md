@@ -5,8 +5,7 @@
 **Changed**: the console and the twin carry the project version (0.9.0) instead of 0.1.0.
 
 **Added**: the release workflow can publish an older version from its own commit (its tag, or
-the commit on main titled "Aetos X.Y.Z"), so every
-version since 0.1.0 has a GitHub release.
+the commit on main titled "Aetos X.Y.Z"), so every version since 0.1.0 has a GitHub release.
 
 ## 0.9.0 (2026-11-14)
 
