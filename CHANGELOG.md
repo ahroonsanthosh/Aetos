@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Changed**: the console and the twin carry the project version (0.9.0) instead of 0.1.0.
+
+**Added**: the release workflow can publish an older version from its existing tag, so every
+version since 0.1.0 has a GitHub release.
+
 ## 0.9.0 (2026-11-14)
 
 **Added**: releases. Pushing a version tag publishes a GitHub release with the changelog
