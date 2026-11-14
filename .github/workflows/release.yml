@@ -11,6 +11,11 @@
 # To release: bump `version` in pyproject.toml, give CHANGELOG.md a `## X.Y.Z (date)` section,
 # merge to main, then `git tag vX.Y.Z && git push origin vX.Y.Z`. Or run this workflow by hand
 # from the Actions tab with the tag name; it tags the head of main for you.
+#
+# Run by hand for an older version, it publishes that version from its own commit: the existing
+# tag if there is one, otherwise the commit on main titled "Aetos X.Y.Z". Notes and Python
+# archives always, the Docker image only if that commit has a Dockerfile. Only the version in
+# main's pyproject.toml takes `latest` (the image tag and the release badge).
 name: Release
 
 on:
@@ -32,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          ref: main
           fetch-depth: 0
 
       - name: Work out the version
@@ -40,6 +45,20 @@ jobs:
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           VERSION="${TAG#v}"
+          CURRENT=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          # An older version is published from its own commit: its tag, or the commit on main
+          # titled "Aetos X.Y.Z". Anything else is released from the head of main.
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            git checkout -q "$TAG"
+          elif [ "$VERSION" != "$CURRENT" ]; then
+            COMMIT=$(git log --format=%H --fixed-strings --grep="Aetos $VERSION" main |
+              while read -r c; do
+                [ "$(git log -1 --format=%s "$c")" = "Aetos $VERSION" ] && echo "$c" && break
+              done)
+            if [ -n "$COMMIT" ]; then git checkout -q "$COMMIT"; fi
+          fi
+          LATEST=false
+          if [ "$VERSION" = "$CURRENT" ]; then LATEST=true; fi
           PROJECT=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
           if [ "$VERSION" != "$PROJECT" ]; then
             echo "::error::Tag $TAG does not match pyproject.toml version $PROJECT"
@@ -47,22 +66,25 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          if [ -f Dockerfile ]; then echo "docker=true"; else echo "docker=false"; fi >> "$GITHUB_OUTPUT"
 
       - name: Extract the release notes from CHANGELOG.md
+        # Read from main's changelog, which has every version; the oldest commits predate it.
         run: |
-          awk -v v="${{ steps.version.outputs.version }}" '
+          git show origin/main:CHANGELOG.md | awk -v v="${{ steps.version.outputs.version }}" '
             $0 ~ "^## " v "( |$)" { found = 1; next }
             found && /^## / { exit }
             found { print }
-          ' CHANGELOG.md > notes.md
+          ' | sed '/./,$!d' > notes.md
           if ! grep -q '[^[:space:]]' notes.md; then
             echo "::error::CHANGELOG.md has no section for ${{ steps.version.outputs.version }}"
             exit 1
           fi
-          {
+          if [ "${{ steps.version.outputs.docker }}" = "true" ]; then {
             echo
             echo "**Docker image:** \`docker pull ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aetos:${{ steps.version.outputs.version }}\`"
-          } >> notes.md
+          } >> notes.md; fi
 
       - uses: actions/setup-python@v5
         with:
@@ -73,27 +95,31 @@ jobs:
           python -m pip install build
           python -m build
 
-      - uses: docker/setup-buildx-action@v3
+      - if: steps.version.outputs.docker == 'true'
+        uses: docker/setup-buildx-action@v3
 
-      - uses: docker/login-action@v3
+      - if: steps.version.outputs.docker == 'true'
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: meta
+      - if: steps.version.outputs.docker == 'true'
+        id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/aetos
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ steps.version.outputs.latest }}
           labels: |
             org.opencontainers.image.title=Aetos
             org.opencontainers.image.description=Command and control software for counter-drone teams. Software only: it recommends, it never acts.
             org.opencontainers.image.licenses=GPL-3.0-or-later
 
-      - uses: docker/build-push-action@v6
+      - if: steps.version.outputs.docker == 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
@@ -105,8 +131,19 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # A release someone already made by hand (on the website, say) is filled in, not refused.
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" dist/* \
-            --target "$(git rev-parse HEAD)" \
-            --title "Aetos ${{ steps.version.outputs.version }}" \
-            --notes-file notes.md
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Aetos ${{ steps.version.outputs.version }}" \
+              --notes-file notes.md \
+              --latest=${{ steps.version.outputs.latest }}
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --target "$(git rev-parse HEAD)" \
+              --title "Aetos ${{ steps.version.outputs.version }}" \
+              --notes-file notes.md \
+              --latest=${{ steps.version.outputs.latest }}
+          fi
